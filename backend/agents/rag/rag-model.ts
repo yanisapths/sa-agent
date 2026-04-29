@@ -3,6 +3,8 @@ import { tool } from "@langchain/core/tools";
 import { createAgent, SystemMessage } from "langchain";
 import { chatModel } from "../chat/chat-model";
 import { vectorStore } from "./chromadb";
+import { skillMiddleware } from "../sql-skill/sql-skill";
+import { MemorySaver } from "@langchain/langgraph";
 
 const retrieveSchema = z.object({ query: z.string() });
 
@@ -162,4 +164,11 @@ const retrieve = tool(
 );
 
 const tools = [retrieve];
-export const agent = createAgent({ model: chatModel, tools, systemPrompt });
+
+export const agent = createAgent({
+  model: chatModel,
+  tools,
+  systemPrompt,
+  middleware: [skillMiddleware],
+  checkpointer: new MemorySaver(),
+});
