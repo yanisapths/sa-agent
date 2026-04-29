@@ -2,7 +2,7 @@ import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/
 import { Document } from "@langchain/core/documents";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import "cheerio"; // web scraping library, html transformation
-import { vectorStore } from "./chromadb";
+import { vectorStore } from "../../database/chromadb";
 
 function isProbablyHtml(contentType: string | null, url: string): boolean {
   if (contentType?.toLowerCase().includes("text/html")) return true;

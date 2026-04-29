@@ -598,6 +598,7 @@ function buildDocuments(
 
   return docs;
 }
+
 function serviceFromEndpoint(endpoint: string): string {
   const match = endpoint.match(/\/([^/]+)-service/);
   return match ? match[1] : "unknown";

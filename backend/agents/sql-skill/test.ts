@@ -1,11 +1,10 @@
-import { agent } from "../rag/rag-model";
+import { chatAgent } from "../chat/agent";
 import { v4 as uuidv4 } from "uuid";
 
 const threadId = uuidv4();
 const config = { configurable: { thread_id: threadId } };
 
-// Ask for a SQL query
-const result = await agent.invoke(
+const result = await chatAgent.invoke(
   {
     messages: [
       {
@@ -20,7 +19,6 @@ const result = await agent.invoke(
   config,
 );
 
-// Print the conversation
 for (const message of result.messages) {
   console.log(`${message.type}: ${message.content}`);
 }
