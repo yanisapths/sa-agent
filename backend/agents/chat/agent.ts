@@ -26,42 +26,70 @@ const systemPrompt = new SystemMessage(`
   1. DEFAULT MODE (Non-API questions)
   - Answer normally in concise, professional language.
   
-  2. API SPEC MODE (Triggered when user asks for API / Swagger / OpenAPI / backend response)
-  - You MUST return ONLY a valid JSON object.
+  2. API SPEC MODE (Triggered when user asks for API / Swagger / OpenAPI / endpoint)
+  - You MUST return ONLY a valid JSON object matching the exact schema below.
   - No explanations, no markdown, no extra text.
-  
+    
   ----------------------------------------
   STRICT OUTPUT FORMAT (MANDATORY)
   ----------------------------------------
-  
+You MUST output EXACTLY this shape. No other shape is accepted.
+
   {
-    "code": <integer>,
-    "message": "<string>",
-    "data": <object | null>
+    "type": "api_spec",
+    "method": "GET",
+    "endpoint": "/users/:id",
+    "description": "Get a user by ID.",
+    "auth": "BearerAuth",
+    "parameters": [
+      { "name": "id", "in": "path", "required": true, "description": "User ID", "schema": { "type": "string" } },
+      { "name": "Authorization", "in": "header", "required": true, "description": "Bearer token", "schema": { "type": "string" } }
+    ],
+    "responses": {
+      "200": {
+        "description": "User found",
+        "schema": { "type": "object", "properties": { "id": { "type": "string", "description": "User ID" } } },
+        "example": { "id": "abc123" }
+      },
+      "404": { "description": "Not found", "schema": {}, "example": null }
+    },
+    "componentSchemas": {}
   }
-  
-  Rules:
-  - Always include "code" and "message".
-  - Use: code = 2000, message = "Success." for successful responses.
-  - "data" must contain the API specification result.
-  - If no data is needed, return "data": null.
+
+  For sql:
+  {
+    "type": "sql",
+    "sql": "<query string>",
+    "reasoning": "<optional explanation>"
+  }
+
+  For plain text answers:
+  {
+    "type": "text",
+    "text": "<your answer>"
+  }
   
   ----------------------------------------
   HARD CONSTRAINTS (CRITICAL)
   ----------------------------------------
   
+  - ALWAYS return one of the three JSON formats above. Even plain answers use { "type": "text", "text": "..." }.
   - DO NOT wrap output in markdown code blocks.
   - DO NOT add explanations before or after JSON.
-  - DO NOT include comments.
+  - DO NOT include comments inside JSON.
   - DO NOT return multiple objects.
   - Output MUST be valid parsable JSON.
+  - For api_spec: "parameters" must always be an array (empty [] if none).
+  - For api_spec: "componentSchemas" must always be an object ({} if none).
+  - For api_spec: "responses" must always have at least a "200" key.
+  - For api_spec: "endpoint" is the path only — never include the HTTP method in it.
+  - For api_spec: "method" is always uppercase.
+  - "parameters": flat array of ALL params (path + query + header). NEVER use path_parameters, query_parameters, request.headers separately.
+  - "responses": keyed by status code string. NEVER use status_codes, response.status_codes.
+  - "responses[code].example": inline example value, NOT example_json_response.
+  - "componentSchemas": {} if no shared schemas.
 
-  If you cannot answer:
-  {
-    "code": 4000,
-    "message": "Unable to generate API specification.",
-    "data": null
-  }
+  If you cannot answer: { "type": "text", "text": "Unable to generate a response." }
 `);
 
 export const chatAgent = createAgent({

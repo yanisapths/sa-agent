@@ -8,21 +8,22 @@ import { indexing } from "./agents/rag/indexing";
 
 import { getSupabase } from "./database/supabase";
 import {
-  cleanQuery,
   errorMessage,
-  isApiSpecRequest,
   lastAssistantContent,
+  normalizeApiSpec,
   tryParseJsonObject,
 } from "./helpers";
 
 const app = express();
 app.disable("x-powered-by");
 
-app.use(
-  cors({
-    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : "*",
-  }),
-);
+const origins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",")
+  : ["http://localhost:3000"];
+
+app.use(cors({ origin: origins }));
+app.options("*", cors());
+
 app.use(express.json({ limit: "4mb" }));
 
 app.get("/health", (_req, res) => {
@@ -102,39 +103,30 @@ app.post("/rag/index", async (req, res) => {
 // -----------------------------
 app.post("/chat", async (req, res) => {
   try {
-    const body = z
-      .object({
-        message: z.string().min(1),
-      })
-      .parse(req.body);
+    const body = z.object({ message: z.string().min(1) }).parse(req.body);
 
-    const threadId = uuidv4();
-    const config = { configurable: { thread_id: threadId } };
-
-    const result = await chatAgent.invoke(
-      {
-        messages: [{ role: "user", content: body.message }],
-      },
-      config,
+    const stream = await chatAgent.stream(
+      { messages: [{ role: "user", content: body.message }] },
+      { configurable: { thread_id: uuidv4() }, streamMode: "values" },
     );
 
-    const content = lastAssistantContent(result);
+    let finalResult: any = null;
+    for await (const chunk of stream) finalResult = chunk;
 
-    if (isApiSpecRequest(body.message)) {
-      const raw = tryParseJsonObject(content) ?? { result: content };
-      const data = cleanQuery(raw) as Record<string, unknown>;
+    const content = lastAssistantContent(finalResult);
+    const parsed = tryParseJsonObject(content);
+
+    if (!parsed?.type) {
       return res.json({
-        code: 2000,
-        message: "Success.",
-        data,
+        ok: true,
+        type: "text",
+        data: { type: "text", text: content },
       });
     }
 
-    const parsed = tryParseJsonObject(content);
-    if (parsed) {
-      return res.json({ ok: true, message: cleanQuery(parsed) });
-    }
-    return res.json({ ok: true, message: cleanQuery(content) });
+    const data = parsed.type === "api_spec" ? normalizeApiSpec(parsed) : parsed;
+
+    return res.json({ ok: true, type: data.type, data });
   } catch (e) {
     return res.status(400).json({ ok: false, error: errorMessage(e) });
   }
