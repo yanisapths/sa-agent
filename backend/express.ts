@@ -171,6 +171,7 @@ app.post("/chat", upload.array("files"), async (req, res) => {
 
       const messages = chunk.messages ?? [];
       const last = messages[messages.length - 1];
+      console.log(last);
       if (last?.type === "ai") {
         const text =
           typeof last.content === "string"
