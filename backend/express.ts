@@ -13,6 +13,9 @@ import {
   normalizeApiSpec,
   tryParseJsonObject,
 } from "./helpers";
+import multer from "multer";
+import path from "path";
+import { HumanMessage, type ContentBlock } from "@langchain/core/messages";
 
 const app = express();
 app.disable("x-powered-by");
@@ -101,26 +104,97 @@ app.post("/rag/index", async (req, res) => {
 // -----------------------------
 // Chat (RAG Agent)
 // -----------------------------
-app.post("/chat", async (req, res) => {
+const upload = multer({
+  storage: multer.memoryStorage(), // keep files in memory as Buffer
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
+});
+
+app.post("/chat", upload.array("files"), async (req, res) => {
   try {
-    const body = z.object({ message: z.string().min(1) }).parse(req.body);
+    const message = req.body.message ?? "";
+    const files = (req.files ?? []) as Express.Multer.File[];
+
+    // Build multimodal content array
+    const content: ContentBlock[] = [];
+
+    // Process image files into base64 for the LLM
+    for (const file of files) {
+      const isImage = file.mimetype.startsWith("image/");
+      if (isImage) {
+        content.push({
+          type: "image_url",
+          image_url: {
+            url: `data:${file.mimetype};base64,${file.buffer.toString("base64")}`,
+          },
+        } as ContentBlock);
+      } else {
+        // For non-image files, extract text and inject as context
+        const ext = path.extname(file.originalname).toLowerCase();
+        const textContent = file.buffer.toString("utf-8");
+        content.push({
+          type: "text",
+          text: `[Attached file: ${file.originalname}]
+        \`\`\`${ext.slice(1)}
+        ${textContent}
+        \`\`\``,
+        } as ContentBlock);
+      }
+    }
+
+    if (message) {
+      content.push({
+        type: "text",
+        text: message,
+      });
+    }
+
+    if (content.length === 0) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Message or file required." });
+    }
 
     const stream = await chatAgent.stream(
-      { messages: [{ role: "user", content: body.message }] },
+      {
+        messages: [
+          new HumanMessage({
+            content,
+          }),
+        ],
+      },
       { configurable: { thread_id: uuidv4() }, streamMode: "values" },
     );
 
     let finalResult: any = null;
-    for await (const chunk of stream) finalResult = chunk;
+    for await (const chunk of stream) {
+      finalResult = chunk;
 
-    const content = lastAssistantContent(finalResult);
-    const parsed = tryParseJsonObject(content);
+      const messages = chunk.messages ?? [];
+      const last = messages[messages.length - 1];
+      if (last?.type === "ai") {
+        const text =
+          typeof last.content === "string"
+            ? last.content
+            : last.content?.map((c: any) => c.text ?? "").join("");
+
+        const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/);
+        if (thinkMatch) console.log("thinking:", thinkMatch[1].trim());
+
+        const answer = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+        if (answer) console.log("response:", answer);
+      }
+    }
+
+    const rawContent = lastAssistantContent(finalResult)
+      .replace(/<think>[\s\S]*?<\/think>/g, "")
+      .trim();
+    const parsed = tryParseJsonObject(rawContent);
 
     if (!parsed?.type) {
       return res.json({
         ok: true,
         type: "text",
-        data: { type: "text", text: content },
+        data: { type: "text", text: rawContent },
       });
     }
 
