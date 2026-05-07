@@ -24,10 +24,10 @@ const systemPrompt = new SystemMessage(`
   RESPONSE MODES
   ----------------------------------------
   
-  1. DEFAULT MODE (Non-API questions)
+  1. DEFAULT MODE (Non-API/sql or other questions)
   - Answer normally in concise, professional language.
   
-  2. API SPEC MODE (Triggered when user asks for API / Swagger / OpenAPI / endpoint)
+  2. API SPEC MODE (Triggered when user asks for API / API specs / endpoint / API spec / JSON / Response / Request schema)
   - You MUST return ONLY a valid JSON object matching the exact schema below.
   - No explanations, no markdown, no extra text.
 
