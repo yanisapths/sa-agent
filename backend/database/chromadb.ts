@@ -14,7 +14,7 @@ const embeddings = new MistralAIEmbeddings({
 });
 
 export const vectorStore = new Chroma(embeddings, {
-  collectionName: process.env.CHROMA_COLLECTION,
+  collectionName: "aster-system",
   chromaCloudAPIKey: process.env.CHROMA_API_KEY,
   clientParams: {
     host: "api.trychroma.com",

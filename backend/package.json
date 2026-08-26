@@ -9,13 +9,15 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/express": "^5.0.6"
+    "@types/express": "^5.0.6",
+    "@types/uuid": "^11.0.0"
   },
   "dependencies": {
     "@chroma-core/default-embed": "^0.1.9",
+    "@langchain/anthropic": "^1.4.0",
     "@langchain/community": "^1.1.27",
-    "@langchain/core": "^1.1.42",
-    "@langchain/langgraph": "^1.2.9",
+    "@langchain/core": "^1.1.48",
+    "@langchain/langgraph": "^1.4.1",
     "@langchain/mistralai": "^1.0.8",
     "@langchain/ollama": "^1.2.6",
     "@langchain/textsplitters": "^1.0.1",
@@ -26,6 +28,7 @@
     "cheerio": "^1.2.0",
     "chromadb": "^3.4.3",
     "cors": "^2.8.5",
+    "deepagents": "^1.10.2",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "html-to-text": "^9.0.5",

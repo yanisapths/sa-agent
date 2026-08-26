@@ -10,7 +10,7 @@ export const skillsPrompt = SKILLS.map(
 
 export const skillMiddleware = createMiddleware({
   name: "skillMiddleware",
-  stateSchema: CustomState,
+  // stateSchema: CustomState,
   tools: [loadSkill, writeSqlQuery],
   wrapModelCall: async (request, handler) => {
     const skillsAddendum =
