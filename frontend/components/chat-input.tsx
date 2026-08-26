@@ -12,12 +12,18 @@ export interface Attachment {
   isImage: boolean;
 }
 
+export interface MentionItem {
+  token: string;
+  label: string;
+}
+
 interface ChatInputProps {
   onSend: (message: string, attachments: Attachment[]) => void;
   isLoading?: boolean;
   placeholder?: string;
   value: string;
   onChange: (val: string) => void;
+  mentions?: MentionItem[];
 }
 
 export const sendButtonVariants: Variants = {
@@ -38,9 +44,28 @@ export function ChatInput({
   placeholder,
   value,
   onChange,
+  mentions = [],
 }: ChatInputProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mentionMatch = value.match(/@([^\s]*)$/);
+  const mentionQuery = mentionMatch ? mentionMatch[1] : null;
+  const mentionOptions =
+    mentionQuery === null
+      ? []
+      : mentions
+          .filter((item) => {
+            const q = mentionQuery.toLowerCase();
+            return (
+              item.token.toLowerCase().includes(q) ||
+              item.label.toLowerCase().includes(q)
+            );
+          })
+          .slice(0, 6);
+
+  const insertMention = (token: string) => {
+    onChange(value.replace(/@[^\s]*$/, `${token} `));
+  };
 
   const handleFiles = useCallback((files: FileList | null) => {
     if (!files) return;
@@ -77,6 +102,10 @@ export function ChatInput({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      if (mentionOptions[0]) {
+        insertMention(mentionOptions[0].token);
+        return;
+      }
       handleSubmit(e);
     }
   };
@@ -90,13 +119,38 @@ export function ChatInput({
         type="file"
         multiple
         accept="image/*,.pdf,.txt,.csv,.docx,.xlsx"
-        className="hidden"
+        className="hidden text-black"
         onChange={(e) => handleFiles(e.target.files)}
         onClick={(e) => ((e.target as HTMLInputElement).value = "")}
       />
 
-      <form onSubmit={handleSubmit}>
-        <div className="relative rounded-2xl border border-[#716D65]/20 bg-white shadow-[6px_2px_35px_rgba(0,0,0,0.05)] overflow-hidden">
+      <form onSubmit={handleSubmit} className="relative">
+        {mentionOptions.length > 0 && (
+          <ul
+            role="listbox"
+            aria-label="Vault mentions"
+            className="absolute bottom-full left-0 right-0 z-10 mb-2 overflow-hidden rounded-xl border border-[#716D65]/15 bg-white shadow-[6px_2px_35px_rgba(0,0,0,0.05)]"
+          >
+            {mentionOptions.map((item, index) => (
+              <li key={item.token}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={index === 0}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    insertMention(item.token);
+                  }}
+                  className="flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-[#716D65]/10"
+                >
+                  <span className="font-medium">{item.token}</span>
+                  <span className="text-xs text-[#716D65]">{item.label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="relative overflow-hidden rounded-2xl border border-[#716D65]/20 bg-white shadow-[6px_2px_35px_rgba(0,0,0,0.05)]">
           <AnimatePresence>
             {attachments.length > 0 && (
               <motion.div
@@ -159,7 +213,7 @@ export function ChatInput({
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isLoading}
-            className="w-full min-h-[120px] resize-none border-0 bg-transparent outline-none ring-0 p-4 text-foreground placeholder:text-muted-foreground block"
+            className="w-full min-h-[120px] resize-none border-0 bg-transparent outline-none ring-0 p-4 text-foreground placeholder:text-black block"
             style={{ boxShadow: "none" }}
           />
 

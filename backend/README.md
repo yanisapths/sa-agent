@@ -21,10 +21,14 @@ cp .env.example .env
 
 Fill in:
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY` (server-side only)
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (server-side only)
+- `SUPABASE_VAULT_BUCKET` (Storage bucket, default `vault`)
+- `VAULT_STORAGE_FOLDER` (object-key prefix inside the bucket)
+- `VAULT_DEV_TOKEN` / `VAULT_DEFAULT_USER_ID` for local Bearer auth
 - `CHROMA_HOST` and `CHROMA_API_KEY` (plus optional `CHROMA_TENANT` / `CHROMA_DATABASE`)
 - `OPENAI_API_KEY`
+
+Create the `vault` Storage bucket, then run `sql/vault.sql` in the Supabase SQL editor.
 
 3. Run
 
@@ -37,6 +41,17 @@ npm run dev
 ### Health
 
 - `GET /health`
+
+### Vault (`Authorization: Bearer <token>` on every request)
+
+- `GET /v1/vault/folders?q=`
+- `POST /v1/vault/folders` body: `{ "name": "Requirements", "description": "" }`
+- `DELETE /v1/vault/folders/:folderId`
+- `POST /v1/vault/files` multipart: `folderId`, `file`, optional `description`
+- `DELETE /v1/vault/files/:fileId`
+- `GET /v1/vault/mentions?q=&limit=8`
+
+Local auth: send `VAULT_DEV_TOKEN`. Production: a Supabase user access token.
 
 ### Supabase Storage
 

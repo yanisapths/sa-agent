@@ -1,17 +1,17 @@
 import { Chroma } from "@langchain/community/vectorstores/chroma";
-import { MistralAIEmbeddings } from "@langchain/mistralai";
-// import { OllamaEmbeddings } from "@langchain/ollama";
+// import { MistralAIEmbeddings } from "@langchain/mistralai";
+import { OllamaEmbeddings } from "@langchain/ollama";
 
 // for local
-// export const embeddings = new OllamaEmbeddings({
-//   model: process.env.OLLAMA_EMBED_MODEL,
-//   baseUrl: process.env.OLLAMA_URL,
-// });
-
-const embeddings = new MistralAIEmbeddings({
-  model: "mistral-embed",
-  apiKey: process.env.MISTRAL_API_KEY,
+export const embeddings = new OllamaEmbeddings({
+  model: process.env.OLLAMA_EMBED_MODEL,
+  baseUrl: process.env.OLLAMA_URL,
 });
+
+// const embeddings = new MistralAIEmbeddings({
+//   model: "mistral-embed",
+//   apiKey: process.env.MISTRAL_API_KEY,
+// });
 
 export const vectorStore = new Chroma(embeddings, {
   collectionName: "aster-system",

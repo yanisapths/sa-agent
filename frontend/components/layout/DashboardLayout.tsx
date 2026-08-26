@@ -1,5 +1,9 @@
+"use client";
+
 import { useState } from "react";
+
 import { AppSidebar } from "./AppSideBar";
+import { AppTabs } from "./AppTabs";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -15,8 +19,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         onToggle={() => setSidebarExpanded(!sidebarExpanded)}
       />
 
-      <main className="h-screen min-h-0 flex-1 overflow-hidden">
-        {children}
+      <main className="flex h-screen min-h-0 flex-1 flex-col overflow-hidden">
+        <AppTabs />
+        <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
       </main>
     </div>
   );

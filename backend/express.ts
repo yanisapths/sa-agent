@@ -12,6 +12,8 @@ import {
 import multer from "multer";
 import path from "path";
 import { HumanMessage, type ContentBlock } from "@langchain/core/messages";
+import { errorHandler } from "./middleware/errorHandler";
+import { vault } from "./routes/vault";
 
 const app = express();
 app.disable("x-powered-by");
@@ -20,7 +22,12 @@ const origins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",")
   : ["http://localhost:3000"];
 
-app.use(cors({ origin: origins }));
+app.use(
+  cors({
+    origin: origins,
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 app.options("*", cors());
 
 app.use(express.json({ limit: "4mb" }));
@@ -133,6 +140,9 @@ app.post("/chat", upload.array("files"), async (req, res) => {
     return res.status(400).json({ ok: false, error: errorMessage(e) });
   }
 });
+
+app.use("/v1/vault", vault);
+app.use(errorHandler);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.listen(port, () => {

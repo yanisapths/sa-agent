@@ -6,6 +6,7 @@ import {
   ChatInput,
   sendButtonVariants,
 } from "@/components/chat-input";
+import { useVaultMentions } from "@/features/vault/useVaultMentions";
 import { useChat } from "@/hooks/use-chat";
 import { Button } from "./ui/Button";
 import { Code, FileText } from "lucide-react";
@@ -30,6 +31,7 @@ export function ChatInterface() {
   const { messages, sendMessage, status } = useChat();
   const isLoading = status === "streaming" || status === "submitted";
   const hasMessages = messages.length > 0;
+  const mentions = useVaultMentions();
   const [input, setInput] = useState("");
 
   const handleSend = (text: string, attachments: Attachment[]) => {
@@ -76,6 +78,7 @@ export function ChatInterface() {
                 isLoading={isLoading}
                 value={input}
                 onChange={setInput}
+                mentions={mentions}
               />
             </div>
 
@@ -109,6 +112,7 @@ export function ChatInterface() {
             placeholder="Write a message..."
             value={input}
             onChange={setInput}
+            mentions={mentions}
           />
         </div>
       )}

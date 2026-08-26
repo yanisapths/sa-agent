@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { UIMessage, UIPart } from "@/components/chat-message";
 import { Attachment } from "@/components/chat-input";
+import { AGENT_API } from "@/lib/api";
 
 type Status = "idle" | "submitted" | "streaming" | "error";
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
@@ -349,7 +350,7 @@ export const useChat = () => {
       formData.append("message", text);
       attachments.forEach((att) => formData.append("files", att.file));
 
-      const res = await fetch("http://localhost:5001/chat", {
+      const res = await fetch(`${AGENT_API}/chat`, {
         method: "POST",
         body: formData,
       });
