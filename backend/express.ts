@@ -1,24 +1,17 @@
 import cors from "cors";
 import "dotenv/config";
 import express from "express";
-import multer from "multer";
-import path from "path";
 import { v4 as uuidv4 } from "uuid";
-import { HumanMessage, type ContentBlock } from "@langchain/core/messages";
-
 import { chatAgent } from "./agents/chat/agent";
 import {
-  cleanModelOutput,
   errorMessage,
-  looksLikeArtifact,
-  normalizeArtifact,
-  stripThinking,
+  lastAssistantContent,
+  normalizeApiSpec,
   tryParseJsonObject,
 } from "./helpers";
-
-// ─────────────────────────────────────────────
-// App setup
-// ─────────────────────────────────────────────
+import multer from "multer";
+import path from "path";
+import { HumanMessage, type ContentBlock } from "@langchain/core/messages";
 
 const app = express();
 app.disable("x-powered-by");
@@ -29,39 +22,32 @@ const origins = process.env.CORS_ORIGIN
 
 app.use(cors({ origin: origins }));
 app.options("*", cors());
-app.use(express.json({ limit: "4mb" }));
 
-// ─────────────────────────────────────────────
-// Health
-// ─────────────────────────────────────────────
+app.use(express.json({ limit: "4mb" }));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
-
-// ─────────────────────────────────────────────
-// File upload config
-// ─────────────────────────────────────────────
-
+// -----------------------------
+// Chat (RAG Agent)
+// -----------------------------
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB per file
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
 });
-
-// ─────────────────────────────────────────────
-// POST /chat
-// ─────────────────────────────────────────────
 
 app.post("/chat", upload.array("files"), async (req, res) => {
   try {
-    const message: string = req.body.message ?? "";
+    const message = req.body.message ?? "";
     const files = (req.files ?? []) as Express.Multer.File[];
 
-    // Build multimodal content
+    // Build multimodal content array
     const content: ContentBlock[] = [];
 
+    // Process image files into base64 for the LLM
     for (const file of files) {
-      if (file.mimetype.startsWith("image/")) {
+      const isImage = file.mimetype.startsWith("image/");
+      if (isImage) {
         content.push({
           type: "image_url",
           image_url: {
@@ -69,16 +55,24 @@ app.post("/chat", upload.array("files"), async (req, res) => {
           },
         } as ContentBlock);
       } else {
-        const ext = path.extname(file.originalname).toLowerCase().slice(1);
+        // For non-image files, extract text and inject as context
+        const ext = path.extname(file.originalname).toLowerCase();
+        const textContent = file.buffer.toString("utf-8");
         content.push({
           type: "text",
-          text: `[Attached file: ${file.originalname}]\n\`\`\`${ext}\n${file.buffer.toString("utf-8")}\n\`\`\``,
+          text: `[Attached file: ${file.originalname}]
+        \`\`\`${ext.slice(1)}
+        ${textContent}
+        \`\`\``,
         } as ContentBlock);
       }
     }
 
     if (message) {
-      content.push({ type: "text", text: message });
+      content.push({
+        type: "text",
+        text: message,
+      });
     }
 
     if (content.length === 0) {
@@ -87,64 +81,58 @@ app.post("/chat", upload.array("files"), async (req, res) => {
         .json({ ok: false, error: "Message or file required." });
     }
 
-    // ── Run agent ──
-    const result = await chatAgent.invoke(
-      { messages: [new HumanMessage({ content })] },
-      { configurable: { thread_id: uuidv4() } }
+    const stream = await chatAgent.stream(
+      {
+        messages: [
+          new HumanMessage({
+            content,
+          }),
+        ],
+      },
+      { configurable: { thread_id: uuidv4() }, streamMode: "values" },
     );
 
-    // ── Extract and clean raw output ──
-    const raw = result.finalResponse;
-    const stripped = stripThinking(raw);
-    const cleaned = cleanModelOutput(stripped);
+    let finalResult: any = null;
+    for await (const chunk of stream) {
+      finalResult = chunk;
 
-    console.log("[raw]", raw.slice(0, 300));
-    console.log("[cleaned]", cleaned.slice(0, 300));
+      const messages = chunk.messages ?? [];
+      const last = messages[messages.length - 1];
+      console.log(last);
+      if (last?.type === "ai") {
+        const text =
+          typeof last.content === "string"
+            ? last.content
+            : last.content?.map((c: any) => c.text ?? "").join("");
 
-    // ── Route to structured or plain text ──
-    return res.json(buildResponse(cleaned));
+        const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/);
+        if (thinkMatch) console.log("thinking:", thinkMatch[1].trim());
+
+        const answer = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+        if (answer) console.log("response:", answer);
+      }
+    }
+
+    const rawContent = lastAssistantContent(finalResult)
+      .replace(/<think>[\s\S]*?<\/think>/g, "")
+      .trim();
+    const parsed = tryParseJsonObject(rawContent);
+
+    if (!parsed?.type) {
+      return res.json({
+        ok: true,
+        type: "text",
+        data: { type: "text", text: rawContent },
+      });
+    }
+
+    const data = parsed.type === "api_spec" ? normalizeApiSpec(parsed) : parsed;
+
+    return res.json({ ok: true, type: data.type, data });
   } catch (e) {
-    console.error("[chat error]", e);
-    return res.status(500).json({ ok: false, error: errorMessage(e) });
+    return res.status(400).json({ ok: false, error: errorMessage(e) });
   }
 });
-
-// ─────────────────────────────────────────────
-// Response builder
-//
-// Returns one of:
-//   { ok: true, type: "text",     data: { text: string } }
-//   { ok: true, type: "code",     data: { language, filename, title, description, code } }
-//   { ok: true, type: "api_spec", data: { method, endpoint, ... } }
-//   { ok: true, type: "sql",      data: { dialect, sql, reasoning } }
-//   { ok: true, type: "diagram",  data: { diagramType, title, content } }
-// ─────────────────────────────────────────────
-
-function buildResponse(cleaned: string): object {
-  // Only attempt JSON parse if it genuinely looks like a structured artifact
-  if (looksLikeArtifact(cleaned)) {
-    const parsed = tryParseJsonObject(cleaned);
-
-    if (
-      parsed?.type &&
-      ["code", "api_spec", "sql", "diagram"].includes(parsed.type as string)
-    ) {
-      const data = normalizeArtifact(parsed);
-      return { ok: true, type: data.type, data };
-    }
-  }
-
-  // Everything else: plain conversational text
-  return {
-    ok: true,
-    type: "text",
-    data: { type: "text", text: cleaned },
-  };
-}
-
-// ─────────────────────────────────────────────
-// Start
-// ─────────────────────────────────────────────
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.listen(port, () => {
