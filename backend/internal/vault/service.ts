@@ -8,7 +8,7 @@ import {
   uploadVaultObject,
   vaultObjectKey,
   vaultStoragePath,
-} from "../../storage";
+} from "./storage";
 import type {
   CreateFolderInput,
   UploadFileInput,
@@ -52,8 +52,7 @@ const MIME_BY_EXT: Record<string, string> = {
   ".sql": "application/sql",
   ".docx":
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".xlsx":
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
 function newId(prefix: "fld" | "fil"): string {
@@ -132,7 +131,10 @@ export async function listFolders(
 
   const needle = q.trim();
   if (needle) {
-    query = query.ilike("name", `%${needle.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`);
+    query = query.ilike(
+      "name",
+      `%${needle.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`,
+    );
   }
 
   const { data: folders, error } = await query;
@@ -278,7 +280,11 @@ export async function uploadFile(
     created_at: createdAt,
   };
 
-  const { data, error } = await supabase.from(FILES).insert(row).select("*").single();
+  const { data, error } = await supabase
+    .from(FILES)
+    .insert(row)
+    .select("*")
+    .single();
   if (error) {
     await removeVaultObjects([objectKey]).catch(() => undefined);
     throwIfError(error);

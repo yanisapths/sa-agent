@@ -1,3 +1,4 @@
+import { Document } from "@langchain/core/documents";
 import { parse } from "pgsql-ast-parser";
 import type { DataTypeDef, Statement } from "pgsql-ast-parser";
 
@@ -43,14 +44,7 @@ export function parseSQLToSchema(sql: string): TableSchema[] {
     .replace(/::[a-z ]+(\[\])?/g, "") // ✅ strip all PG casts
     .replace(/DEFAULT '\{\}'/g, "DEFAULT ''");
 
-  let statements: Statement[];
-  try {
-    statements = parse(normalized);
-  } catch (err) {
-    console.error("❌ Failed to parse SQL:", err);
-    throw err;
-  }
-
+  const statements: Statement[] = parse(normalized);
   const tables: TableSchema[] = [];
 
   for (const stmt of statements) {
@@ -120,4 +114,57 @@ export function parseSQLToSchema(sql: string): TableSchema[] {
   }
 
   return tables;
+}
+
+/** One document per table: columns, constraints, and outbound references. */
+export function schemaToDocuments(schemas: TableSchema[]): Document[] {
+  return schemas.map((table) => {
+    const lines = [`Table: ${table.table}`, "Columns:"];
+
+    for (const col of table.columns) {
+      const flags = [
+        col.primary ? "PK" : null,
+        col.unique ? "UNIQUE" : null,
+        col.nullable === false ? "NOT NULL" : null,
+      ].filter(Boolean);
+
+      lines.push(
+        `- ${col.name} (${col.type})` +
+          (flags.length ? ` [${flags.join(", ")}]` : "") +
+          (col.references
+            ? ` -> references ${col.references.table}.${col.references.column}`
+            : ""),
+      );
+    }
+
+    return new Document({
+      pageContent: lines.join("\n"),
+      metadata: { type: "schema", table: table.table },
+    });
+  });
+}
+
+/** One document per table that has foreign keys, describing its joins. */
+export function relationshipToDocuments(schemas: TableSchema[]): Document[] {
+  return schemas
+    .filter((table) => table.foreignKeys.length > 0)
+    .map(
+      (table) =>
+        new Document({
+          pageContent: [
+            `Relationships for table: ${table.table}`,
+            ...table.foreignKeys.map(
+              (fk) =>
+                `- ${table.table}.${fk.column} -> ${fk.references.table}.${fk.references.column}`,
+            ),
+          ].join("\n"),
+          metadata: {
+            type: "relationship",
+            table: table.table,
+            related_tables: table.foreignKeys
+              .map((fk) => fk.references.table)
+              .join(","),
+          },
+        }),
+    );
 }

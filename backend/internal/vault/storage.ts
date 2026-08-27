@@ -1,6 +1,6 @@
-import { config } from "./config";
-import { getSupabase } from "./database/supabase";
-import { throwIfError } from "./internal/httpError";
+import { config } from "../../config";
+import { getSupabase } from "../../database/supabase";
+import { throwIfError } from "../httpError";
 
 export function vaultBucket() {
   return getSupabase().storage.from(config.supabase.vaultBucket);
@@ -12,7 +12,12 @@ export function vaultObjectKey(
   fileId: string,
   filename: string,
 ): string {
-  const parts = [config.supabase.vaultFolder, userId, folderId, `${fileId}-${filename}`]
+  const parts = [
+    config.supabase.vaultFolder,
+    userId,
+    folderId,
+    `${fileId}-${filename}`,
+  ]
     .map((part) => part.trim())
     .filter(Boolean);
   return parts.join("/");
