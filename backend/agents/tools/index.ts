@@ -1,4 +1,5 @@
 import type { StructuredToolInterface } from "@langchain/core/tools";
+import { getJiraTicket, readJiraUserStory } from "./jira";
 import { searchApiSpecs, searchSchemaDocs } from "./knowledge";
 import {
   describeTables,
@@ -10,6 +11,9 @@ import {
 /**
  * Single source of truth for every tool an agent may be granted.
  * Agents opt in by name via `defineAgent({ tools: [...] })`.
+ *
+ * Jira MCP tools are always registered but must only be called when the user
+ * explicitly asks for a ticket or user story.
  */
 export const TOOL_REGISTRY = {
   list_tables: listTables,
@@ -18,6 +22,8 @@ export const TOOL_REGISTRY = {
   run_sql: runSql,
   search_api_specs: searchApiSpecs,
   search_schema_docs: searchSchemaDocs,
+  get_jira_ticket: getJiraTicket,
+  read_jira_user_story: readJiraUserStory,
 } satisfies Record<string, StructuredToolInterface>;
 
 export type ToolName = keyof typeof TOOL_REGISTRY;

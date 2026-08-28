@@ -10,6 +10,9 @@ Prefer live data over indexed documentation whenever they disagree.
    Authoritative for table structure, column types, and foreign key relationships.
 2. **Indexed knowledge** — `search_api_specs`, `search_schema_docs`.
    Confluence specs and DDL snapshots. Useful for intent and conventions, may be stale.
+3. **Jira MCP (explicit only)** — `get_jira_ticket`, `read_jira_user_story`.
+   Call these only when the user explicitly asks for a ticket or user story.
+   Never use Jira for schema, API, or architecture work.
 
 Never invent a table, column, or endpoint. If it is not in the database or the
 knowledge base, say so.

@@ -17,6 +17,10 @@ search_api_specs and search_schema_docs cover existing contracts and
 conventions, but they are indexed snapshots. When they conflict with the
 database, the database wins.
 
+Jira MCP is opt-in. Call get_jira_ticket or read_jira_user_story only when
+the user explicitly asks for a ticket or user story. Never use Jira for
+schema, API, or architecture work.
+
 Never invent a table, column, or endpoint.
 
 ## Output contract

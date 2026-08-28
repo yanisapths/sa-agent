@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "ingest:confluence": "bun run agents/ingest/confluence.ts",
     "ingest:ddl": "bun run agents/ingest/ddl.ts",
-    "ingest:url": "bun run agents/ingest/url.ts"
+    "ingest:url": "bun run agents/ingest/url.ts",
+    "mcp:jira": "bun run agents/resources/mcp/mcp-server.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -23,9 +24,11 @@
     "@langchain/community": "^1.1.27",
     "@langchain/core": "^1.1.48",
     "@langchain/langgraph": "^1.4.1",
+    "@langchain/mcp-adapters": "^1.1.4",
     "@langchain/mistralai": "^1.0.8",
     "@langchain/ollama": "^1.2.6",
     "@langchain/textsplitters": "^1.0.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@supabase/supabase-js": "^2.49.1",
     "@types/cors": "^2.8.19",
     "@types/multer": "^2.1.0",

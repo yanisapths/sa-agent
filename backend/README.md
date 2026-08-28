@@ -17,14 +17,17 @@ agents/
   index.ts              public exports
   resources/            what the harness mounts read-only at /resources
     AGENTS.md           memory: always loaded into the system prompt
+    mcp/                Jira MCP client + stdio server (ticket / user story)
     skills/             progressive-disclosure skills, loaded on demand
       backend/          API and endpoint design
       system-analyst/   requirements, data models, SQL
       solution-architect/ architecture and diagrams
+      jira/             explicit Jira MCP — tickets and user stories only
   tools/
     index.ts            TOOL_REGISTRY, TOOL_DEFINITIONS, resolveTools()
     postgres.ts         live schema introspection + read-only SQL
     knowledge.ts        Chroma retrieval over Confluence and DDL docs
+    jira.ts             explicit Jira MCP wrappers (ticket + user story)
   ingest/               one-off pipelines that populate the vector store
     confluence.ts       Confluence API spec pages
     ddl.ts              a .sql DDL dump
@@ -47,6 +50,7 @@ internal/               artifact normalisation, errors, vault service
 | ------------- | ----------------------------------------- | -------------------- |
 | Live schema   | `list_tables`, `describe_tables`, `inspect_relationships`, `run_sql` | Real time |
 | Knowledge     | `search_api_specs`, `search_schema_docs`  | Last ingestion run   |
+| Jira MCP      | `get_jira_ticket`, `read_jira_user_story` | Only on explicit ask |
 | Skills        | `resources/skills/*/SKILL.md`             | On demand            |
 | Memory        | `resources/AGENTS.md`                     | Every turn           |
 | Session       | Per-`threadId` checkpointer               | Lifetime of process  |
@@ -63,6 +67,17 @@ cp .env.example .env
 
 Required to run the agent: `ANTHROPIC_API_KEY`, `DATABASE_URL`, and the
 `CHROMA_*` values. `DATABASE_URL` should point at a role with read access only.
+
+Jira MCP is optional. The agent calls it **only** when the user explicitly asks
+for a ticket or user story (`get ticket PROJ-123`, `read user story PROJ-456`).
+Configure one of:
+
+- Remote MCP: `JIRA_MCP_URL`, optional `JIRA_MCP_TOKEN`, optional
+  `JIRA_MCP_TRANSPORT=sse`.
+- External stdio server: `JIRA_MCP_COMMAND` and optional `JIRA_MCP_ARGS`.
+- Local stdio server (this repo): `JIRA_URL` plus either
+  `JIRA_PERSONAL_TOKEN` (Server/DC) or `JIRA_USERNAME` + `JIRA_API_TOKEN`
+  (Cloud). Set `JIRA_SSL_VERIFY=false` for a self-signed cert.
 
 ```bash
 bun run dev
@@ -96,6 +111,18 @@ Copy `agents/templates/SKILL.template.md` to
 `agents/resources/skills/<name>/SKILL.md`. The agent reads only the frontmatter
 at startup and loads the body when a task matches the description, so write the
 description as a trigger.
+
+## Jira MCP
+
+`get_jira_ticket` and `read_jira_user_story` talk to Jira through MCP. They are
+registered on the agent but must only be called when the user explicitly asks
+for a ticket or user story. The `jira` skill is the trigger for that path.
+
+The local stdio server lives at `agents/resources/mcp/mcp-server.ts`:
+
+```bash
+bun run mcp:jira
+```
 
 ## Ingestion
 
