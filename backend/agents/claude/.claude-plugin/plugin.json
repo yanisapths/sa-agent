@@ -1,0 +1,7 @@
+{
+  "name": "sa-agent",
+  "description": "Live Postgres schema tools, Confluence/DDL retrieval, Jira MCP, and SA/architecture skills for Claude Code workspaces.",
+  "author": {
+    "name": "sa-agent"
+  }
+}

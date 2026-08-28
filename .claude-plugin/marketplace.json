@@ -1,0 +1,14 @@
+{
+  "name": "sa-agent",
+  "description": "Capability provider for system analysis: live Postgres, indexed knowledge, Jira, and SA skills.",
+  "owner": {
+    "name": "sa-agent"
+  },
+  "plugins": [
+    {
+      "name": "sa-agent",
+      "source": "./backend/agents/claude",
+      "description": "Live Postgres schema, indexed knowledge, Jira MCP, and system-analysis skills for any product repo."
+    }
+  ]
+}

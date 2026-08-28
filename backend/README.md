@@ -22,11 +22,14 @@ agents/
       backend/          API and endpoint design
       system-analyst/   requirements, data models, SQL
       solution-architect/ architecture and diagrams
+      test-engineer/    test plans and fixtures
       jira/             explicit Jira MCP — tickets and user stories only
+    claude/             Claude Code plugin (skills, subagents, MCP config)
   tools/
     index.ts            TOOL_REGISTRY, TOOL_DEFINITIONS, resolveTools()
-    postgres.ts         live schema introspection + read-only SQL
-    knowledge.ts        Chroma retrieval over Confluence and DDL docs
+    core/               shared implementations used by LangChain and MCP
+    postgres.ts         LangChain wrappers for live schema tools
+    knowledge.ts        LangChain wrappers for Chroma retrieval
     jira.ts             explicit Jira MCP wrappers (ticket + user story)
   ingest/               one-off pipelines that populate the vector store
     confluence.ts       Confluence API spec pages
@@ -34,6 +37,9 @@ agents/
     url.ts              an arbitrary page or text document
     parsers/            page and DDL parsers
   templates/            copy-paste starting points for new agents and skills
+
+mcp/
+  server.ts             sa-knowledge stdio MCP (Postgres + Chroma)
 
 database/
   postgres.ts           read-only pooled client
@@ -132,7 +138,30 @@ The local stdio server lives at `agents/resources/mcp/mcp-server.ts`:
 
 ```bash
 bun run mcp:jira
+bun run mcp:knowledge
 ```
+
+## Claude Code plugin
+
+The same tools, skills, and memory are packaged as a Claude Code plugin so a
+separate product repo can use Claude Code as the agent runtime. sa-agent stays
+the knowledge and tool provider.
+
+```bash
+export SA_AGENT_HOME=/path/to/sa-agent   # add to ~/.zshrc
+cd /path/to/product-repo
+claude plugin marketplace add /path/to/sa-agent
+```
+
+Then in a Claude Code session: `/plugin install sa-agent@sa-agent`.
+
+MCP servers are spawned from `$SA_AGENT_HOME` and load `backend/.env` by
+absolute path. Confirm they loaded with `/mcp`. Details:
+`agents/claude/README.md`.
+
+Claude Code does not invoke the LangChain agent, so those sessions are not
+`/chat` traces. Each MCP tool call is still recorded in LangSmith as a tool
+run (tags `mcp`, `claude-code`) when `LANGSMITH_TRACING=true`.
 
 ## Ingestion
 

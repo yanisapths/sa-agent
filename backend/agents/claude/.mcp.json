@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "sa-knowledge": {
+      "command": "bun",
+      "args": ["${SA_AGENT_HOME}/backend/mcp/server.ts"]
+    },
+    "jira": {
+      "command": "bun",
+      "args": [
+        "${SA_AGENT_HOME}/backend/agents/resources/mcp/mcp-server.ts"
+      ]
+    }
+  }
+}

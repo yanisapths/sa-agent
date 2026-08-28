@@ -4,8 +4,7 @@ function required(name: string): string {
   return value;
 }
 
-const POSTGRES_URI_EXAMPLE =
-  "postgresql://user:password@host:5432/database";
+const POSTGRES_URI_EXAMPLE = "postgresql://user:password@host:5432/database";
 
 /**
  * `pg` silently accepts a bare hostname and resolves it against a dummy base,
@@ -110,7 +109,8 @@ export const config = {
     mcpCommand: process.env.JIRA_MCP_COMMAND || "",
     mcpArgs: process.env.JIRA_MCP_ARGS || "",
     url: process.env.JIRA_URL || confluenceOrigin(),
-    username: process.env.JIRA_USERNAME || process.env.CONFLUENCE_USERNAME || "",
+    username:
+      process.env.JIRA_USERNAME || process.env.CONFLUENCE_USERNAME || "",
     apiToken:
       process.env.JIRA_API_TOKEN || process.env.CONFLUENCE_ACCESS_TOKEN || "",
     personalToken:

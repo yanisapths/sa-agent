@@ -5,7 +5,7 @@
  * Spawned by mcp-client.ts, or run directly:
  *   bun run agents/resources/mcp/mcp-server.ts
  */
-import "dotenv/config";
+import { backendEnvLoaded } from "../../../load-env";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -13,6 +13,9 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { fetchIssue, formatTicket, formatUserStory } from "./jira-api";
+import { tracedMcpTool, tracingStatus } from "../../../mcp/trace";
+
+void backendEnvLoaded;
 
 const ISSUE_KEY_SCHEMA = {
   type: "object",
@@ -59,28 +62,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 });
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const issueKey = String(
-    (request.params.arguments as { issue_key?: string } | undefined)
-      ?.issue_key ?? "",
-  );
+  const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+  const issueKey = String(args.issue_key ?? "");
+  const name = request.params.name;
 
   try {
-    switch (request.params.name) {
-      case "get_ticket": {
-        const issue = await fetchIssue(issueKey);
-        return {
-          content: [{ type: "text" as const, text: formatTicket(issue) }],
-        };
+    const text = await tracedMcpTool("jira", name, args, async () => {
+      switch (name) {
+        case "get_ticket":
+          return formatTicket(await fetchIssue(issueKey));
+        case "read_user_story":
+          return formatUserStory(await fetchIssue(issueKey));
+        default:
+          throw new Error(`Unknown tool: ${name}`);
       }
-      case "read_user_story": {
-        const issue = await fetchIssue(issueKey);
-        return {
-          content: [{ type: "text" as const, text: formatUserStory(issue) }],
-        };
-      }
-      default:
-        throw new Error(`Unknown tool: ${request.params.name}`);
-    }
+    });
+
+    return { content: [{ type: "text" as const, text }] };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return {
@@ -93,7 +91,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Jira MCP server running on stdio");
+  console.error(`Jira MCP server running on stdio (${tracingStatus()})`);
 }
 
 main().catch((err) => {
