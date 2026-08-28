@@ -3,8 +3,25 @@
 import { ArrowUp, PlusIcon, X, FileText } from "lucide-react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { Button } from "./ui/Button";
-import { useRef, useState, useCallback } from "react";
+import { SlashCommandChip } from "./slash-command-chip";
+import { SlashCommandMenu } from "./slash-command-menu";
+import {
+  useRef,
+  useState,
+  useCallback,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import Image from "next/image";
+import {
+  type SlashCommand,
+  composeSlashMessage,
+  consumeSlashToken,
+  filterSlashCommands,
+  findSlashCommand,
+  matchSlashQuery,
+} from "./slash-commands";
+
 export interface Attachment {
   id: string;
   file: File;
@@ -47,8 +64,17 @@ export function ChatInput({
   mentions = [],
 }: ChatInputProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const mentionMatch = value.match(/@([^\s]*)$/);
+  const slashQuery = matchSlashQuery(value);
+  const slashOptions =
+    slashQuery === null
+      ? []
+      : filterSlashCommands(
+          slashQuery,
+          slashCommands.map((command) => command.token),
+        );
+  const mentionMatch = slashQuery !== null ? null : value.match(/@([^\s]*)$/);
   const mentionQuery = mentionMatch ? mentionMatch[1] : null;
   const mentionOptions =
     mentionQuery === null
@@ -65,6 +91,33 @@ export function ChatInput({
 
   const insertMention = (token: string) => {
     onChange(value.replace(/@[^\s]*$/, `${token} `));
+  };
+
+  const insertSlashCommand = (
+    command: SlashCommand,
+    fromValue: string = value,
+  ) => {
+    onChange(consumeSlashToken(fromValue));
+    setSlashCommands((prev) =>
+      prev.some((item) => item.token === command.token)
+        ? prev
+        : [...prev, command],
+    );
+  };
+
+  const handleInputChange = (next: string) => {
+    const completed = next.match(/(?:^|\s)\/([A-Za-z][A-Za-z0-9-]*)\s$/);
+    if (completed) {
+      const command = findSlashCommand(completed[1]);
+      if (
+        command &&
+        !slashCommands.some((item) => item.token === command.token)
+      ) {
+        insertSlashCommand(command, next);
+        return;
+      }
+    }
+    onChange(next);
   };
 
   const handleFiles = useCallback((files: FileList | null) => {
@@ -91,26 +144,42 @@ export function ChatInput({
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if ((!value.trim() && attachments.length === 0) || isLoading) return;
-    onSend(value, attachments);
+  const submit = () => {
+    const message = composeSlashMessage(value, slashCommands);
+    if ((!message && attachments.length === 0) || isLoading) return;
+    onSend(message, attachments);
     onChange("");
     setAttachments([]);
+    setSlashCommands([]);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    submit();
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      if (slashOptions[0]) {
+        insertSlashCommand(slashOptions[0]);
+        return;
+      }
       if (mentionOptions[0]) {
         insertMention(mentionOptions[0].token);
         return;
       }
-      handleSubmit(e);
+      submit();
     }
   };
 
   const canSend = value.trim().length > 0 || attachments.length > 0;
+  const hasPills = attachments.length > 0 || slashCommands.length > 0;
+  const inputPlaceholder = slashCommands.some(
+    (command) => command.token === "/jira",
+  )
+    ? "Ticket key, e.g. PROJ-123"
+    : (placeholder ?? "How can I help you today?");
 
   return (
     <div className="w-full">
@@ -125,6 +194,10 @@ export function ChatInput({
       />
 
       <form onSubmit={handleSubmit} className="relative">
+        <SlashCommandMenu
+          commands={slashOptions}
+          onSelect={insertSlashCommand}
+        />
         {mentionOptions.length > 0 && (
           <ul
             role="listbox"
@@ -152,13 +225,30 @@ export function ChatInput({
         )}
         <div className="relative overflow-hidden rounded-2xl border border-[#716D65]/20 bg-white shadow-[6px_2px_35px_rgba(0,0,0,0.05)]">
           <AnimatePresence>
-            {attachments.length > 0 && (
+            {hasPills && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
-                className="flex flex-wrap gap-2 px-3 pt-3"
+                className="flex flex-wrap items-center gap-2 px-3 pt-3"
               >
+                {slashCommands.map((command) => (
+                  <motion.div
+                    key={command.token}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                  >
+                    <SlashCommandChip
+                      command={command}
+                      onRemove={() =>
+                        setSlashCommands((prev) =>
+                          prev.filter((item) => item.token !== command.token),
+                        )
+                      }
+                    />
+                  </motion.div>
+                ))}
                 {attachments.map((att) => (
                   <motion.div
                     key={att.id}
@@ -208,9 +298,9 @@ export function ChatInput({
           </AnimatePresence>
 
           <textarea
-            placeholder={placeholder ?? "How can I help you today?"}
+            placeholder={inputPlaceholder}
             value={value}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isLoading}
             className="w-full min-h-[120px] resize-none border-0 bg-transparent outline-none ring-0 p-4 text-foreground placeholder:text-black block"
