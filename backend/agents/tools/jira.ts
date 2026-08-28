@@ -1,9 +1,11 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { normalizeIssueKey } from "../resources/mcp/jira-api";
 import {
   getJiraMcpTools,
   isJiraMcpConfigured,
 } from "../resources/mcp/mcp-client";
+import { orToolError } from "./errors";
 
 const TICKET_TOOL_NAMES = [
   "get_ticket",
@@ -27,14 +29,23 @@ function asText(result: unknown): string {
   return JSON.stringify(result, null, 2);
 }
 
-async function callJiraMcp(
+function callJiraMcp(
+  preferredNames: readonly string[],
+  issueKey: string,
+): Promise<string> {
+  return orToolError("Jira MCP", () => invokeJiraMcp(preferredNames, issueKey));
+}
+
+async function invokeJiraMcp(
   preferredNames: readonly string[],
   issueKey: string,
 ): Promise<string> {
   if (!isJiraMcpConfigured()) {
     return (
-      "Jira MCP is not configured. Set JIRA_MCP_URL (remote MCP server) " +
-      "or JIRA_URL with JIRA_PERSONAL_TOKEN / JIRA_USERNAME+JIRA_API_TOKEN."
+      "Jira MCP is not configured. Set JIRA_URL with JIRA_PERSONAL_TOKEN / " +
+        "JIRA_USERNAME+JIRA_API_TOKEN, or Confluence Cloud credentials " +
+        "(CONFLUENCE_BASE_URL + CONFLUENCE_USERNAME/CONFLUENCE_ACCESS_TOKEN). " +
+        "Set JIRA_MCP_URL only when you have a remote MCP token."
     );
   }
 
@@ -54,7 +65,9 @@ async function callJiraMcp(
     );
   }
 
-  const result = await mcpTool.invoke({ issue_key: issueKey });
+  const result = await mcpTool.invoke({
+    issue_key: normalizeIssueKey(issueKey),
+  });
   return asText(result);
 }
 

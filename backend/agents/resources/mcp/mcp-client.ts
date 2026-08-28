@@ -33,9 +33,17 @@ function parseArgs(raw: string): string[] {
   return trimmed.split(/\s+/);
 }
 
+function hasJiraRestAuth(): boolean {
+  const jira = config.jira;
+  return Boolean(
+    jira.url &&
+      (jira.personalToken || (jira.username && jira.apiToken)),
+  );
+}
+
 export function isJiraMcpConfigured(): boolean {
   const jira = config.jira;
-  return Boolean(jira.mcpUrl || jira.mcpCommand || jira.url);
+  return Boolean(jira.mcpUrl || jira.mcpCommand || hasJiraRestAuth());
 }
 
 function jiraConnection(): Connection | undefined {
@@ -61,7 +69,7 @@ function jiraConnection(): Connection | undefined {
     };
   }
 
-  if (jira.url) {
+  if (hasJiraRestAuth()) {
     return {
       transport: "stdio",
       command: process.execPath,

@@ -66,18 +66,28 @@ cp .env.example .env
 ```
 
 Required to run the agent: `ANTHROPIC_API_KEY`, `DATABASE_URL`, and the
-`CHROMA_*` values. `DATABASE_URL` should point at a role with read access only.
+`CHROMA_*` values. `DATABASE_URL` must be a full connection URI
+(`postgresql://user:password@host:5432/database`) and should point at a role
+with read access only — a bare hostname is rejected at startup of the first
+query rather than failing later as a DNS error.
+
+A dependency the agent cannot reach is reported back to the model as tool
+output instead of failing the request, so `/chat` still answers from whatever
+sources are available.
 
 Jira MCP is optional. The agent calls it **only** when the user explicitly asks
 for a ticket or user story (`get ticket PROJ-123`, `read user story PROJ-456`).
 Configure one of:
 
-- Remote MCP: `JIRA_MCP_URL`, optional `JIRA_MCP_TOKEN`, optional
-  `JIRA_MCP_TRANSPORT=sse`.
+- Remote MCP: set `JIRA_MCP_URL` only when you have a token (`JIRA_MCP_TOKEN`).
+  Do not leave this pointed at `https://mcp.atlassian.com/...` without OAuth —
+  that looks “configured” and then fails to load tools.
 - External stdio server: `JIRA_MCP_COMMAND` and optional `JIRA_MCP_ARGS`.
 - Local stdio server (this repo): `JIRA_URL` plus either
   `JIRA_PERSONAL_TOKEN` (Server/DC) or `JIRA_USERNAME` + `JIRA_API_TOKEN`
-  (Cloud). Set `JIRA_SSL_VERIFY=false` for a self-signed cert.
+  (Cloud). If those are unset, Cloud Jira reuses `CONFLUENCE_BASE_URL` +
+  `CONFLUENCE_USERNAME` / `CONFLUENCE_ACCESS_TOKEN`. Set
+  `JIRA_SSL_VERIFY=false` for a self-signed cert.
 
 ```bash
 bun run dev

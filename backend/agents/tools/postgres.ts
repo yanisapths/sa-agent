@@ -2,8 +2,11 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { config } from "../../config";
 import { readOnlyQuery } from "../../database/postgres";
+import { orToolError } from "./errors";
 
 const SCHEMA = config.postgres.schema;
+
+const DATABASE = "The live application database";
 
 function asBlock(title: string, lines: string[]): string {
   if (lines.length === 0) return `${title}\n(none)`;
@@ -11,7 +14,7 @@ function asBlock(title: string, lines: string[]): string {
 }
 
 export const listTables = tool(
-  async () => {
+  async () => orToolError(DATABASE, async () => {
     const rows = await readOnlyQuery<{
       table_name: string;
       comment: string | null;
@@ -40,7 +43,7 @@ export const listTables = tool(
           (r.comment ? ` — ${r.comment}` : ""),
       ),
     );
-  },
+  }),
   {
     name: "list_tables",
     description:
@@ -51,7 +54,7 @@ export const listTables = tool(
 );
 
 export const describeTables = tool(
-  async ({ tables }) => {
+  async ({ tables }) => orToolError(DATABASE, async () => {
     const rows = await readOnlyQuery<{
       table_name: string;
       column_name: string;
@@ -106,7 +109,7 @@ export const describeTables = tool(
     return [...byTable]
       .map(([table, lines]) => asBlock(`Table: ${table}`, lines))
       .join("\n\n");
-  },
+  }),
   {
     name: "describe_tables",
     description:
@@ -119,7 +122,7 @@ export const describeTables = tool(
 );
 
 export const inspectRelationships = tool(
-  async ({ tables }) => {
+  async ({ tables }) => orToolError(DATABASE, async () => {
     const rows = await readOnlyQuery<{
       constraint_name: string;
       source_table: string;
@@ -158,7 +161,7 @@ export const inspectRelationships = tool(
           `(ON DELETE ${r.delete_rule})`,
       ),
     );
-  },
+  }),
   {
     name: "inspect_relationships",
     description:
@@ -175,7 +178,7 @@ export const inspectRelationships = tool(
 );
 
 export const runSql = tool(
-  async ({ sql }) => {
+  async ({ sql }) => orToolError(DATABASE, async () => {
     if (!/^\s*(select|with)\b/i.test(sql)) {
       return "Rejected: only SELECT and WITH statements are allowed.";
     }
@@ -190,7 +193,7 @@ export const runSql = tool(
         : "";
 
     return `${JSON.stringify(capped, null, 2)}${truncated}`;
-  },
+  }),
   {
     name: "run_sql",
     description:

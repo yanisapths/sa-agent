@@ -1,6 +1,9 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { apiSpecStore, ddlStore } from "../../database/chroma";
+import { orToolError } from "./errors";
+
+const KNOWLEDGE_BASE = "The indexed knowledge base";
 
 function join(docs: { pageContent: string }[]): string {
   if (docs.length === 0) return "No matching documents.";
@@ -8,10 +11,10 @@ function join(docs: { pageContent: string }[]): string {
 }
 
 export const searchApiSpecs = tool(
-  async ({ query, limit }) => {
-    const docs = await apiSpecStore.similaritySearch(query, limit);
-    return join(docs);
-  },
+  async ({ query, limit }) =>
+    orToolError(KNOWLEDGE_BASE, async () =>
+      join(await apiSpecStore.similaritySearch(query, limit)),
+    ),
   {
     name: "search_api_specs",
     description:
@@ -25,10 +28,10 @@ export const searchApiSpecs = tool(
 );
 
 export const searchSchemaDocs = tool(
-  async ({ query, limit }) => {
-    const docs = await ddlStore.similaritySearch(query, limit);
-    return join(docs);
-  },
+  async ({ query, limit }) =>
+    orToolError(KNOWLEDGE_BASE, async () =>
+      join(await ddlStore.similaritySearch(query, limit)),
+    ),
   {
     name: "search_schema_docs",
     description:

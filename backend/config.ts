@@ -4,6 +4,51 @@ function required(name: string): string {
   return value;
 }
 
+const POSTGRES_URI_EXAMPLE =
+  "postgresql://user:password@host:5432/database";
+
+/**
+ * `pg` silently accepts a bare hostname and resolves it against a dummy base,
+ * which surfaces much later as an opaque `getaddrinfo ENOTFOUND`. Reject
+ * anything that is not a real connection URI up front.
+ */
+function postgresUrl(): string {
+  const value = required("DATABASE_URL");
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(
+      `DATABASE_URL must be a connection URI, e.g. ${POSTGRES_URI_EXAMPLE} (got "${value}")`,
+    );
+  }
+
+  if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
+    throw new Error(
+      `DATABASE_URL must use the postgresql:// scheme, e.g. ${POSTGRES_URI_EXAMPLE}`,
+    );
+  }
+
+  if (!parsed.hostname) {
+    throw new Error(
+      `DATABASE_URL is missing a host, e.g. ${POSTGRES_URI_EXAMPLE}`,
+    );
+  }
+
+  return value;
+}
+
+function confluenceOrigin(): string {
+  const raw = process.env.CONFLUENCE_BASE_URL;
+  if (!raw) return "";
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return "";
+  }
+}
+
 export const config = {
   port: process.env.PORT ? Number(process.env.PORT) : 3000,
   corsOrigins: (process.env.CORS_ORIGIN || "http://localhost:3000").split(","),
@@ -16,11 +61,13 @@ export const config = {
   /** Live application database the agent introspects for schema truth. */
   postgres: {
     get url(): string {
-      return required("DATABASE_URL");
+      return postgresUrl();
     },
     schema: process.env.DATABASE_SCHEMA || "public",
     /** Read-only guard: aborts runaway agent queries. */
     statementTimeoutMs: 10_000,
+    /** A firewalled host drops packets silently; fail instead of hanging. */
+    connectionTimeoutMs: 10_000,
     maxRows: 200,
   },
 
@@ -52,8 +99,9 @@ export const config = {
 
   /**
    * Jira MCP — used only when the user explicitly asks for a ticket or user
-   * story. Prefer a remote MCP URL; otherwise the local stdio server talks to
-   * Jira REST using JIRA_URL + credentials.
+   * story. Remote MCP is opt-in (`JIRA_MCP_URL`). Otherwise the local stdio
+   * server talks to Jira REST using `JIRA_URL` + credentials, falling back to
+   * the Confluence Cloud site/token when those are already set.
    */
   jira: {
     mcpUrl: process.env.JIRA_MCP_URL || "",
@@ -61,9 +109,10 @@ export const config = {
     mcpTransport: process.env.JIRA_MCP_TRANSPORT === "sse" ? "sse" : "http",
     mcpCommand: process.env.JIRA_MCP_COMMAND || "",
     mcpArgs: process.env.JIRA_MCP_ARGS || "",
-    url: process.env.JIRA_URL || "",
-    username: process.env.JIRA_USERNAME || "",
-    apiToken: process.env.JIRA_API_TOKEN || "",
+    url: process.env.JIRA_URL || confluenceOrigin(),
+    username: process.env.JIRA_USERNAME || process.env.CONFLUENCE_USERNAME || "",
+    apiToken:
+      process.env.JIRA_API_TOKEN || process.env.CONFLUENCE_ACCESS_TOKEN || "",
     personalToken:
       process.env.JIRA_PERSONAL_TOKEN || process.env.JIRA_PAT || "",
     sslVerify: process.env.JIRA_SSL_VERIFY !== "false",

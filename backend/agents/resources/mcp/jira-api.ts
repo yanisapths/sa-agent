@@ -41,18 +41,28 @@ export interface JiraIssue {
 
 function requiredUrl(): string {
   const url = process.env.JIRA_URL?.replace(/\/$/, "");
-  if (!url) {
-    throw new Error("JIRA_URL is not set");
+  if (url) return url;
+
+  const confluence = process.env.CONFLUENCE_BASE_URL;
+  if (confluence) {
+    try {
+      return new URL(confluence).origin;
+    } catch {
+      /* fall through */
+    }
   }
-  return url;
+
+  throw new Error("JIRA_URL is not set");
 }
 
 function authHeader(): string {
   const pat = process.env.JIRA_PERSONAL_TOKEN || process.env.JIRA_PAT;
   if (pat) return `Bearer ${pat}`;
 
-  const username = process.env.JIRA_USERNAME;
-  const token = process.env.JIRA_API_TOKEN;
+  const username =
+    process.env.JIRA_USERNAME || process.env.CONFLUENCE_USERNAME;
+  const token =
+    process.env.JIRA_API_TOKEN || process.env.CONFLUENCE_ACCESS_TOKEN;
   if (username && token) {
     return `Basic ${Buffer.from(`${username}:${token}`).toString("base64")}`;
   }
@@ -161,8 +171,21 @@ function person(user: JiraUser | null | undefined): string {
   return user.displayName || user.emailAddress || "(unknown)";
 }
 
+export function normalizeIssueKey(issueKey: string): string {
+  const trimmed = issueKey.trim();
+  if (!trimmed) return "";
+
+  const fromBrowse = trimmed.match(/\/browse\/([A-Z][A-Z0-9]+-\d+)/i);
+  if (fromBrowse) return fromBrowse[1].toUpperCase();
+
+  const fromKey = trimmed.match(/\b([A-Z][A-Z0-9]+-\d+)\b/i);
+  if (fromKey) return fromKey[1].toUpperCase();
+
+  return trimmed;
+}
+
 export async function fetchIssue(issueKey: string): Promise<JiraIssue> {
-  const key = issueKey.trim();
+  const key = normalizeIssueKey(issueKey);
   if (!key) throw new Error("issue_key is required");
 
   const url =
@@ -192,6 +215,24 @@ function descriptionOf(issue: JiraIssue): string {
   return fieldText(issue.fields.description) || "(no description)";
 }
 
+function extractAcFromDescription(description: string): string | undefined {
+  const match = description.match(
+    /(?:acceptance\s*criteria|\*{0,2}\bac\b\*{0,2})\s*:?\s*([\s\S]*?)(?=\*{0,2}definition of readiness\*{0,2}|\n----|$)/i,
+  );
+  if (!match?.[1]) return undefined;
+
+  const text = match[1]
+    .split(/\r?\n/)
+    .map((line) => {
+      const item = line.replace(/^\s*[#*\-]+\s*/, "").trim();
+      return item ? `- ${item}` : "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+  return text || undefined;
+}
+
 function acceptanceCriteria(issue: JiraIssue): string | undefined {
   const names = issue.names ?? {};
   for (const [id, name] of Object.entries(names)) {
@@ -200,27 +241,7 @@ function acceptanceCriteria(issue: JiraIssue): string | undefined {
     if (text) return text;
   }
 
-  const description = fieldText(issue.fields.description);
-  const match = description.split(/\r?\n/).reduce<{
-    collecting: boolean;
-    lines: string[];
-  }>(
-    (acc, line) => {
-      if (/acceptance\s*criteria/i.test(line)) {
-        acc.collecting = true;
-        return acc;
-      }
-      if (acc.collecting && /^#{1,3}\s+\S/.test(line)) {
-        acc.collecting = false;
-        return acc;
-      }
-      if (acc.collecting) acc.lines.push(line);
-      return acc;
-    },
-    { collecting: false, lines: [] },
-  );
-  const extracted = match.lines.join("\n").trim();
-  return extracted || undefined;
+  return extractAcFromDescription(fieldText(issue.fields.description));
 }
 
 export function formatTicket(issue: JiraIssue): string {

@@ -8,6 +8,7 @@ function getPool(): Pool {
     connectionString: config.postgres.url,
     max: 5,
     idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: config.postgres.connectionTimeoutMs,
     statement_timeout: config.postgres.statementTimeoutMs,
   });
   return pool;
