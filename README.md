@@ -1,0 +1,170 @@
+# sa-agent
+
+Capability provider for system analysis and solution architecture. It grounds
+answers in the **live PostgreSQL schema**, indexed Confluence/DDL knowledge, and
+(when you ask) Jira tickets.
+
+You can run it in two ways:
+
+| Runtime | What drives the LLM | What you get |
+| --- | --- | --- |
+| **Claude Code** (CLI or GUI) | Claude Code in your **product repo** | Skills, subagents, and MCP tools; writes files in that workspace |
+| **Chat GUI** | LangChain Deep Agent behind `POST /chat` | Browser chat + vault; JSON artifacts, no product-repo edits |
+
+Same tools and memory. Different runtimes. See
+[`backend/agents/(docs)/ARCHITECTURE.md`](backend/agents/(docs)/ARCHITECTURE.md)
+for how they are wired.
+
+## Prerequisites
+
+- [Bun](https://bun.sh) (backend, MCP servers, ingestion)
+- Node.js 20+ (frontend GUI)
+- [Claude Code](https://code.claude.com/docs/en/quickstart) (plugin path)
+- A read-only PostgreSQL URI for the application database
+- Anthropic API key (chat GUI / LangChain path)
+- Optional: Chroma Cloud, Ollama embeddings, Jira, Confluence, LangSmith
+
+## 1. Clone and environment
+
+sa-agent is a **provider checkout**. Keep it somewhere stable; product repos
+point at it.
+
+```bash
+git clone <this-repo> ~/agents/sa-agent
+cd ~/agents/sa-agent/backend
+bun install
+cp .env.example .env
+```
+
+Edit `backend/.env`. Required for schema tools and the chat agent:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Full URI, e.g. `postgresql://user:password@host:5432/database`. Must be a URI, not a hostname. Prefer a read-only role. |
+| `DATABASE_SCHEMA` | Schema to introspect (default `public`) |
+| `ANTHROPIC_API_KEY` | Chat GUI / LangChain only |
+| `CHROMA_HOST`, `CHROMA_API_KEY`, `CHROMA_TENANT`, `CHROMA_DATABASE` | Indexed specs and DDL |
+| `CHROMA_API_COLLECTION`, `CHROMA_DDL_COLLECTION` | Collection names |
+
+Also set if you use those features:
+
+| Variable | Purpose |
+| --- | --- |
+| `OLLAMA_URL`, `OLLAMA_EMBED_MODEL` | Embeddings for ingestion |
+| `CONFLUENCE_*` | Ingest API spec pages |
+| `JIRA_*` | Ticket / user-story MCP (optional; see backend README) |
+| `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` | Traces |
+| `SUPABASE_*`, `VAULT_DEV_TOKEN` | Vault in the GUI |
+| `PORT` | Backend listen port (default `3000`) |
+| `CORS_ORIGIN` | Frontend origin(s), comma-separated |
+
+MCP processes spawned by Claude Code always load **this** `backend/.env` by
+absolute path, even when cwd is a product repo.
+
+Point your shell at the checkout (required for the Claude Code plugin):
+
+```bash
+export SA_AGENT_HOME="$HOME/agents/sa-agent"   # add to ~/.zshrc
+```
+
+Index knowledge before `search_api_specs` / `search_schema_docs` are useful:
+
+```bash
+cd "$SA_AGENT_HOME/backend"
+bun run ingest:confluence
+bun run ingest:ddl path/to/schema.sql
+```
+
+## 2. Claude Code (product workspace)
+
+Use this when you want the analyst/architect to work **in the repo you are
+building**: inspect live schema, write specs and SQL into that tree, then
+implement.
+
+1. Export `SA_AGENT_HOME` in the same environment that launches Claude Code.
+2. From the **product** repo:
+
+   ```bash
+   cd /path/to/product-repo
+   claude plugin marketplace add "$SA_AGENT_HOME"
+   ```
+
+3. Install the plugin:
+
+   - **CLI session:** `/plugin install sa-agent@sa-agent`
+   - **Claude Code GUI:** Settings → Plugins → marketplace `sa-agent` → install
+     **sa-agent**.
+
+4. Confirm MCP: `/mcp` (or the MCP panel). You should see **sa-knowledge**
+   (Postgres + Chroma) and **jira**. If they fail to start, `SA_AGENT_HOME` is
+   unset or `backend/.env` is incomplete.
+
+5. Ask in the product repo, e.g. “specify the order list endpoint from the live
+   schema” or `/agents` to pick **system-analyst**, **solution-architect**,
+   **coder**, or **test-engineer**.
+
+Figma MCP is not bundled. Add a `figma` server in the product repo’s
+`.mcp.json` if you need it.
+
+Claude Code does **not** call the LangChain `/chat` agent. Tool calls still
+appear in LangSmith as MCP runs (`tags: mcp, claude-code`) when tracing is on.
+
+Details: [`backend/agents/claude/README.md`](backend/agents/claude/README.md).
+
+## 3. Chat GUI (this repo)
+
+Use this for a browser chat that talks to the Deep Agent over HTTP. It does not
+edit a product workspace.
+
+Align ports so Next and Express do not collide. Example:
+
+```bash
+# backend/.env
+PORT=5001
+CORS_ORIGIN=http://localhost:3000
+```
+
+```bash
+# frontend/.env.local (create)
+NEXT_PUBLIC_AGENT_API=http://localhost:5001
+NEXT_PUBLIC_VAULT_TOKEN=<same as VAULT_DEV_TOKEN>
+```
+
+```bash
+cd "$SA_AGENT_HOME/backend" && bun install && bun run dev
+cd "$SA_AGENT_HOME/frontend" && bun install && bun run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). Chat hits `POST /chat`.
+Pass the returned `threadId` on later turns (the GUI does this). Vault needs
+Supabase + `sql/vault.sql` as described in
+[`backend/README.md`](backend/README.md).
+
+You can also call the agent without the UI:
+
+```bash
+curl -s http://localhost:5001/health
+curl -s -X POST http://localhost:5001/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"List the tables that look related to orders."}'
+```
+
+## Layout
+
+```
+sa-agent/
+  .claude-plugin/marketplace.json   Claude Code marketplace (points at the plugin)
+  backend/                          Deep Agent, MCP servers, vault API
+    agents/                         harness, tools, skills, Claude plugin
+    mcp/                            sa-knowledge stdio MCP
+  frontend/                         Next.js chat + vault GUI
+```
+
+Backend layout, tools, ingestion, and HTTP API:
+[`backend/README.md`](backend/README.md).
+
+## Grounding (both runtimes)
+
+1. Live DB — `list_tables`, `describe_tables`, `inspect_relationships`, `run_sql`
+2. Indexed knowledge — `search_api_specs`, `search_schema_docs`
+3. Jira — only if you explicitly ask for a ticket or user story
