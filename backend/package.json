@@ -10,6 +10,7 @@
     "ingest:confluence": "bun run agents/ingest/confluence.ts",
     "ingest:ddl": "bun run agents/ingest/ddl.ts",
     "ingest:url": "bun run agents/ingest/url.ts",
+    "ingest:clear": "bun run agents/ingest/clear.ts",
     "mcp:jira": "bun run agents/resources/mcp/mcp-server.ts",
     "mcp:knowledge": "bun run mcp/server.ts"
   },

@@ -48,6 +48,29 @@ function confluenceOrigin(): string {
   }
 }
 
+/** `bun run ingest:… -- --embedding-model mxbai-embed-large` */
+function argvFlag(name: string): string | undefined {
+  const flag = `--${name}`;
+  const argv = process.argv;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === flag) return argv[i + 1];
+    if (arg.startsWith(`${flag}=`)) return arg.slice(flag.length + 1);
+  }
+  return undefined;
+}
+
+function embeddingDimension(): number | undefined {
+  const raw =
+    argvFlag("embedding-model-dimension") || process.env.OLLAMA_EMBED_DIMENSION;
+  if (!raw) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Invalid embedding dimension: ${raw}`);
+  }
+  return value;
+}
+
 export const config = {
   port: process.env.PORT ? Number(process.env.PORT) : 3000,
   corsOrigins: (process.env.CORS_ORIGIN || "http://localhost:3000").split(","),
@@ -92,7 +115,15 @@ export const config = {
   },
 
   embeddings: {
-    model: process.env.OLLAMA_EMBED_MODEL || "nomic-embed-text",
+    /**
+     * Must match the Chroma collection dimension.
+     * `mxbai-embed-large` is 1024-d. Dimension cannot be scaled up.
+     */
+    model:
+      argvFlag("embedding-model") ||
+      process.env.OLLAMA_EMBED_MODEL ||
+      "mxbai-embed-large",
+    dimension: embeddingDimension(),
     baseUrl: process.env.OLLAMA_URL || "http://localhost:11434",
   },
 

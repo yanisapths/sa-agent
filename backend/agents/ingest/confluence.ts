@@ -1,7 +1,10 @@
 /** Indexes Confluence API specification pages into the knowledge base. */
 import { ConfluencePagesLoader } from "@langchain/community/document_loaders/web/confluence";
 import type { Document } from "@langchain/core/documents";
-import { apiSpecStore } from "../../database/chroma";
+import {
+  apiSpecStore,
+  assertEmbeddingDimension,
+} from "../../database/chroma";
 import { parseConfluenceToDocuments } from "./parsers/confluence-spec";
 import { split, store } from "./store";
 
@@ -40,6 +43,8 @@ function createLoader(): ConfluencePagesLoader {
 }
 
 async function main(): Promise<void> {
+  await assertEmbeddingDimension();
+
   const pages = await createLoader().load();
   console.log(`loaded ${pages.length} pages`);
 
@@ -54,6 +59,7 @@ async function main(): Promise<void> {
   console.log(`parsed ${parsed.length} documents`);
 
   const chunks = await split(parsed);
+  console.log(`split into ${chunks.length} chunks`);
   const stored = await store(apiSpecStore, chunks);
   console.log(`indexed ${stored} chunks`);
 }
