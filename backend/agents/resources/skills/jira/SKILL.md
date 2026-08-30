@@ -1,12 +1,12 @@
 ---
 name: jira
-description: Fetch Jira tickets and user stories through MCP. Use ONLY when the user explicitly asks to get a ticket, look up a Jira issue, or read a user story. Never load this skill for schema, API, SQL, or architecture work.
+description: Fetch Jira tickets and user stories through MCP. Use in Discuss when a ticket or story is named, or when the user asks to look one up. Never load this skill for schema, API, SQL, plan, or execute work.
 ---
 
-# Jira (explicit MCP)
+# Jira (Discuss only)
 
-Jira is not a default source of truth. Call it only when the user names a
-ticket or story, or clearly asks to fetch one.
+Jira is not a default source of truth. Call it in **discuss** when the user
+names a ticket or story, or clearly asks to fetch one.
 
 ## When to use
 

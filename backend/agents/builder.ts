@@ -68,7 +68,7 @@ export function defineAgent(spec: AgentSpec) {
 
   return createDeepAgent({
     name: spec.name,
-    model: spec.model ?? config.model.chat,
+    model: spec.model ?? config.model.orchestrator,
     systemPrompt: spec.systemPrompt,
     tools: resolveTools(spec.tools),
     backend: createBackend(),

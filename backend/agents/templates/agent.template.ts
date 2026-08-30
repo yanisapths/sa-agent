@@ -25,6 +25,6 @@ Reply with a single JSON object: { "type": "text", "text": "<answer>" }`,
 
   // memory: true,  // load resources/AGENTS.md
   // session: true, // per-thread conversation state
-  // subagents: [], // specialists reachable through the `task` tool
-  // model: "anthropic:claude-sonnet-4-5",
+  // subagents: [], // specialists via task() — see harness.ts
+  // model: "anthropic:claude-haiku-4-5",
 });

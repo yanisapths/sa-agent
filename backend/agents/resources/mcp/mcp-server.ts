@@ -1,6 +1,6 @@
 /**
- * Stdio MCP server for Jira. Exposes only the two tools the agent is allowed
- * to use, and only when the user explicitly asks for a ticket or user story.
+ * Stdio MCP server for Jira. Exposes the two Discuss tools. Call them only
+ * when a ticket or user story is named.
  *
  * Spawned by mcp-client.ts, or run directly:
  *   bun run agents/resources/mcp/mcp-server.ts

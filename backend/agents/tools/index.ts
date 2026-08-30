@@ -12,8 +12,8 @@ import {
  * Single source of truth for every tool an agent may be granted.
  * Agents opt in by name via `defineAgent({ tools: [...] })`.
  *
- * Jira MCP tools are always registered but must only be called when the user
- * explicitly asks for a ticket or user story.
+ * Jira MCP tools are registered for the discuss specialist. Call them only
+ * when a ticket or user story is named.
  */
 export const TOOL_REGISTRY = {
   list_tables: listTables,

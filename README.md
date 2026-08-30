@@ -99,9 +99,9 @@ implement.
    (Postgres + Chroma) and **jira**. If they fail to start, `SA_AGENT_HOME` is
    unset or `backend/.env` is incomplete.
 
-5. Ask in the product repo, e.g. “specify the order list endpoint from the live
-   schema” or `/agents` to pick **system-analyst**, **solution-architect**,
-   **coder**, or **test-engineer**.
+5. Run one phase at a time. `/agents` picks **system-analyst** (discuss),
+   **solution-architect** (plan), **coder** (execute), **test-engineer**,
+   or **reviewer**. Approve the artifact before the next phase.
 
 Figma MCP is not bundled. Add a `figma` server in the product repo’s
 `.mcp.json` if you need it.

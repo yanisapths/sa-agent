@@ -53,8 +53,20 @@ export const config = {
   corsOrigins: (process.env.CORS_ORIGIN || "http://localhost:3000").split(","),
 
   model: {
-    /** Passed straight to LangChain's `initChatModel` (`provider:model`). */
-    chat: process.env.AGENT_CHAT_MODEL || "anthropic:claude-sonnet-4-5",
+    /**
+     * Cheap router. It retrieves, delegates, and stops at gates.
+     * `AGENT_CHAT_MODEL` is an alias so existing .env files still work.
+     */
+    orchestrator:
+      process.env.AGENT_ORCHESTRATOR_MODEL ||
+      process.env.AGENT_CHAT_MODEL ||
+      "anthropic:claude-haiku-4-5",
+    discuss: process.env.AGENT_DISCUSS_MODEL || "anthropic:claude-haiku-4-5",
+    plan: process.env.AGENT_PLAN_MODEL || "anthropic:claude-haiku-4-5",
+    /** Local coder. Override if you want to runing coder model locally e.g.ollama:qwen2.5-coder */
+    execute: process.env.AGENT_EXECUTE_MODEL || "anthropic:claude-haiku-4-5",
+    test: process.env.AGENT_TEST_MODEL || "anthropic:claude-haiku-4-5",
+    review: process.env.AGENT_REVIEW_MODEL || "anthropic:claude-haiku-4-5",
   },
 
   /** Live application database the agent introspects for schema truth. */
@@ -97,8 +109,8 @@ export const config = {
   },
 
   /**
-   * Jira MCP — used only when the user explicitly asks for a ticket or user
-   * story. Remote MCP is opt-in (`JIRA_MCP_URL`). Otherwise the local stdio
+   * Jira MCP — Discuss only, when a ticket or user story is named.
+   * Remote MCP is opt-in (`JIRA_MCP_URL`). Otherwise the local stdio
    * server talks to Jira REST using `JIRA_URL` + credentials, falling back to
    * the Confluence Cloud site/token when those are already set.
    */

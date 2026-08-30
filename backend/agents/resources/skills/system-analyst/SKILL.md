@@ -16,9 +16,11 @@ engineer can build without asking follow-up questions.
    The FK graph decides which joins are valid and where cardinality is one-to-many.
 3. **Check prior art.** `search_api_specs` for existing endpoints covering the
    same entities, so the new spec stays consistent with what already ships.
-4. **Write the spec.** Every field traced to a real column or an explicit
+4. **Find gaps.** What the story asks for that the schema, index, or prior
+   code does not support — list as questions, do not invent.
+5. **Write the spec.** Every field traced to a real column or an explicit
    derivation rule.
-5. **Verify.** If the deliverable includes SQL, run it with `run_sql` and confirm
+6. **Verify.** If the deliverable includes SQL, run it with `run_sql` and confirm
    the shape of the result before handing it over.
 
 ## Specification contents

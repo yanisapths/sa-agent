@@ -12,8 +12,9 @@ documentation snapshot, so relationships and column types are always current.
 ```
 agents/
   builder.ts            defineAgent() — assembles a Deep Agent from a resource spec
-  sa-agent.ts           the system analyst / solution architect agent
-  prompt.ts             role and output contract
+  harness.ts            phase loop, cheap models, specialist specs
+  sa-agent.ts           cheap orchestrator; delegates via task()
+  prompt.ts             orchestrator contract (JSON for the GUI)
   index.ts              public exports
   resources/            what the harness mounts read-only at /resources
     AGENTS.md           memory: always loaded into the system prompt
@@ -72,7 +73,9 @@ cp .env.example .env
 ```
 
 Required to run the agent: `ANTHROPIC_API_KEY`, `DATABASE_URL`, and the
-`CHROMA_*` values. `DATABASE_URL` must be a full connection URI
+`CHROMA_*` values. Execute defaults to `ollama:qwen2.5-coder` — pull that
+model or set `AGENT_EXECUTE_MODEL`. The router and other phases default
+to haiku (`AGENT_ORCHESTRATOR_MODEL`, `AGENT_DISCUSS_MODEL`, …). `DATABASE_URL` must be a full connection URI
 (`postgresql://user:password@host:5432/database`) and should point at a role
 with read access only — a bare hostname is rejected at startup of the first
 query rather than failing later as a DNS error.
@@ -112,9 +115,10 @@ export const reviewAgent = defineAgent({
 });
 ```
 
+Phase specialists belong in `harness.ts`, not a second top-level agent.
 Defaults grant every registered tool, every skill, shared memory, and per-thread
 session state. The filesystem, planning (`write_todos`), and subagent delegation
-(`task`) come from the harness itself.
+(`task`) come from Deep Agents.
 
 ## Adding a tool
 
