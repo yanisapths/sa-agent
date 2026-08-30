@@ -213,3 +213,15 @@ dist
 .DS_Store
 
 .env*
+/.claude/
+/.claude-plugin/
+/backend/
+/frontend/
+dist/
+build/
+.cache/
+.turbo/
+target/
+coverage/
+tmp/
+temp/
