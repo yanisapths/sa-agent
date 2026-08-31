@@ -1,5 +1,6 @@
 import type { SubAgent } from "deepagents";
 import { config } from "../config";
+import { resolveModel } from "./model";
 import { resolveTools, type ToolName } from "./tools";
 
 /**
@@ -144,7 +145,7 @@ function specialist(
     name: row.owner as string,
     description,
     systemPrompt,
-    model: row.model as string,
+    model: resolveModel(row.model as string),
     tools: resolveTools(row.tools) as NonNullable<SubAgent["tools"]>,
     skills: [...row.skills],
   };

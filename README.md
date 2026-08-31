@@ -44,7 +44,8 @@ Edit `backend/.env`. Required for schema tools and the chat agent:
 | --- | --- |
 | `DATABASE_URL` | Full URI, e.g. `postgresql://user:password@host:5432/database`. Must be a URI, not a hostname. Prefer a read-only role. |
 | `DATABASE_SCHEMA` | Schema to introspect (default `public`) |
-| `ANTHROPIC_API_KEY` | Chat GUI / LangChain only |
+| `BIFROST_BASE_URL`, `BIFROST_API_KEY` | Company LLM gateway. Routes every phase through it; see `backend/README.md` |
+| `ANTHROPIC_API_KEY` | Only when a model id is `anthropic:…` — unused with the gateway |
 | `CHROMA_HOST`, `CHROMA_API_KEY`, `CHROMA_TENANT`, `CHROMA_DATABASE` | Indexed specs and DDL |
 | `CHROMA_API_COLLECTION`, `CHROMA_DDL_COLLECTION` | Collection names |
 

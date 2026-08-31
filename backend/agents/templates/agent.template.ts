@@ -26,5 +26,5 @@ Reply with a single JSON object: { "type": "text", "text": "<answer>" }`,
   // memory: true,  // load resources/AGENTS.md
   // session: true, // per-thread conversation state
   // subagents: [], // specialists via task() — see harness.ts
-  // model: "anthropic:claude-haiku-4-5",
+  // model: "dashscope/qwen3.7-flash", // slash = gateway, colon = direct
 });

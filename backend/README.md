@@ -53,14 +53,14 @@ internal/               artifact normalisation, errors, vault service
 
 ## How the agent is grounded
 
-| Layer         | Source                                    | Freshness            |
-| ------------- | ----------------------------------------- | -------------------- |
-| Live schema   | `list_tables`, `describe_tables`, `inspect_relationships`, `run_sql` | Real time |
-| Knowledge     | `search_api_specs`, `search_schema_docs`  | Last ingestion run   |
-| Jira MCP      | `get_jira_ticket`, `read_jira_user_story` | Only on explicit ask |
-| Skills        | `resources/skills/*/SKILL.md`             | On demand            |
-| Memory        | `resources/AGENTS.md`                     | Every turn           |
-| Session       | Per-`threadId` checkpointer               | Lifetime of process  |
+| Layer       | Source                                                               | Freshness            |
+| ----------- | -------------------------------------------------------------------- | -------------------- |
+| Live schema | `list_tables`, `describe_tables`, `inspect_relationships`, `run_sql` | Real time            |
+| Knowledge   | `search_api_specs`, `search_schema_docs`                             | Last ingestion run   |
+| Jira MCP    | `get_jira_ticket`, `read_jira_user_story`                            | Only on explicit ask |
+| Skills      | `resources/skills/*/SKILL.md`                                        | On demand            |
+| Memory      | `resources/AGENTS.md`                                                | Every turn           |
+| Session     | Per-`threadId` checkpointer                                          | Lifetime of process  |
 
 All database access runs inside a read-only transaction with a statement
 timeout, and `run_sql` rejects anything that is not a `SELECT` or `WITH`.
@@ -72,10 +72,8 @@ bun install
 cp .env.example .env
 ```
 
-Required to run the agent: `ANTHROPIC_API_KEY`, `DATABASE_URL`, and the
-`CHROMA_*` values. Execute defaults to `ollama:qwen2.5-coder` — pull that
-model or set `AGENT_EXECUTE_MODEL`. The router and other phases default
-to haiku (`AGENT_ORCHESTRATOR_MODEL`, `AGENT_DISCUSS_MODEL`, …). `DATABASE_URL` must be a full connection URI
+Required to run the agent: a model provider (below), `DATABASE_URL`, and the
+`CHROMA_*` values. `DATABASE_URL` must be a full connection URI
 (`postgresql://user:password@host:5432/database`) and should point at a role
 with read access only — a bare hostname is rejected at startup of the first
 query rather than failing later as a DNS error.
@@ -83,6 +81,61 @@ query rather than failing later as a DNS error.
 A dependency the agent cannot reach is reported back to the model as tool
 output instead of failing the request, so `/chat` still answers from whatever
 sources are available.
+
+## Models
+
+A model id says how to reach it. A **slash** is a Bifrost id and goes through
+the company gateway; a **colon** goes straight to that provider. So one phase
+can stay on a local coder while the rest go through Bifrost:
+
+```
+AGENT_EXECUTE_MODEL=ollama:qwen2.5-coder   # local, never touches the gateway
+AGENT_PLAN_MODEL=dashscope/qwen3.7-max     # gateway
+```
+
+Set `BIFROST_BASE_URL` and `BIFROST_API_KEY` and every phase that has no
+explicit override moves to `BIFROST_MODEL`. Leave them unset and the defaults
+stay on `anthropic:claude-haiku-4-5`, which needs `ANTHROPIC_API_KEY`.
+
+| Key                   | What                                                           |
+| --------------------- | -------------------------------------------------------------- |
+| `BIFROST_BASE_URL`    | gateway origin; the agent POSTs to `$BASE/v1/chat/completions` |
+| `BIFROST_API_KEY`     | your virtual key                                               |
+| `BIFROST_AUTH_HEADER` | header the key travels in — `x-bf-vk`                          |
+| `BIFROST_MODEL`       | default `provider/model` for every phase                       |
+| `BIFROST_USER_AGENT`  | anything that is not a stock SDK agent                         |
+| `BIFROST_MAX_TOKENS`  | `4096` — reasoning models need the headroom                    |
+
+The bare names from the gateway handout (`AUTH_HEADER`, `MODEL`, `MAX_TOKENS`,
+`USER_AGENT`) are accepted as fallbacks.
+
+Verify the whole path — headers, model id, and native tool calling — before
+trusting the agent with it:
+
+```bash
+bun run check:bifrost              # env, then a real chat and a real tool call
+bun run check:bifrost -- --models  # model ids this key can actually reach
+```
+
+### What bites, all handled in `agents/model.ts`
+
+- **Model needs a provider prefix.** Bare `qwen3.7-flash` fails with _"could
+  not auto resolve a provider"_. This gateway routes `dashscope`,
+  `huawei_claude`, `dashscope_claude`, `huawei`, `vertex` — not `anthropic` or
+  `openai`.
+- **User-Agent.** Cloudflare fronts the gateway and blocks stock SDK agents
+  with `403 error code 1010`. It reads like a network outage and is one header.
+  It has to be set on the outgoing request: LangChain overwrites the client's
+  `defaultHeaders` User-Agent with its own.
+- `max_tokens` **and reasoning models.** Reasoning tokens come out of the same
+  budget, so a small limit can be spent entirely on thinking and return empty
+  content with `finish_reason: "length"` — a turn that silently does nothing.
+  A truncated reply warns on stderr.
+- **Cloudflare bot challenge.** A burst of requests gets a `403 "Just a moment..."` HTML page instead of the API; it is retried with backoff.
+
+Embeddings do **not** go through the gateway. They stay on local Ollama because
+the width has to match the existing Chroma collections; switching would mean
+re-ingesting.
 
 Jira MCP is optional. The agent calls it **only** when the user explicitly asks
 for a ticket or user story (`get ticket PROJ-123`, `read user story PROJ-456`).

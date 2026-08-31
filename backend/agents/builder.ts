@@ -9,6 +9,7 @@ import {
   type SubAgent,
 } from "deepagents";
 import { config } from "../config";
+import { resolveModel } from "./model";
 import { resolveTools, type ToolName } from "./tools";
 
 const RESOURCE_ROOT = path.join(
@@ -51,7 +52,7 @@ export interface AgentSpec {
   session?: boolean;
   /** Specialised child agents reachable through the `task` tool. */
   subagents?: SubAgent[];
-  /** Model override, as `provider:model`. */
+  /** Model override, as `provider/model` (gateway) or `provider:model`. */
   model?: string;
 }
 
@@ -68,7 +69,7 @@ export function defineAgent(spec: AgentSpec) {
 
   return createDeepAgent({
     name: spec.name,
-    model: spec.model ?? config.model.orchestrator,
+    model: resolveModel(spec.model ?? config.model.orchestrator),
     systemPrompt: spec.systemPrompt,
     tools: resolveTools(spec.tools),
     backend: createBackend(),

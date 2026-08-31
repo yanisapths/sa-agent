@@ -71,10 +71,40 @@ function embeddingDimension(): number | undefined {
   return value;
 }
 
+/** `BIFROST_MODEL` etc., falling back to the gateway handout's bare names. */
+function bifrostEnv(name: string): string | undefined {
+  return process.env[`BIFROST_${name}`] || process.env[name];
+}
+
+function positiveInt(name: string, fallback: number): number {
+  const raw = bifrostEnv(name);
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`BIFROST_${name} must be a positive integer (got "${raw}")`);
+  }
+  return value;
+}
+
+/**
+ * The Bifrost gateway is on when a base URL is present. Everything downstream
+ * keys off this, including which model ids the phase defaults use.
+ */
+const bifrostBaseUrl = (process.env.BIFROST_BASE_URL || "").replace(/\/+$/, "");
+
+/** `provider/model` through the gateway, or haiku direct when it is off. */
+const defaultModel = bifrostBaseUrl
+  ? bifrostEnv("MODEL") || "dashscope/qwen3.7-flash"
+  : "anthropic:claude-haiku-4-5";
+
 export const config = {
   port: process.env.PORT ? Number(process.env.PORT) : 3000,
   corsOrigins: (process.env.CORS_ORIGIN || "http://localhost:3000").split(","),
 
+  /**
+   * A model id routes itself: `provider/model` goes through Bifrost,
+   * `provider:model` goes straight to that provider. See `agents/model.ts`.
+   */
   model: {
     /**
      * Cheap router. It retrieves, delegates, and stops at gates.
@@ -83,13 +113,47 @@ export const config = {
     orchestrator:
       process.env.AGENT_ORCHESTRATOR_MODEL ||
       process.env.AGENT_CHAT_MODEL ||
-      "anthropic:claude-haiku-4-5",
-    discuss: process.env.AGENT_DISCUSS_MODEL || "anthropic:claude-haiku-4-5",
-    plan: process.env.AGENT_PLAN_MODEL || "anthropic:claude-haiku-4-5",
+      defaultModel,
+    discuss: process.env.AGENT_DISCUSS_MODEL || defaultModel,
+    plan: process.env.AGENT_PLAN_MODEL || defaultModel,
     /** Local coder. Override if you want to runing coder model locally e.g.ollama:qwen2.5-coder */
-    execute: process.env.AGENT_EXECUTE_MODEL || "anthropic:claude-haiku-4-5",
-    test: process.env.AGENT_TEST_MODEL || "anthropic:claude-haiku-4-5",
-    review: process.env.AGENT_REVIEW_MODEL || "anthropic:claude-haiku-4-5",
+    execute: process.env.AGENT_EXECUTE_MODEL || defaultModel,
+    test: process.env.AGENT_TEST_MODEL || defaultModel,
+    review: process.env.AGENT_REVIEW_MODEL || defaultModel,
+  },
+
+  /**
+   * Company LLM gateway. We speak its OpenAI-compatible surface
+   * (`/v1/chat/completions`), so tool calling is native `tool_calls` rather
+   * than JSON scraped out of prose.
+   */
+  bifrost: {
+    enabled: Boolean(bifrostBaseUrl),
+    baseUrl: bifrostBaseUrl,
+    apiKey: bifrostEnv("API_KEY") || "",
+    /** Where the virtual key goes. The gateway does not read `Authorization`. */
+    authHeader: bifrostEnv("AUTH_HEADER") || "x-bf-vk",
+    /**
+     * Cloudflare fronts the gateway and blocks known SDK agents with
+     * `403 error code 1010`, which reads like an outage but is one header.
+     */
+    userAgent: bifrostEnv("USER_AGENT") || "sa-agent/0.1",
+    /**
+     * Reasoning models spend this budget thinking before they answer. Too low
+     * and a turn burns the whole allowance and returns empty content with
+     * `finish_reason: "length"` — an agent loop that silently does nothing.
+     */
+    maxTokens: positiveInt("MAX_TOKENS", 4096),
+    /** Retries for the Cloudflare bot challenge, on top of the SDK's own. */
+    challengeRetries: positiveInt("CHALLENGE_RETRIES", 2),
+    /** Providers this gateway can route to. `anthropic` and `openai` are not. */
+    providers: [
+      "dashscope",
+      "huawei_claude",
+      "dashscope_claude",
+      "huawei",
+      "vertex",
+    ] as readonly string[],
   },
 
   /** Live application database the agent introspects for schema truth. */

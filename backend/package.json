@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "bun run express.ts",
     "typecheck": "tsc --noEmit",
+    "check:bifrost": "bun run scripts/check-bifrost.ts",
     "ingest:confluence": "bun run agents/ingest/confluence.ts",
     "ingest:ddl": "bun run agents/ingest/ddl.ts",
     "ingest:url": "bun run agents/ingest/url.ts",
@@ -29,6 +30,7 @@
     "@langchain/mcp-adapters": "^1.1.4",
     "@langchain/mistralai": "^1.0.8",
     "@langchain/ollama": "^1.2.6",
+    "@langchain/openai": "^1.4.1",
     "@langchain/textsplitters": "^1.0.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@supabase/supabase-js": "^2.49.1",
