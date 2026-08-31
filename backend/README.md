@@ -25,7 +25,7 @@ agents/
       solution-architect/ architecture and diagrams
       test-engineer/    test plans and fixtures
       jira/             explicit Jira MCP — tickets and user stories only
-    claude/             Claude Code plugin (skills, subagents, MCP config)
+    claude/             plugin bundle for Claude Code and Codex (skills, subagents, MCP config)
   tools/
     index.ts            TOOL_REGISTRY, TOOL_DEFINITIONS, resolveTools()
     core/               shared implementations used by LangChain and MCP
@@ -145,27 +145,31 @@ bun run mcp:jira
 bun run mcp:knowledge
 ```
 
-## Claude Code plugin
+## Plugin runtimes (Claude Code, Codex)
 
-The same tools, skills, and memory are packaged as a Claude Code plugin so a
-separate product repo can use Claude Code as the agent runtime. sa-agent stays
+The same tools, skills, and memory are packaged as a plugin so a separate
+product repo can use Claude Code or Codex as the agent runtime. sa-agent stays
 the knowledge and tool provider.
 
 ```bash
 export SA_AGENT_HOME=/path/to/sa-agent   # add to ~/.zshrc
 cd /path/to/product-repo
-claude plugin marketplace add /path/to/sa-agent
+
+claude plugin marketplace add "$SA_AGENT_HOME"   # then /plugin install sa-agent@sa-agent
+
+codex plugin marketplace add "$SA_AGENT_HOME"    # then:
+codex plugin add sa-agent --marketplace sa-agent
 ```
 
-Then in a Claude Code session: `/plugin install sa-agent@sa-agent`.
-
 MCP servers are spawned from `$SA_AGENT_HOME` and load `backend/.env` by
-absolute path. Confirm they loaded with `/mcp`. Details:
-`agents/claude/README.md`.
+absolute path. Codex strips the environment of spawned servers and does not
+expand `${SA_AGENT_HOME}` in their arguments, so it goes through
+`mcp/sa-mcp`, which falls back to `~/.sa-agent/home`. Confirm with `/mcp`.
+Details: `agents/claude/README.md`.
 
-Claude Code does not invoke the LangChain agent, so those sessions are not
-`/chat` traces. Each MCP tool call is still recorded in LangSmith as a tool
-run (tags `mcp`, `claude-code`) when `LANGSMITH_TRACING=true`.
+Neither runtime invokes the LangChain agent, so those sessions are not `/chat`
+traces. Each MCP tool call is still recorded in LangSmith as a tool run (tags
+`mcp` plus `claude-code` or `codex`) when `LANGSMITH_TRACING=true`.
 
 ## Ingestion
 

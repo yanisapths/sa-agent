@@ -2,7 +2,7 @@
 
 sa-agent is a **capability provider**, not the product you are analysing. The
 LLM runtime either sits in this repo (chat GUI) or in a **product workspace**
-(Claude Code). Tools, skills, and memory live here.
+(Claude Code or Codex, via the plugin). Tools, skills, and memory live here.
 
 The core is a six-phase loop. Each phase receives declared inputs only
 (index hits, live schema, previous artifact), produces one file, and stops
@@ -83,7 +83,7 @@ Jira is Discuss only, and only when a ticket or story is named.
               LangChain wrappers   │          │  MCP stdio
                                    ▼          ▼
                     ┌──────────────────┐  ┌──────────────────────────┐
-                    │ Deep Agent       │  │ Claude Code              │
+                    │ Deep Agent       │  │ Claude Code / Codex      │
                     │ sa-agent.ts      │  │ plugin: agents/claude    │
                     │ harness.ts       │  │ same six phases          │
                     │ POST /chat       │  │ product-repo artifacts   │
@@ -101,19 +101,31 @@ Jira is Discuss only, and only when a ticket or story is named.
 5. **Memory** — `/resources/AGENTS.md` every turn.
 6. **JSON contract** — [`prompt.ts`](../prompt.ts) so the GUI still parses.
 
-## Claude Code (product repo)
+## Plugin runtimes (product repo)
 
-Plugin under [`claude/`](../claude/):
+Plugin under [`claude/`](../claude/), installed from a marketplace manifest at
+the repo root: `.claude-plugin/marketplace.json` for Claude Code,
+`.agents/plugins/marketplace.json` for Codex.
 
-| Piece | Role |
-| --- | --- |
-| `.mcp.json` | sa-knowledge + jira |
-| `agents/*.md` | discuss / plan / execute / test / review |
-| `memory/AGENTS.md` | loop + grounding at SessionStart |
-| `skills/*/SKILL.md` | how each specialist works |
+| Piece | Role | Runtime |
+| --- | --- | --- |
+| `.claude-plugin/plugin.json` | plugin identity | Claude Code |
+| `.codex-plugin/plugin.json` | plugin identity + install metadata | Codex |
+| `.mcp.json` | sa-knowledge + jira, spawned at `${SA_AGENT_HOME}` | Claude Code |
+| `.mcp.codex.json` | same servers via [`mcp/sa-mcp`](../../mcp/sa-mcp) | Codex |
+| `agents/*.md` | discuss / plan / execute / test / review | Claude Code |
+| `memory/AGENTS.md` | loop + grounding at SessionStart | both |
+| `skills/*/SKILL.md` | how each specialist works | both |
 
-You pick `/agents` for the phase. Write `docs/sa/<phase>.md`. Approve.
-Then the next specialist.
+In Claude Code you pick `/agents` for the phase. In Codex there are no plugin
+subagents, so you invoke the skill (`$system-analyst`) and drive execute and
+review yourself. Either way: write `docs/sa/<phase>.md`, approve, then the next
+specialist.
+
+Codex passes plugin MCP arguments verbatim and gives those servers a core
+environment only, which is why it cannot use `${SA_AGENT_HOME}` in `.mcp.json`.
+`mcp/sa-mcp` resolves the checkout (`$SA_AGENT_HOME`, then
+`~/.sa-agent/home`, then its own location) and locates `bun`.
 
 ## Grounding order (every specialist)
 
@@ -171,12 +183,13 @@ Wire Deep Agents `interruptOn` on `task` and an Approve button on
 
 Keep both surfaces in sync:
 
-| Change | LangChain path | Claude Code path |
+| Change | LangChain path | Plugin path |
 | --- | --- | --- |
 | New schema/knowledge tool | `tools/core` + wrappers + `TOOL_REGISTRY` | `mcp/server.ts` |
 | New Jira tool | `tools/jira.ts` + registry | `resources/mcp/mcp-server.ts` |
 | New skill | `resources/skills/<name>/SKILL.md` | `claude/skills/<name>/SKILL.md` |
 | Memory / loop | `resources/AGENTS.md` | `claude/memory/AGENTS.md` |
-| Phase / model | `harness.ts` + `config.ts` | `claude/agents/<name>.md` |
+| Phase / model | `harness.ts` + `config.ts` | `claude/agents/<name>.md` (Claude Code) |
+| New MCP server | `resources/mcp/mcp-client.ts` | `claude/.mcp.json` **and** `claude/.mcp.codex.json` |
 
 Copy-paste starters: [`templates/`](../templates/).

@@ -4,11 +4,12 @@ Capability provider for system analysis and solution architecture. It grounds
 answers in the **live PostgreSQL schema**, indexed Confluence/DDL knowledge, and
 (when you ask) Jira tickets.
 
-You can run it in two ways:
+You can run it in three ways:
 
 | Runtime | What drives the LLM | What you get |
 | --- | --- | --- |
 | **Claude Code** (CLI or GUI) | Claude Code in your **product repo** | Skills, subagents, and MCP tools; writes files in that workspace |
+| **Codex** (CLI or ChatGPT desktop) | Codex in your **product repo** | Skills and MCP tools; writes files in that workspace |
 | **Chat GUI** | LangChain Deep Agent behind `POST /chat` | Browser chat + vault; JSON artifacts, no product-repo edits |
 
 Same tools and memory. Different runtimes. See
@@ -19,7 +20,8 @@ for how they are wired.
 
 - [Bun](https://bun.sh) (backend, MCP servers, ingestion)
 - Node.js 20+ (frontend GUI)
-- [Claude Code](https://code.claude.com/docs/en/quickstart) (plugin path)
+- [Claude Code](https://code.claude.com/docs/en/quickstart) or
+  [Codex](https://developers.openai.com/codex) (plugin path — either is enough)
 - A read-only PostgreSQL URI for the application database
 - Anthropic API key (chat GUI / LangChain path)
 - Optional: Chroma Cloud, Ollama embeddings, Jira, Confluence, LangSmith
@@ -61,7 +63,7 @@ Also set if you use those features:
 MCP processes spawned by Claude Code always load **this** `backend/.env` by
 absolute path, even when cwd is a product repo.
 
-Point your shell at the checkout (required for the Claude Code plugin):
+Point your shell at the checkout (required for both plugin runtimes):
 
 ```bash
 export SA_AGENT_HOME="$HOME/agents/sa-agent"   # add to ~/.zshrc
@@ -75,11 +77,23 @@ bun run ingest:confluence
 bun run ingest:ddl path/to/schema.sql
 ```
 
-## 2. Claude Code (product workspace)
+## 2. Product workspace (Claude Code or Codex)
 
 Use this when you want the analyst/architect to work **in the repo you are
 building**: inspect live schema, write specs and SQL into that tree, then
 implement.
+
+This checkout is a **plugin marketplace** for both runtimes. They read
+different manifests and load the same skills, MCP servers, and memory:
+
+| Runtime | Marketplace manifest | Plugin manifest |
+| --- | --- | --- |
+| Claude Code | `.claude-plugin/marketplace.json` | `backend/agents/claude/.claude-plugin/plugin.json` |
+| Codex | `.agents/plugins/marketplace.json` | `backend/agents/claude/.codex-plugin/plugin.json` |
+
+Both marketplaces are named `sa-agent` and expose one plugin, also `sa-agent`.
+
+### 2a. Claude Code
 
 1. Export `SA_AGENT_HOME` in the same environment that launches Claude Code.
 2. From the **product** repo:
@@ -103,13 +117,55 @@ implement.
    **solution-architect** (plan), **coder** (execute), **test-engineer**,
    or **reviewer**. Approve the artifact before the next phase.
 
+Details: [`backend/agents/claude/README.md`](backend/agents/claude/README.md).
+
+### 2b. Codex
+
+Codex spawns plugin MCP servers with a stripped environment and passes their
+arguments verbatim, so `SA_AGENT_HOME` alone cannot locate the checkout. Record
+the path once — the launcher reads this file when the variable is missing:
+
+```bash
+mkdir -p ~/.sa-agent
+echo "$SA_AGENT_HOME" > ~/.sa-agent/home
+```
+
+1. Add the marketplace and install the plugin from the **product** repo:
+
+   ```bash
+   cd /path/to/product-repo
+   codex plugin marketplace add "$SA_AGENT_HOME"
+   codex plugin add sa-agent --marketplace sa-agent
+   ```
+
+   The ChatGPT desktop app reads the same configured marketplace: restart it,
+   then Plugins Directory → source **sa-agent** → install **sa-agent**.
+
+2. Confirm the install: `codex plugin list --marketplace sa-agent`, and `/mcp`
+   in a session for **sa-knowledge** and **jira**. If a server exits asking you
+   to set `SA_AGENT_HOME`, neither the variable nor `~/.sa-agent/home` resolved;
+   any other failure means `backend/.env` is incomplete.
+
+3. Trust the hooks. Plugin-bundled hooks are untrusted until you review them,
+   so `memory/AGENTS.md` (the loop and grounding rules) is not injected at
+   session start until you approve the hook.
+
+4. Run one phase at a time by invoking the skill: `$system-analyst` (discuss),
+   `$solution-architect` (plan), `$test-engineer` (test), plus `$backend` and
+   `$jira`. Approve the artifact before the next phase.
+
+Codex has no plugin equivalent of Claude Code subagents, so `agents/*.md` is
+not loaded there. Execute and review are driven by you against the approved
+plan; the phase discipline comes from the skills and `memory/AGENTS.md`.
+
+### Both runtimes
+
 Figma MCP is not bundled. Add a `figma` server in the product repo’s
 `.mcp.json` if you need it.
 
-Claude Code does **not** call the LangChain `/chat` agent. Tool calls still
-appear in LangSmith as MCP runs (`tags: mcp, claude-code`) when tracing is on.
-
-Details: [`backend/agents/claude/README.md`](backend/agents/claude/README.md).
+Neither runtime calls the LangChain `/chat` agent. Tool calls still appear in
+LangSmith as MCP runs, tagged `mcp` plus `claude-code` or `codex`, when tracing
+is on.
 
 ## 3. Chat GUI (this repo)
 
@@ -154,9 +210,11 @@ curl -s -X POST http://localhost:5001/chat \
 ```
 sa-agent/
   .claude-plugin/marketplace.json   Claude Code marketplace (points at the plugin)
+  .agents/plugins/marketplace.json  Codex marketplace (points at the same plugin)
   backend/                          Deep Agent, MCP servers, vault API
-    agents/                         harness, tools, skills, Claude plugin
-    mcp/                            sa-knowledge stdio MCP
+    agents/                         harness, tools, skills, plugin
+      claude/                       plugin bundle: both manifests, skills, hooks
+    mcp/                            sa-knowledge stdio MCP + `sa-mcp` launcher
   frontend/                         Next.js chat + vault GUI
 ```
 

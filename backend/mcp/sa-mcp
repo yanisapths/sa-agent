@@ -1,0 +1,59 @@
+#!/bin/sh
+# Launch an sa-agent MCP server from any product workspace.
+#
+# Codex installs the plugin into ~/.codex/plugins/cache, passes `.mcp.json`
+# args verbatim (no ${VAR} expansion) and spawns MCP servers with a minimal
+# environment. A bundled server therefore cannot resolve the provider checkout
+# from the plugin bundle, so it is resolved here instead:
+#
+#   1. $SA_AGENT_HOME
+#   2. the first line of ~/.sa-agent/home
+#   3. this script's own checkout (only when it runs from the checkout)
+set -u
+
+usage() {
+  echo "usage: sa-mcp <knowledge|jira>" >&2
+  exit 64
+}
+
+[ $# -eq 1 ] || usage
+
+case "$1" in
+knowledge) server="backend/mcp/server.ts" ;;
+jira) server="backend/agents/resources/mcp/mcp-server.ts" ;;
+*) usage ;;
+esac
+
+home="${SA_AGENT_HOME:-}"
+
+if [ -z "$home" ] && [ -r "${HOME:-}/.sa-agent/home" ]; then
+  home=$(sed -n '1p' "${HOME}/.sa-agent/home")
+fi
+
+if [ -z "$home" ]; then
+  checkout=$(CDPATH= cd -- "$(dirname -- "$0")/../.." 2>/dev/null && pwd -P)
+  if [ -n "$checkout" ] && [ -f "$checkout/backend/package.json" ]; then
+    home=$checkout
+  fi
+fi
+
+if [ -z "$home" ] || [ ! -f "$home/$server" ]; then
+  echo "sa-mcp: cannot find the sa-agent checkout." >&2
+  echo "  export SA_AGENT_HOME=/path/to/sa-agent, or" >&2
+  echo "  mkdir -p ~/.sa-agent && echo /path/to/sa-agent > ~/.sa-agent/home" >&2
+  exit 78
+fi
+
+if command -v bun >/dev/null 2>&1; then
+  exec bun "$home/$server"
+fi
+
+# Codex hands the server a core PATH that usually misses per-user installs.
+for bun in "${BUN_INSTALL:-$HOME/.bun}/bin/bun" /opt/homebrew/bin/bun /usr/local/bin/bun; do
+  if [ -x "$bun" ]; then
+    exec "$bun" "$home/$server"
+  fi
+done
+
+echo "sa-mcp: bun not found. Install bun or add it to PATH." >&2
+exit 127

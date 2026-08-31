@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "sa-knowledge": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "h=\"${SA_AGENT_HOME:-}\"; [ -n \"$h\" ] || h=$(sed -n 1p \"$HOME/.sa-agent/home\" 2>/dev/null); [ -n \"$h\" ] || { echo 'sa-agent: set SA_AGENT_HOME, or write the checkout path to ~/.sa-agent/home' >&2; exit 78; }; exec \"$h/backend/mcp/sa-mcp\" knowledge"
+      ],
+      "env": { "SA_AGENT_RUNTIME": "codex" }
+    },
+    "jira": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "h=\"${SA_AGENT_HOME:-}\"; [ -n \"$h\" ] || h=$(sed -n 1p \"$HOME/.sa-agent/home\" 2>/dev/null); [ -n \"$h\" ] || { echo 'sa-agent: set SA_AGENT_HOME, or write the checkout path to ~/.sa-agent/home' >&2; exit 78; }; exec \"$h/backend/mcp/sa-mcp\" jira"
+      ],
+      "env": { "SA_AGENT_RUNTIME": "codex" }
+    }
+  }
+}

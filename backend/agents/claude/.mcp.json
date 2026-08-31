@@ -2,13 +2,15 @@
   "mcpServers": {
     "sa-knowledge": {
       "command": "bun",
-      "args": ["${SA_AGENT_HOME}/backend/mcp/server.ts"]
+      "args": ["${SA_AGENT_HOME}/backend/mcp/server.ts"],
+      "env": { "SA_AGENT_RUNTIME": "claude-code" }
     },
     "jira": {
       "command": "bun",
       "args": [
         "${SA_AGENT_HOME}/backend/agents/resources/mcp/mcp-server.ts"
-      ]
+      ],
+      "env": { "SA_AGENT_RUNTIME": "claude-code" }
     }
   }
 }

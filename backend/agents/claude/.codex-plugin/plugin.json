@@ -1,0 +1,25 @@
+{
+  "name": "sa-agent",
+  "version": "0.1.0",
+  "description": "SA harness: discuss/plan/execute/test/review loop, live Postgres, indexed knowledge, Jira MCP, cheap per-phase specialists.",
+  "author": {
+    "name": "sa-agent"
+  },
+  "license": "MIT",
+  "keywords": ["system-analysis", "postgres", "schema", "jira", "rag"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.codex.json",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "sa-agent",
+    "shortDescription": "Live Postgres schema, indexed specs, and system-analysis skills",
+    "longDescription": "Grounds analysis and design in the live PostgreSQL schema, indexed Confluence/DDL knowledge, and Jira tickets. Skills drive one phase at a time and write their artifact into the product repo.",
+    "developerName": "sa-agent",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": [
+      "Use system-analyst to spec this ticket against the live schema.",
+      "Use solution-architect to turn the approved discuss notes into a plan."
+    ]
+  }
+}

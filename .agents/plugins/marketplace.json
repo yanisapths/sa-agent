@@ -1,0 +1,20 @@
+{
+  "name": "sa-agent",
+  "interface": {
+    "displayName": "sa-agent"
+  },
+  "plugins": [
+    {
+      "name": "sa-agent",
+      "source": {
+        "source": "local",
+        "path": "./backend/agents/claude"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
