@@ -6,7 +6,7 @@ const LOOP = PHASES.map((name, i) => {
   return `${i + 1}. ${name} — ${who} — receives ${p.receives} — produces ${p.produces} — GATE human`;
 }).join("\n");
 
-export const SA_AGENT_PROMPT = `You are the SA harness orchestrator. You do not analyse, plan, code, test, or review. You retrieve a short index, delegate one phase, and stop.
+export const SA_AGENT_PROMPT = `You are the agent orchestrator. You do not analyse, plan, code, test, or review. You retrieve a short index, delegate one phase, and stop.
 
 ## Loop
 

@@ -55,6 +55,49 @@ The chat GUI is still `POST /chat`. The orchestrator returns JSON
 write the product repo. Claude Code writes `docs/sa/<phase>.md` in the
 product repo.
 
+## The system model
+
+A third grounding source, next to the live schema and the index. The schema
+knows what exists; the index knows what someone wrote down; the system model
+knows **what connects to what**, and the decision records know **why**.
+
+```
+Endpoint ──handled_by──► Service ──imports──► Repository ──queries──► Table ──has_column──► Column
+   ▲                                                                    ▲
+   └──calls── Component (frontend)                    Decision ──decides──┘
+```
+
+Every edge points **dependent → dependency**. Impact analysis is therefore one
+reverse-reachability query, with no per-edge special cases:
+
+```
+simulate_impact("orders.user_id")
+  → column ← table ← repository ← service ← endpoint ← frontend component
+                                        ↑
+                                     tests, docs, decisions
+```
+
+It lives in [`model/`](../model) and stores to `.sa/system-model.db` in the
+**product** repo, next to `.sa/decisions/*.md`. The graph is derived, so it is
+gitignored; the decisions are not, so they are committed and reviewed.
+
+The scan is pattern matching, not a compiler — deterministic, free, polyglot,
+and re-runnable on every commit. The trade is recall: a route registered
+through a factory is invisible. Two rules keep it honest:
+
+1. A table found in SQL but absent from the live schema is **reported**, never
+   added as a node. "Never invent a table" becomes an invariant of the build.
+2. Nothing in the graph is inferred by a model, so two builds of the same
+   commit are byte-identical.
+
+| Phase | Uses it for |
+| --- | --- |
+| discuss | `build_system_model`, then find the real components and any decision that constrains them |
+| plan | `simulate_impact` on everything the change touches; the plan carries an **Impact and risk** section |
+| execute | stay inside the declared blast radius; rebuild after; `record_decision` when the human gives a reason |
+| test | affected files with no test are the coverage gap list |
+| review | a change that reverses a recorded decision without arguing against it is critical |
+
 ## Context management
 
 The index is the existing RAG (`search_api_specs`, `search_schema_docs` →
@@ -75,10 +118,10 @@ Jira is Discuss only, and only when a ticket or story is named.
 ## Two runtimes, one tool core
 
 ```
-                    ┌─────────────────────────────────────┐
-                    │  agents/tools/core                  │
-                    │  postgres.ts  knowledge.ts          │
-                    └──────────────┬──────────┬───────────┘
+                    ┌──────────────────────────────────────────┐
+                    │  agents/tools/core                       │
+                    │  postgres.ts knowledge.ts system-model.ts│
+                    └──────────────┬──────────┬────────────────┘
                                    │          │
               LangChain wrappers   │          │  MCP stdio
                                    ▼          ▼
@@ -130,8 +173,9 @@ environment only, which is why it cannot use `${SA_AGENT_HOME}` in `.mcp.json`.
 ## Grounding order (every specialist)
 
 1. Live database.
-2. Indexed knowledge (may be stale).
-3. Jira only in discuss, only when named.
+2. System model (as current as the last `build_system_model`).
+3. Indexed knowledge (may be stale).
+4. Jira only in discuss, only when named.
 
 Never invent a table, column, or endpoint.
 
@@ -174,7 +218,15 @@ execute or test; do not let review commit.
 
 You commit and open the PR. Do not add an agent for this.
 
-### M7 — Hard HITL (optional)
+### M7 — System model in the loop
+
+`bun run model:build` in a product repo. Confirm the endpoint paths match the
+routes you actually serve, and that the "referenced in code but absent from the
+live schema" list is empty or explainable. Then require every `plan.md` to
+carry an **Impact and risk** section produced by `simulate_impact`, and record
+the first decision the next time someone asks "why is it like this".
+
+### M8 — Hard HITL (optional)
 
 Wire Deep Agents `interruptOn` on `task` and an Approve button on
 `POST /chat`. Until then, the prompt gate (stop and wait) is the core.
@@ -185,7 +237,8 @@ Keep both surfaces in sync:
 
 | Change | LangChain path | Plugin path |
 | --- | --- | --- |
-| New schema/knowledge tool | `tools/core` + wrappers + `TOOL_REGISTRY` | `mcp/server.ts` |
+| New schema/knowledge/model tool | `tools/core` + wrappers + `TOOL_REGISTRY` + `harness.ts` | `mcp/server.ts` |
+| New node or edge kind | `model/types.ts` + the pass in `model/scan.ts` or `model/schema.ts` | same, shared core |
 | New Jira tool | `tools/jira.ts` + registry | `resources/mcp/mcp-server.ts` |
 | New skill | `resources/skills/<name>/SKILL.md` | `claude/skills/<name>/SKILL.md` |
 | Memory / loop | `resources/AGENTS.md` | `claude/memory/AGENTS.md` |

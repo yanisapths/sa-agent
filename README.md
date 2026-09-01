@@ -1,8 +1,8 @@
 # sa-agent
 
 Capability provider for system analysis and solution architecture. It grounds
-answers in the **live PostgreSQL schema**, indexed Confluence/DDL knowledge, and
-(when you ask) Jira tickets.
+answers in the **live PostgreSQL schema**, a **system model** of the repo it is
+working in, indexed Confluence/DDL knowledge, and (when you ask) Jira tickets.
 
 You can run it in three ways:
 
@@ -76,6 +76,24 @@ Index knowledge before `search_api_specs` / `search_schema_docs` are useful:
 cd "$SA_AGENT_HOME/backend"
 bun run ingest:confluence
 bun run ingest:ddl path/to/schema.sql
+```
+
+Build the system model for each product repo you work in. It is deterministic
+and free, so re-run it whenever the code moves — the agents also call
+`build_system_model` themselves:
+
+```bash
+cd /path/to/product-repo
+bun run --cwd "$SA_AGENT_HOME/backend" model:build "$PWD"
+```
+
+Add this to that repo's `.gitignore` — the graph is rebuildable, the decision
+records are not:
+
+```gitignore
+.sa/*.db
+.sa/*.db-shm
+.sa/*.db-wal
 ```
 
 ## 2. Product workspace (Claude Code or Codex)
@@ -214,9 +232,19 @@ sa-agent/
   .agents/plugins/marketplace.json  Codex marketplace (points at the same plugin)
   backend/                          Deep Agent, MCP servers, vault API
     agents/                         harness, tools, skills, plugin
+      model/                        system model: scan, graph, impact, decisions
       claude/                       plugin bundle: both manifests, skills, hooks
     mcp/                            sa-knowledge stdio MCP + `sa-mcp` launcher
   frontend/                         Next.js chat + vault GUI
+```
+
+In each **product** repo the agent also maintains:
+
+```
+.sa/
+  system-model.db                   the graph (derived — gitignored)
+  decisions/0001-*.md               why the code is the way it is (committed)
+docs/sa/<phase>.md                  the phase artifacts
 ```
 
 Backend layout, tools, ingestion, and HTTP API:
@@ -225,5 +253,21 @@ Backend layout, tools, ingestion, and HTTP API:
 ## Grounding (both runtimes)
 
 1. Live DB — `list_tables`, `describe_tables`, `inspect_relationships`, `run_sql`
-2. Indexed knowledge — `search_api_specs`, `search_schema_docs`
-3. Jira — only if you explicitly ask for a ticket or user story
+2. System model — `query_system_model`, `simulate_impact`, `search_decisions`
+3. Indexed knowledge — `search_api_specs`, `search_schema_docs`
+4. Jira — only if you explicitly ask for a ticket or user story
+
+The system model is a deterministic graph of the product repo: endpoints,
+services, repositories, frontend, tests, docs, and live tables, plus the
+recorded reasoning behind past choices. It answers *what connects to what* and
+*why is this like this*, which the schema and the index cannot. It never
+invents: a table found in code but not in the live schema is reported, not
+added. See
+[`backend/agents/(docs)/ARCHITECTURE.md`](backend/agents/(docs)/ARCHITECTURE.md#the-system-model).
+
+Ask it directly in either runtime:
+
+```
+What breaks if I rename orders.user_id?
+Why do we store the result instead of recomputing it?
+```

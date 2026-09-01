@@ -7,6 +7,13 @@ import {
   listTables,
   runSql,
 } from "./postgres";
+import {
+  buildSystemModel,
+  querySystemModel,
+  recordDecision,
+  searchDecisions,
+  simulateImpact,
+} from "./system-model";
 
 /**
  * Single source of truth for every tool an agent may be granted.
@@ -14,6 +21,10 @@ import {
  *
  * Jira MCP tools are registered for the discuss specialist. Call them only
  * when a ticket or user story is named.
+ *
+ * System-model tools read the graph in the product repo's `.sa/`. They are the
+ * "what is connected to what" and "why is it like this" layer, on top of the
+ * live schema's "what exists".
  */
 export const TOOL_REGISTRY = {
   list_tables: listTables,
@@ -22,6 +33,11 @@ export const TOOL_REGISTRY = {
   run_sql: runSql,
   search_api_specs: searchApiSpecs,
   search_schema_docs: searchSchemaDocs,
+  build_system_model: buildSystemModel,
+  query_system_model: querySystemModel,
+  simulate_impact: simulateImpact,
+  record_decision: recordDecision,
+  search_decisions: searchDecisions,
   get_jira_ticket: getJiraTicket,
   read_jira_user_story: readJiraUserStory,
 } satisfies Record<string, StructuredToolInterface>;

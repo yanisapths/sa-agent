@@ -24,13 +24,23 @@ agents/
       system-analyst/   requirements, data models, SQL
       solution-architect/ architecture and diagrams
       test-engineer/    test plans and fixtures
+      system-model/     the code graph, impact analysis, decision records
       jira/             explicit Jira MCP — tickets and user stories only
     claude/             plugin bundle for Claude Code and Codex (skills, subagents, MCP config)
+  model/                the system model — a typed graph of the product repo
+    types.ts            node and edge taxonomy; edges point dependent -> dependency
+    scan.ts             deterministic repo scan (files, imports, routes, SQL)
+    schema.ts           live Postgres tables, columns, and foreign keys
+    build.ts            scan + schema + reconcile; also the `model:build` CLI
+    store.ts            bun:sqlite storage and the reverse-reachability query
+    impact.ts           change simulation and the risk rubric
+    decisions.ts        engineering decisions as markdown, indexed into the graph
   tools/
     index.ts            TOOL_REGISTRY, TOOL_DEFINITIONS, resolveTools()
     core/               shared implementations used by LangChain and MCP
     postgres.ts         LangChain wrappers for live schema tools
     knowledge.ts        LangChain wrappers for Chroma retrieval
+    system-model.ts     LangChain wrappers for the graph and decision tools
     jira.ts             explicit Jira MCP wrappers (ticket + user story)
   ingest/               one-off pipelines that populate the vector store
     confluence.ts       Confluence API spec pages
@@ -56,6 +66,7 @@ internal/               artifact normalisation, errors, vault service
 | Layer       | Source                                                               | Freshness            |
 | ----------- | -------------------------------------------------------------------- | -------------------- |
 | Live schema | `list_tables`, `describe_tables`, `inspect_relationships`, `run_sql` | Real time            |
+| System model | `query_system_model`, `simulate_impact`, `search_decisions`         | Last `build_system_model` |
 | Knowledge   | `search_api_specs`, `search_schema_docs`                             | Last ingestion run   |
 | Jira MCP    | `get_jira_ticket`, `read_jira_user_story`                            | Only on explicit ask |
 | Skills      | `resources/skills/*/SKILL.md`                                        | On demand            |
@@ -64,6 +75,49 @@ internal/               artifact normalisation, errors, vault service
 
 All database access runs inside a read-only transaction with a statement
 timeout, and `run_sql` rejects anything that is not a `SELECT` or `WITH`.
+
+## System model
+
+The live schema says what exists. The system model says **what connects to
+what**, and the decision records say **why it is like that**.
+
+```bash
+bun run model:build              # the repo containing cwd
+bun run model:build /path/repo   # an explicit product repo
+```
+
+It writes `.sa/system-model.db` and reads `.sa/decisions/*.md` in the product
+repo. The graph is rebuildable, so `.gitignore` the `.db`; the decisions are
+not, so commit them.
+
+The build has three steps:
+
+1. **Scan** — walk the repo for files, imports, route declarations (resolved
+   through `app.use` mount prefixes), SQL and ORM table access, tests, and
+   docs. Pattern matching, no compiler and no model, so the same repo always
+   produces the same graph.
+2. **Schema** — read tables, columns, and foreign keys from live Postgres.
+3. **Reconcile** — a table named in code but absent from the live schema is
+   *reported*, never added. That is how "never invent a table" is enforced
+   rather than requested. With no database reachable the build still succeeds
+   and marks every table unverified.
+
+Edges always point **from the dependent to the dependency**, which makes
+"what breaks if I change this" a single recursive query walking them backwards.
+
+| Tool | Use |
+| --- | --- |
+| `build_system_model` | rebuild the graph; free and deterministic |
+| `query_system_model` | a component's dependencies, dependents, and decisions; `*` for an overview |
+| `simulate_impact` | blast radius by layer, plus a risk level with its arithmetic |
+| `record_decision` | write the reasoning a diff cannot carry |
+| `search_decisions` | why is this built this way |
+
+### What it does not see
+
+Routes registered through a factory, table names assembled at runtime,
+dependency injection by string token, and anything crossing a message queue.
+A quiet impact report is weak evidence, not proof.
 
 ## Setup
 
@@ -175,8 +229,10 @@ session state. The filesystem, planning (`write_todos`), and subagent delegation
 
 ## Adding a tool
 
-Define it in `agents/tools/`, then register it in `TOOL_REGISTRY`. The name
-becomes available to every `defineAgent` spec and is type-checked.
+Define the implementation in `agents/tools/core/`, wrap it for LangChain in
+`agents/tools/`, register it in `TOOL_REGISTRY`, and add it to `mcp/server.ts`
+so both runtimes get it. The name is then type-checked in every `defineAgent`
+spec and in `harness.ts`.
 
 ## Adding a skill
 
@@ -230,6 +286,12 @@ traces. Each MCP tool call is still recorded in LangSmith as a tool run (tags
 bun run ingest:confluence           # index Confluence API spec pages
 bun run ingest:ddl path/schema.sql  # index a DDL dump
 bun run ingest:url https://...      # index a page or text document
+```
+
+## System model build
+
+```bash
+bun run model:build                 # graph the repo containing cwd
 ```
 
 ## Endpoints

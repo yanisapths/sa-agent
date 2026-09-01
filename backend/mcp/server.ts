@@ -21,6 +21,14 @@ import {
   searchApiSpecs,
   searchSchemaDocs,
 } from "../agents/tools/core/knowledge";
+import {
+  buildModel,
+  queryModel,
+  recordDecision,
+  searchDecisions,
+  simulate,
+} from "../agents/tools/core/system-model";
+import { NODE_KINDS } from "../agents/model/types";
 import { tracedMcpTool, tracingStatus } from "./trace";
 
 void backendEnvLoaded;
@@ -60,6 +68,71 @@ const SEARCH_SCHEMA = {
     },
   },
   required: ["query"],
+} as const;
+
+const QUERY_MODEL_SCHEMA = {
+  type: "object",
+  properties: {
+    query: {
+      type: "string",
+      description: "Component to look up, or `*` for an overview of the model",
+    },
+    kind: {
+      type: "string",
+      enum: [...NODE_KINDS],
+      description: "Restrict matches to one node kind",
+    },
+    limit: {
+      type: "integer",
+      minimum: 1,
+      maximum: 15,
+      description: "Max nodes to expand (default 5)",
+    },
+  },
+  required: ["query"],
+} as const;
+
+const IMPACT_SCHEMA = {
+  type: "object",
+  properties: {
+    target: {
+      type: "string",
+      description:
+        "What is changing: `orders.user_id`, `OrderService`, `GET /orders`, or a file path",
+    },
+    depth: {
+      type: "integer",
+      minimum: 1,
+      maximum: 8,
+      description: "How many dependency hops to follow (default 4)",
+    },
+  },
+  required: ["target"],
+} as const;
+
+const DECISION_SCHEMA = {
+  type: "object",
+  properties: {
+    title: { type: "string", description: "One line, imperative: what was decided" },
+    context: { type: "string", description: "The situation that forced a choice" },
+    decision: { type: "string", description: "What was chosen" },
+    reason: { type: "string", description: "Why this option, in the team's own words" },
+    alternatives: {
+      type: "string",
+      description: "What else was considered and why it lost",
+    },
+    consequences: {
+      type: "string",
+      description: "What this commits the team to, including the downsides",
+    },
+    related: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "Nodes this constrains: table names, `table.column`, class names, `GET /path`",
+    },
+  },
+  required: ["title", "context", "decision", "reason"],
 } as const;
 
 const server = new Server(
@@ -123,6 +196,50 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "and inspect_relationships instead.",
       inputSchema: SEARCH_SCHEMA,
     },
+    {
+      name: "build_system_model",
+      description:
+        "Scan this repository and rebuild the system model: files, imports, HTTP endpoints, " +
+        "table access, tests, docs, and the live database schema, as a typed graph in .sa/system-model.db. " +
+        "Run it once before the other system-model tools, and again after code changes. " +
+        "Deterministic and free — it calls no model.",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "query_system_model",
+      description:
+        "Look up a component in the system model and get what it depends on, what depends on it, " +
+        "and any recorded decision about it. Accepts a class name, file path, table, `table.column`, " +
+        "or `GET /path`. Pass `*` for an overview of the whole model. " +
+        "Use this before designing a change, to find the real components involved.",
+      inputSchema: QUERY_MODEL_SCHEMA,
+    },
+    {
+      name: "simulate_impact",
+      description:
+        "Answer 'what breaks if I change this?'. Walks the dependency graph backwards from a table, " +
+        "column, endpoint, service, or file and returns the affected APIs, services, frontend, tests, " +
+        "and docs grouped by layer, plus a risk level with the reasons behind it and any decision " +
+        "records that constrain the area. Use this before planning, and put the result in the plan.",
+      inputSchema: IMPACT_SCHEMA,
+    },
+    {
+      name: "record_decision",
+      description:
+        "Write down why an engineering choice was made, as a reviewable markdown record in " +
+        ".sa/decisions/ that is linked into the system model. Use it when a choice has a rationale " +
+        "the code cannot show — a denormalisation, a rejected alternative, a deliberate constraint. " +
+        "Ask the human to confirm the reason; do not invent one.",
+      inputSchema: DECISION_SCHEMA,
+    },
+    {
+      name: "search_decisions",
+      description:
+        "Search recorded engineering decisions for the reasoning behind an existing implementation. " +
+        "Answers 'why is this like this?' where the graph and the schema only answer 'what' and 'where'. " +
+        "Check this before proposing a change that contradicts a past choice.",
+      inputSchema: SEARCH_SCHEMA,
+    },
   ],
 }));
 
@@ -135,9 +252,14 @@ function asStringArray(value: unknown): string[] | undefined {
   return value.map((item) => String(item));
 }
 
-function asLimit(value: unknown): number {
+function asLimit(value: unknown, max = 10): number {
   if (typeof value !== "number" || !Number.isInteger(value)) return 5;
-  return Math.min(10, Math.max(1, value));
+  return Math.min(max, Math.max(1, value));
+}
+
+function asDepth(value: unknown): number {
+  if (typeof value !== "number" || !Number.isInteger(value)) return 4;
+  return Math.min(8, Math.max(1, value));
 }
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -164,6 +286,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return searchApiSpecs(asString(args.query), asLimit(args.limit));
         case "search_schema_docs":
           return searchSchemaDocs(asString(args.query), asLimit(args.limit));
+        case "build_system_model":
+          return buildModel();
+        case "query_system_model":
+          return queryModel(
+            asString(args.query),
+            args.kind === undefined ? undefined : asString(args.kind),
+            asLimit(args.limit, 15),
+          );
+        case "simulate_impact":
+          return simulate(asString(args.target), asDepth(args.depth));
+        case "record_decision":
+          return recordDecision({
+            title: asString(args.title),
+            context: asString(args.context),
+            decision: asString(args.decision),
+            reason: asString(args.reason),
+            alternatives: asString(args.alternatives),
+            consequences: asString(args.consequences),
+            related: asStringArray(args.related) ?? [],
+          });
+        case "search_decisions":
+          return searchDecisions(asString(args.query), asLimit(args.limit));
         default:
           throw new Error(`Unknown tool: ${name}`);
       }

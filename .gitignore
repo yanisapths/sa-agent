@@ -225,3 +225,8 @@ target/
 coverage/
 tmp/
 temp/
+
+# System model — the graph is rebuildable from source, the decisions are not.
+.sa/*.db
+.sa/*.db-shm
+.sa/*.db-wal

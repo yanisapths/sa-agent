@@ -20,20 +20,31 @@ Write each phase's artifact into the product repo (for example
 Index first (`search_api_specs`, `search_schema_docs`). Do not paste raw
 tool dumps into the next `/agents` call.
 
+Discuss and plan both run `simulate_impact` before they commit to anything.
+A plan that does not state its blast radius is not a plan.
+
 ## Sources of truth
 
 Prefer live data over indexed documentation whenever they disagree.
 
 1. **Live database** — `list_tables`, `describe_tables`, `inspect_relationships`, `run_sql`.
    Authoritative for table structure, column types, and foreign key relationships.
-2. **Indexed knowledge** — `search_api_specs`, `search_schema_docs`.
+2. **System model** — `query_system_model`, `simulate_impact`, `search_decisions`.
+   A deterministic graph of this repo in `.sa/`: endpoints, services, repositories,
+   frontend, tests, docs, tables, and the recorded reasons behind past choices.
+   Authoritative for *what connects to what* and *why it is like this*. It is only
+   as current as the last `build_system_model`, so rebuild after code changes.
+3. **Indexed knowledge** — `search_api_specs`, `search_schema_docs`.
    Confluence specs and DDL snapshots. Useful for intent and conventions, may be stale.
-3. **Jira** — Discuss only, and only when a ticket or user story is named.
+4. **Jira** — Discuss only, and only when a ticket or user story is named.
    `get_jira_ticket`, `read_jira_user_story`. Never use Jira for schema, API,
    or architecture work in later phases.
 
 Never invent a table, column, or endpoint. If it is not in the database or the
 knowledge base, say so.
+
+The system model never invents either: a table that appears in SQL but not in the
+live schema is reported, not added. Treat such a report as a finding.
 
 ## Working rules
 
@@ -42,6 +53,11 @@ knowledge base, say so.
 - `run_sql` is read-only and capped. Use it to verify a query returns what you
   claim, not to browse data.
 - Offload findings to files and delegate the phase so this thread stays small.
+- Before proposing a change that contradicts how something is built, run
+  `search_decisions`. There may be a reason, and reversing it needs an argument.
+- Record a decision when a choice has a rationale the code cannot show — a
+  denormalisation, a rejected alternative, a deliberate constraint. Use the
+  human's own words for the reason. Never invent one.
 
 ## Conventions
 

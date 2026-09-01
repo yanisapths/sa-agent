@@ -41,6 +41,17 @@ const JIRA = [
   "read_jira_user_story",
 ] as const satisfies readonly ToolName[];
 
+/**
+ * The system model. Read-only for most phases; only discuss rebuilds it and
+ * only execute records a decision, so a specialist cannot rewrite the graph
+ * out from under the phase after it.
+ */
+const MODEL_READ = [
+  "query_system_model",
+  "simulate_impact",
+  "search_decisions",
+] as const satisfies readonly ToolName[];
+
 /** Virtual-FS paths. Next phase reads the file, not the chat history. */
 export const ARTIFACT = {
   context: "/artifacts/context.md",
@@ -75,9 +86,10 @@ export const PHASE: Record<Phase, PhaseContract> = {
     receives:
       "user request, optional ticket key, index hits, live schema orientation",
     produces: `${ARTIFACT.discuss} — scope, gaps, field map, questions for the human`,
-    tools: [...SCHEMA, ...INDEX, ...JIRA],
+    tools: [...SCHEMA, ...INDEX, ...JIRA, ...MODEL_READ, "build_system_model"],
     skills: [
       "/resources/skills/system-analyst/",
+      "/resources/skills/system-model/",
       "/resources/skills/jira/",
     ],
   },
@@ -87,8 +99,11 @@ export const PHASE: Record<Phase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.discuss} (approved) + index conventions`,
     produces: `${ARTIFACT.plan} — spec, Mermaid flow, step list for execute`,
-    tools: [...SCHEMA, ...INDEX],
-    skills: ["/resources/skills/solution-architect/"],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ],
+    skills: [
+      "/resources/skills/solution-architect/",
+      "/resources/skills/system-model/",
+    ],
   },
   execute: {
     owner: "execute",
@@ -96,8 +111,11 @@ export const PHASE: Record<Phase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.plan} (approved)`,
     produces: `${ARTIFACT.execute} — what changed, files, residual risks`,
-    tools: [...SCHEMA, ...INDEX],
-    skills: ["/resources/skills/backend/"],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, "build_system_model", "record_decision"],
+    skills: [
+      "/resources/skills/backend/",
+      "/resources/skills/system-model/",
+    ],
   },
   test: {
     owner: "test",
@@ -105,8 +123,11 @@ export const PHASE: Record<Phase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.discuss} + ${ARTIFACT.plan} + ${ARTIFACT.execute}`,
     produces: `${ARTIFACT.test} — cases, fixtures, quiz of the spec, gaps`,
-    tools: [...SCHEMA, ...INDEX],
-    skills: ["/resources/skills/test-engineer/"],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ],
+    skills: [
+      "/resources/skills/test-engineer/",
+      "/resources/skills/system-model/",
+    ],
   },
   review: {
     owner: "review",
@@ -114,8 +135,11 @@ export const PHASE: Record<Phase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.plan} + ${ARTIFACT.execute} + ${ARTIFACT.test}`,
     produces: `${ARTIFACT.review} — findings, required refactors, ship-ready or not`,
-    tools: [...SCHEMA, ...INDEX],
-    skills: ["/resources/skills/backend/"],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ],
+    skills: [
+      "/resources/skills/backend/",
+      "/resources/skills/system-model/",
+    ],
   },
   ship: {
     owner: null,
@@ -165,10 +189,12 @@ export function harnessSubagents(): SubAgent[] {
 or story is named, jira.
 
 1. If an issue key is present, get_jira_ticket or read_jira_user_story.
-2. Index existing contracts (search_api_specs, search_schema_docs).
-3. Confirm tables and FKs on the live schema.
-4. Write ${ARTIFACT.discuss}: in/out scope, entities, field map, gaps,
-   questions the human must answer.
+2. build_system_model, then query_system_model to find the components the
+   request touches, and search_decisions for why they are built that way.
+3. Index existing contracts (search_api_specs, search_schema_docs).
+4. Confirm tables and FKs on the live schema.
+5. Write ${ARTIFACT.discuss}: in/out scope, entities, field map, existing
+   components, constraining decisions, gaps, questions for the human.
 
 Do not write a build plan or application source. ${GROUNDING}`,
     ),
@@ -178,8 +204,12 @@ Do not write a build plan or application source. ${GROUNDING}`,
       `You are the Plan specialist. Load solution-architect.
 
 Read ${ARTIFACT.discuss}. Follow existing conventions from the index.
+Run simulate_impact on every element the change touches.
 Write ${ARTIFACT.plan}: implementable spec, at least one Mermaid diagram
-(every label double-quoted), and a numbered execute checklist.
+(every label double-quoted), a numbered execute checklist, and an
+"Impact and risk" section — affected APIs, database, services, frontend,
+tests, docs, the risk level with its reasons, and any decision it works
+against. Affected files with no test become checklist items.
 
 Do not implement application source. ${GROUNDING}`,
     ),
@@ -192,6 +222,11 @@ Read ${ARTIFACT.plan}. Follow that checklist and product conventions.
 Parameterize SQL with $1. Map snake_case columns to camelCase at the
 boundary. Verify backing queries with run_sql.
 
+Stay inside the blast radius the plan declared. When done, run
+build_system_model so the graph matches the code. If the change embodies
+a rationale the code cannot show, ask the human for it and
+record_decision — never invent the reason.
+
 Write ${ARTIFACT.execute}: files touched, what was implemented, what
 was not. ${GROUNDING}`,
     ),
@@ -202,7 +237,9 @@ was not. ${GROUNDING}`,
 
 Read ${ARTIFACT.discuss}, ${ARTIFACT.plan}, and ${ARTIFACT.execute}.
 Quiz the implementation against the spec. Cover advertised status
-codes, nullability, and pagination from the live schema.
+codes, nullability, and pagination from the live schema. Run
+simulate_impact on what changed: everything it lists as having no test
+is a coverage gap to cover or record.
 
 Write ${ARTIFACT.test}: plan, cases, fixture notes, pass/fail, spec
 gaps. Do not insert or update data. ${GROUNDING}`,
@@ -214,6 +251,9 @@ gaps. Do not insert or update data. ${GROUNDING}`,
 
 Read ${ARTIFACT.plan}, ${ARTIFACT.execute}, and ${ARTIFACT.test}.
 Check conventions, invented schema, missing tests, and unsafe SQL.
+search_decisions on the area touched: reversing a recorded decision
+without arguing against it is a critical finding. Use simulate_impact to
+confirm the change did not reach further than the plan said.
 
 Write ${ARTIFACT.review}: critical / suggestion / ship-ready.
 You may name refactors; do not commit or open a PR. ${GROUNDING}`,
