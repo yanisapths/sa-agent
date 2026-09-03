@@ -23,6 +23,33 @@ tool dumps into the next `/agents` call.
 Discuss and plan both run `simulate_impact` before they commit to anything.
 A plan that does not state its blast radius is not a plan.
 
+## PVT prep track
+
+A separate loop, for preparing a Production Verification Test. Same rule: one
+phase, one subagent, then stop for the human. Do not mix it with the harness
+loop above — it has its own artifacts.
+
+1. **pvt-discuss** (`pvt-analyst`) — requirements + the test case list (CSV,
+   table, or a named Jira story), grounded on the live schema → case inventory
+   and gaps. Human approves.
+2. **pvt-plan** (`pvt-planner`) — approved pvt-discuss → scenario groups that
+   share one data setup, the numbered script set, and the pre-window /
+   in-window split. Human approves.
+3. **pvt-execute** (`pvt-scripter`) — approved pvt-plan → the SQL scripts.
+   Human approves.
+
+Artifacts are `docs/sa/pvt-discuss.md`, `pvt-plan.md`, `pvt-execute.md`.
+
+The window is the constraint. Nothing gets created inside it that could have
+been staged before it, and SRE is contacted as few times as possible — every
+script they run is a round trip, and any script they cannot run without asking
+you is a defect in the plan.
+
+Scripts are `NN-<action>[-pvt-NN]_<owner>.sql`, owner `devops` or `sre`,
+numbers unique and ascending in run order, `_(optional)` for the rollbacks.
+Every rollback is written in the same pass as the script it undoes. The
+`pvt-prep` skill holds the full convention.
+
 ## Sources of truth
 
 Prefer live data over indexed documentation whenever they disagree.

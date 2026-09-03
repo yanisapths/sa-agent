@@ -136,6 +136,10 @@ Both marketplaces are named `sa-agent` and expose one plugin, also `sa-agent`.
    **solution-architect** (plan), **coder** (execute), **test-engineer**,
    or **reviewer**. Approve the artifact before the next phase.
 
+   For a Production Verification Test, use the PVT track instead:
+   **pvt-analyst** (pvt-discuss), **pvt-planner** (test planning), then
+   **pvt-scripter** (the SQL script set). Same gates, its own artifacts.
+
 Details: [`backend/agents/claude/README.md`](backend/agents/claude/README.md).
 
 ### 2b. Codex
@@ -171,7 +175,8 @@ echo "$SA_AGENT_HOME" > ~/.sa-agent/home
 
 4. Run one phase at a time by invoking the skill: `$system-analyst` (discuss),
    `$solution-architect` (plan), `$test-engineer` (test), plus `$backend` and
-   `$jira`. Approve the artifact before the next phase.
+   `$jira`. Approve the artifact before the next phase. `$pvt-prep` drives the
+   PVT track.
 
 Codex has no plugin equivalent of Claude Code subagents, so `agents/*.md` is
 not loaded there. Execute and review are driven by you against the approved
@@ -245,6 +250,7 @@ In each **product** repo the agent also maintains:
   system-model.db                   the graph (derived — gitignored)
   decisions/0001-*.md               why the code is the way it is (committed)
 docs/sa/<phase>.md                  the phase artifacts
+docs/sa/pvt-<phase>.md              the PVT prep artifacts
 ```
 
 Backend layout, tools, ingestion, and HTTP API:

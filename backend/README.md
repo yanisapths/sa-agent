@@ -309,6 +309,18 @@ Pass the `threadId` returned by the previous response to continue a session.
 Responses are `{ ok, threadId, type, data }` where `type` is one of `text`,
 `api_spec`, `sql`, `diagram`, or `code`.
 
+**Vault mentions.** `@folder/file.csv` in `message` is resolved to the file's
+bytes and inlined the same way an upload is. This needs an identity, so send
+the same `Authorization: Bearer <token>` the vault uses — chat itself does not
+require auth, and an unsigned request leaves the tokens as literal text with a
+note telling the agent it could not read them. Never resolve mentions against a
+default user; that reads someone else's vault.
+
+Caps: 5 files per message, 1 MB per file, 4 MB total. A mention naming a folder
+resolves to the files in it. `.pdf`, `.docx`, and `.xlsx` are uploadable but are
+containers, so they are named and skipped rather than decoded as UTF-8 — export
+a CSV or Markdown for those.
+
 ### Vault (`Authorization: Bearer <token>`)
 
 - `GET /v1/vault/folders?q=`

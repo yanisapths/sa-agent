@@ -4,6 +4,7 @@ import { config } from "../../config";
 import { getSupabase } from "../../database/supabase";
 import { HttpError, throwIfError } from "../httpError";
 import {
+  downloadVaultObject,
   removeVaultObjects,
   uploadVaultObject,
   vaultObjectKey,
@@ -11,6 +12,9 @@ import {
 } from "./storage";
 import type {
   CreateFolderInput,
+  MentionResolution,
+  ResolvedMention,
+  UnresolvedMention,
   UploadFileInput,
   VaultFileResponse,
   VaultFileRow,
@@ -331,6 +335,168 @@ export async function deleteFile(
 
   throwIfError(deleteError);
   return { id: fileId };
+}
+
+/**
+ * Mention resolution for the chat route.
+ *
+ * `@folder/file.ext` in a chat message is only text until someone fetches the
+ * bytes. These are the caps on doing that: a mention is one click, so a folder
+ * mention can name far more content than belongs in one prompt, and inlining a
+ * truncated case list would be worse than refusing it.
+ */
+const MAX_MENTION_FILES = 5;
+const MAX_MENTION_FILE_BYTES = 1024 * 1024;
+const MAX_MENTION_TOTAL_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Tokens are `@folder/file.ext`. Folder names have their whitespace collapsed
+ * to dashes by `toMentionToken`, and `safeFileName` limits filenames to
+ * alphanumerics, dot, underscore, and dash — so the token charset is closed.
+ *
+ * The leading boundary matters: without it `yanisa@example.com` reads as a
+ * mention of `@example.com`.
+ */
+const MENTION_PATTERN = /(?<=^|[\s([{"'])@[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?/g;
+
+/** A token at the end of a sentence keeps the sentence's punctuation. */
+const TRAILING_PUNCTUATION = /[.,;:!?)\]}]+$/;
+
+export function extractMentionTokens(message: string): string[] {
+  const found = (message.match(MENTION_PATTERN) ?? [])
+    .map((token) => token.replace(TRAILING_PUNCTUATION, ""))
+    .filter((token) => token.length > 1);
+  return [...new Set(found)];
+}
+
+/**
+ * Resolve mention tokens to file bytes from this user's vault only. A token
+ * naming a folder resolves to the files in it. Anything unresolved comes back
+ * with a reason instead of being dropped — a silently missing case list is how
+ * a specialist ends up inventing cases.
+ */
+export async function resolveMentions(
+  userId: string,
+  tokens: readonly string[],
+): Promise<MentionResolution> {
+  const files: ResolvedMention[] = [];
+  const unresolved: UnresolvedMention[] = [];
+  if (tokens.length === 0) return { files, unresolved };
+
+  const folders = await listFoldersWithRows(userId);
+  const byFile = new Map<string, { folder: string; row: VaultFileRow }>();
+  const byFolder = new Map<string, VaultFileRow[]>();
+
+  for (const { folder, rows } of folders) {
+    byFolder.set(toMentionToken(folder.name).toLowerCase(), rows);
+    for (const row of rows) {
+      byFile.set(toMentionToken(folder.name, row.name).toLowerCase(), {
+        folder: folder.name,
+        row,
+      });
+    }
+  }
+
+  /** Carries the token the human typed, so a refusal names what they wrote. */
+  const queued: { token: string; row: VaultFileRow }[] = [];
+  const seen = new Set<string>();
+
+  const enqueue = (token: string, row: VaultFileRow) => {
+    if (seen.has(row.id)) return;
+    seen.add(row.id);
+    queued.push({ token, row });
+  };
+
+  for (const token of tokens) {
+    const key = token.toLowerCase();
+    const file = byFile.get(key);
+    if (file) {
+      enqueue(token, file.row);
+      continue;
+    }
+
+    const folderFiles = byFolder.get(key);
+    if (!folderFiles) {
+      unresolved.push({ token, reason: "no such file or folder in the vault" });
+      continue;
+    }
+    if (folderFiles.length === 0) {
+      unresolved.push({ token, reason: "folder is empty" });
+      continue;
+    }
+    for (const row of folderFiles) {
+      enqueue(`${token}/${row.name}`, row);
+    }
+  }
+
+  let total = 0;
+  for (const { token, row } of queued) {
+    if (files.length >= MAX_MENTION_FILES) {
+      unresolved.push({
+        token,
+        reason: `more than ${MAX_MENTION_FILES} files mentioned — name the files you need`,
+      });
+      continue;
+    }
+    if (row.size > MAX_MENTION_FILE_BYTES) {
+      unresolved.push({
+        token,
+        reason: `${Math.round(row.size / 1024)} KB exceeds the ${MAX_MENTION_FILE_BYTES / 1024} KB per-file limit for chat — attach a smaller extract`,
+      });
+      continue;
+    }
+    if (total + row.size > MAX_MENTION_TOTAL_BYTES) {
+      unresolved.push({ token, reason: "total mentioned size limit reached" });
+      continue;
+    }
+
+    files.push({
+      token,
+      name: row.name,
+      mimeType: row.mime_type,
+      buffer: await downloadVaultObject(row.storage_path),
+    });
+    total += row.size;
+  }
+
+  return { files, unresolved };
+}
+
+/** Folder rows with their file rows, keeping `storage_path` for download. */
+async function listFoldersWithRows(
+  userId: string,
+): Promise<{ folder: VaultFolderRow; rows: VaultFileRow[] }[]> {
+  const supabase = getSupabase();
+  const { data: folders, error } = await supabase
+    .from(FOLDERS)
+    .select("*")
+    .eq("user_id", userId);
+  throwIfError(error);
+
+  const folderRows = (folders ?? []) as VaultFolderRow[];
+  if (folderRows.length === 0) return [];
+
+  const { data: files, error: filesError } = await supabase
+    .from(FILES)
+    .select("*")
+    .eq("user_id", userId)
+    .in(
+      "folder_id",
+      folderRows.map((folder) => folder.id),
+    );
+  throwIfError(filesError);
+
+  const byFolder = new Map<string, VaultFileRow[]>();
+  for (const file of (files ?? []) as VaultFileRow[]) {
+    const list = byFolder.get(file.folder_id) ?? [];
+    list.push(file);
+    byFolder.set(file.folder_id, list);
+  }
+
+  return folderRows.map((folder) => ({
+    folder,
+    rows: byFolder.get(folder.id) ?? [],
+  }));
 }
 
 export async function listMentions(

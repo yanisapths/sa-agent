@@ -24,6 +24,16 @@ export const PHASES = [
 
 export type Phase = (typeof PHASES)[number];
 
+/**
+ * PVT prep is a second track, not more phases on the first one. It ends in
+ * SQL scripts another team runs against production, so it never reaches
+ * execute-the-code or review-the-diff. Same discipline: one phase, one human
+ * gate, one artifact.
+ */
+export const PVT_PHASES = ["pvt-discuss", "pvt-plan", "pvt-execute"] as const;
+
+export type PvtPhase = (typeof PVT_PHASES)[number];
+
 const SCHEMA = [
   "list_tables",
   "describe_tables",
@@ -60,6 +70,15 @@ export const ARTIFACT = {
   execute: "/artifacts/execute.md",
   test: "/artifacts/test.md",
   review: "/artifacts/review.md",
+  /**
+   * The case list as the human supplied it. A chat attachment only reaches the
+   * router's own message, so the router parks it here verbatim — otherwise the
+   * pvt-discuss specialist never sees the cases it is supposed to inventory.
+   */
+  pvtCases: "/artifacts/pvt-cases.csv",
+  pvtDiscuss: "/artifacts/pvt-discuss.md",
+  pvtPlan: "/artifacts/pvt-plan.md",
+  pvtExecute: "/artifacts/pvt-execute.md",
 } as const;
 
 export interface PhaseContract {
@@ -152,6 +171,52 @@ export const PHASE: Record<Phase, PhaseContract> = {
   },
 };
 
+/**
+ * PVT prep. The scarce resource is the test window and the SRE's attention,
+ * so planning groups cases into shared setups and execute only emits scripts —
+ * `run_sql` stays read-only and no phase here writes to a database.
+ */
+export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
+  "pvt-discuss": {
+    owner: "pvt-discuss",
+    model: config.model.pvtDiscuss,
+    gate: "human",
+    receives: `PVT requirements, the case list at ${ARTIFACT.pvtCases} (or a named story), live schema`,
+    produces: `${ARTIFACT.pvtDiscuss} — case inventory, tables touched, unrunnable cases, questions`,
+    tools: [...SCHEMA, ...INDEX, ...JIRA, ...MODEL_READ],
+    skills: [
+      "/resources/skills/pvt-prep/",
+      "/resources/skills/system-analyst/",
+      "/resources/skills/jira/",
+    ],
+  },
+  "pvt-plan": {
+    owner: "pvt-plan",
+    model: config.model.pvtPlan,
+    gate: "human",
+    receives: `${ARTIFACT.pvtDiscuss} (approved)`,
+    produces: `${ARTIFACT.pvtPlan} — scenario groups, script set, pre-window vs in-window split, impact`,
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ],
+    skills: [
+      "/resources/skills/pvt-prep/",
+      "/resources/skills/test-engineer/",
+      "/resources/skills/backend/",
+    ],
+  },
+  "pvt-execute": {
+    owner: "pvt-execute",
+    model: config.model.pvtExecute,
+    gate: "human",
+    receives: `${ARTIFACT.pvtPlan} (approved)`,
+    produces: `${ARTIFACT.pvtExecute} — the numbered script set, run order, owners`,
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ],
+    skills: [
+      "/resources/skills/pvt-prep/",
+      "/resources/skills/backend/",
+    ],
+  },
+};
+
 /** Orchestrator: index only. Specialists own schema, SQL, and Jira. */
 export const ORCHESTRATOR_TOOLS = [
   "search_api_specs",
@@ -160,11 +225,10 @@ export const ORCHESTRATOR_TOOLS = [
 ] as const satisfies readonly ToolName[];
 
 function specialist(
-  phase: Exclude<Phase, "ship">,
+  row: PhaseContract,
   description: string,
   systemPrompt: string,
 ): SubAgent {
-  const row = PHASE[phase];
   return {
     name: row.owner as string,
     description,
@@ -183,7 +247,7 @@ path named in the task. Return a short report, not raw tool dumps.`;
 export function harnessSubagents(): SubAgent[] {
   return [
     specialist(
-      "discuss",
+      PHASE.discuss,
       "Align on a request: read the story, ground it, list gaps. Use when the user brings a ticket, story, or unclear ask. Do not plan or code.",
       `You are the Discuss specialist. Load system-analyst and, if a ticket
 or story is named, jira.
@@ -199,7 +263,7 @@ or story is named, jira.
 Do not write a build plan or application source. ${GROUNDING}`,
     ),
     specialist(
-      "plan",
+      PHASE.plan,
       "Turn an approved discuss artifact into a spec, diagram, and execute plan. Use after discuss is approved. Do not code.",
       `You are the Plan specialist. Load solution-architect.
 
@@ -214,7 +278,7 @@ against. Affected files with no test become checklist items.
 Do not implement application source. ${GROUNDING}`,
     ),
     specialist(
-      "execute",
+      PHASE.execute,
       "Implement the approved plan in the product repo. Use only after plan is approved.",
       `You are the Execute specialist. Load backend.
 
@@ -231,7 +295,7 @@ Write ${ARTIFACT.execute}: files touched, what was implemented, what
 was not. ${GROUNDING}`,
     ),
     specialist(
-      "test",
+      PHASE.test,
       "Check the change against the discuss/plan artifacts: cases, fixtures, unit tests, quiz. Use after execute.",
       `You are the Test specialist. Load test-engineer.
 
@@ -245,7 +309,7 @@ Write ${ARTIFACT.test}: plan, cases, fixture notes, pass/fail, spec
 gaps. Do not insert or update data. ${GROUNDING}`,
     ),
     specialist(
-      "review",
+      PHASE.review,
       "Review and list required refactors before ship. Use after test is accepted. Do not ship.",
       `You are the Review specialist. Load backend.
 
@@ -257,6 +321,70 @@ confirm the change did not reach further than the plan said.
 
 Write ${ARTIFACT.review}: critical / suggestion / ship-ready.
 You may name refactors; do not commit or open a PR. ${GROUNDING}`,
+    ),
+    specialist(
+      PVT_PHASE["pvt-discuss"],
+      "Align on a PVT: read the requirements and the test case list, ground every case on the live schema, list the ones that cannot run. Use first for production verification work. Do not plan or write SQL.",
+      `You are the PVT Discuss specialist. Load pvt-prep and system-analyst,
+plus jira if a ticket or story is named.
+
+1. Read the case source: ${ARTIFACT.pvtCases} if the router parked one there,
+   otherwise the story or the table in the task. Normalise every case to case
+   id, scenario, precondition data, steps, expected result. Keep the source
+   ids. If neither exists, say so and stop — do not invent cases.
+2. Ground each case with describe_tables and inspect_relationships, and find
+   the components behind it with query_system_model.
+3. Write ${ARTIFACT.pvtDiscuss}: the window and its goal, the case inventory,
+   tables and columns each case touches, cases that cannot run as written,
+   and questions for the human.
+
+A case naming a table or column that does not exist is a gap, not a case.
+Do not group scenarios or write scripts. ${GROUNDING}`,
+    ),
+    specialist(
+      PVT_PHASE["pvt-plan"],
+      "Group approved PVT cases into scenarios that share one data setup and lay out the numbered script set. Use after pvt-discuss is approved. Do not write the scripts.",
+      `You are the PVT Plan specialist. Load pvt-prep, test-engineer, and backend.
+
+Read ${ARTIFACT.pvtDiscuss}. Group the cases into the smallest set of
+scenarios that can share one data setup: same fixture, and no case mutating
+what another asserts. Cases writing the same row go in different groups or
+get their own -pvt-NN patch.
+
+Two goals decide the layout, in this order: nothing is created inside the PVT
+window that could have been staged before it, and SRE is contacted as few
+times as possible. Run simulate_impact on every table and column the scripts
+will write, and search_decisions on that area.
+
+Write ${ARTIFACT.pvtPlan}: scenario groups with the cases each covers, run
+order, the script set as a table (filename, owner, purpose, cases served,
+matching rollback), the pre-window / in-window split, an "Impact and risk"
+section, one Mermaid diagram of the run order with every label double-quoted,
+and a numbered checklist for execute.
+
+Do not write SQL files. ${GROUNDING}`,
+    ),
+    specialist(
+      PVT_PHASE["pvt-execute"],
+      "Generate the numbered, owner-tagged PVT SQL script set from an approved PVT plan. Use only after pvt-plan is approved.",
+      `You are the PVT Execute specialist. Load pvt-prep and backend.
+
+Read ${ARTIFACT.pvtPlan} and follow its script table exactly. Name files
+NN-<action>[-pvt-NN]_<owner>.sql, owner devops or sre.
+
+Every script carries a header comment naming its owner, when to run it, the
+cases it serves and its rollback counterpart; idempotent guards; BEGIN/COMMIT
+around data changes; a key-scoped WHERE on every UPDATE and DELETE; and a
+closing verification SELECT printing affected row counts. These run in psql,
+so use literals collected at the top of the file, not $1.
+
+Confirm every column with describe_tables and prove each verification query
+with run_sql. run_sql is read-only — never attempt a write. Write each
+rollback in the same pass as the script it undoes.
+
+Write ${ARTIFACT.pvtExecute}: the scripts produced, run order with owners,
+what each assumes about prior state, and anything the plan asked for that you
+did not produce. ${GROUNDING}`,
     ),
   ];
 }

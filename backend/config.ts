@@ -120,6 +120,14 @@ export const config = {
     execute: process.env.AGENT_EXECUTE_MODEL || defaultModel,
     test: process.env.AGENT_TEST_MODEL || defaultModel,
     review: process.env.AGENT_REVIEW_MODEL || defaultModel,
+    /**
+     * PVT prep track. Separate overrides because its execute phase emits
+     * production SQL for someone else to run, which is worth a stronger
+     * model than the rest of the loop.
+     */
+    pvtDiscuss: process.env.AGENT_PVT_DISCUSS_MODEL || defaultModel,
+    pvtPlan: process.env.AGENT_PVT_PLAN_MODEL || defaultModel,
+    pvtExecute: process.env.AGENT_PVT_EXECUTE_MODEL || defaultModel,
   },
 
   /**

@@ -278,6 +278,14 @@ BearerAuth
 
 ## Notes
 
-- Chat and Spec messages that include `@tokens` should send `mentions: string[]` alongside `message` so the agent can hydrate file contents before LLM generation.
+- Chat and Spec messages that include `@tokens` may send `mentions: string[]`
+  alongside `message`; `POST /chat` also scans `message` for tokens, so either
+  works and an explicit list wins. The backend hydrates the file contents into
+  the prompt before generation (`routes/chat.ts`, `resolveMentions` in
+  `internal/vault/service.ts`).
+- Mention hydration needs `Authorization: Bearer <token>` on the **chat**
+  request — chat does not otherwise require auth, and an unsigned request
+  leaves the tokens as text. Caps: 5 files, 1 MB each, 4 MB total; `.pdf`,
+  `.docx`, and `.xlsx` are named but not decoded.
 - Spec Design Agent uploads are temp first (`POST /v1/vault/files` with a later persist flag can wait). For v1, upload directly into a folder.
 - Frontend calls `{AGENT_API}/v1/vault` from `features/vault/service.ts`. Set `NEXT_PUBLIC_AGENT_API` and `NEXT_PUBLIC_VAULT_TOKEN`.

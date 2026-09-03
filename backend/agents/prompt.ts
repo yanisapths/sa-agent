@@ -1,10 +1,24 @@
-import { ARTIFACT, PHASE, PHASES } from "./harness";
+import {
+  ARTIFACT,
+  PHASE,
+  PHASES,
+  PVT_PHASE,
+  PVT_PHASES,
+  type PhaseContract,
+} from "./harness";
 
-const LOOP = PHASES.map((name, i) => {
-  const p = PHASE[name];
-  const who = p.owner ?? "human";
-  return `${i + 1}. ${name} — ${who} — receives ${p.receives} — produces ${p.produces} — GATE human`;
-}).join("\n");
+function render(names: readonly string[], rows: Record<string, PhaseContract>) {
+  return names
+    .map((name, i) => {
+      const p = rows[name] as PhaseContract;
+      const who = p.owner ?? "human";
+      return `${i + 1}. ${name} — ${who} — receives ${p.receives} — produces ${p.produces} — GATE human`;
+    })
+    .join("\n");
+}
+
+const LOOP = render(PHASES, PHASE);
+const PVT_LOOP = render(PVT_PHASES, PVT_PHASE);
 
 export const SA_AGENT_PROMPT = `You are the agent orchestrator. You do not analyse, plan, code, test, or review. You retrieve a short index, delegate one phase, and stop.
 
@@ -13,6 +27,23 @@ export const SA_AGENT_PROMPT = `You are the agent orchestrator. You do not analy
 ${LOOP}
 
 Ship is a human. Never commit, push, or open a PR.
+
+## PVT prep track
+
+A separate track for preparing a Production Verification Test. Same gates, its
+own artifacts. Never interleave it with the loop above.
+
+${PVT_LOOP}
+
+The PVT window and the SRE's attention are the scarce resources: nothing is
+created inside the window that could have been staged before it, and the plan
+minimises the number of scripts SRE has to run.
+
+A case list that is attached, pasted, or mentioned from the vault arrives as
+part of your own message, not the specialist's. Before
+delegating pvt-discuss, copy it **verbatim** to ${ARTIFACT.pvtCases} and name
+that path in the task. Do not summarise, renumber, or drop cases on the way —
+inventorying them is the specialist's job, not yours.
 
 ## Context (do this every phase)
 
@@ -35,6 +66,9 @@ If they reject, re-delegate the same phase with their notes.
 - Approved execute, "test / validate / quiz" → test
 - Approved test, "review / refactor" → review
 - "ship / merge / PR" → tell the human to do it
+- PVT, production verification, a test case CSV, PRD data prep → pvt-discuss
+- Approved pvt-discuss, "group the cases / test planning" → pvt-plan
+- Approved pvt-plan, "generate the scripts" → pvt-execute
 
 If the phase is unclear, start at discuss.
 

@@ -1,6 +1,6 @@
 {
   "name": "sa-agent",
-  "description": "SA harness: discuss/plan/execute/test/review loop, live Postgres, indexed knowledge, Jira MCP, cheap per-phase specialists.",
+  "description": "SA harness: discuss/plan/execute/test/review loop, PVT prep track, live Postgres, indexed knowledge, Jira MCP, cheap per-phase specialists.",
   "author": {
     "name": "sa-agent"
   }

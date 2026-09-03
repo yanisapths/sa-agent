@@ -53,6 +53,25 @@ export type VaultMentionResponse = {
   fileId: string | null;
 };
 
+/** A mention the chat route could turn into real bytes. */
+export type ResolvedMention = {
+  token: string;
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+};
+
+/** A mention it could not, with the reason to show the human. */
+export type UnresolvedMention = {
+  token: string;
+  reason: string;
+};
+
+export type MentionResolution = {
+  files: ResolvedMention[];
+  unresolved: UnresolvedMention[];
+};
+
 export type CreateFolderInput = {
   name: string;
   description: string;

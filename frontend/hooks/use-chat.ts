@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { UIMessage, UIPart } from "@/components/chat-message";
 import { Attachment } from "@/components/chat-input";
-import { AGENT_API } from "@/lib/api";
+import { AGENT_API, VAULT_TOKEN } from "@/lib/api";
 
 type Status = "idle" | "submitted" | "streaming" | "error";
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
@@ -350,8 +350,14 @@ export const useChat = () => {
       formData.append("message", text);
       attachments.forEach((att) => formData.append("files", att.file));
 
+      // Same bearer the vault uses. Chat itself does not require auth; this is
+      // what lets the backend resolve `@folder/file` mentions to real bytes.
+      const headers = new Headers();
+      if (VAULT_TOKEN) headers.set("Authorization", `Bearer ${VAULT_TOKEN}`);
+
       const res = await fetch(`${AGENT_API}/chat`, {
         method: "POST",
+        headers,
         body: formData,
       });
 

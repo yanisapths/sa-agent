@@ -1,7 +1,7 @@
 {
   "name": "sa-agent",
   "version": "0.1.0",
-  "description": "SA harness: discuss/plan/execute/test/review loop, live Postgres, indexed knowledge, Jira MCP, cheap per-phase specialists.",
+  "description": "SA harness: discuss/plan/execute/test/review loop, PVT prep track, live Postgres, indexed knowledge, Jira MCP, cheap per-phase specialists.",
   "author": {
     "name": "sa-agent"
   },
@@ -19,7 +19,8 @@
     "capabilities": ["Read", "Write"],
     "defaultPrompt": [
       "Use system-analyst to spec this ticket against the live schema.",
-      "Use solution-architect to turn the approved discuss notes into a plan."
+      "Use solution-architect to turn the approved discuss notes into a plan.",
+      "Use pvt-prep to group these PVT cases and lay out the SRE script set."
     ]
   }
 }

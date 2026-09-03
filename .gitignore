@@ -230,3 +230,5 @@ temp/
 .sa/*.db
 .sa/*.db-shm
 .sa/*.db-wal
+
+graphify-out/*

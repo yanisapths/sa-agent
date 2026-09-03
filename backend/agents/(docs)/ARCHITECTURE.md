@@ -29,6 +29,9 @@ Override with `AGENT_ORCHESTRATOR_MODEL`, `AGENT_DISCUSS_MODEL`,
 `AGENT_PLAN_MODEL`, `AGENT_EXECUTE_MODEL`, `AGENT_TEST_MODEL`,
 `AGENT_REVIEW_MODEL` (`provider:model`).
 
+The PVT prep track below has its own three: `AGENT_PVT_DISCUSS_MODEL`,
+`AGENT_PVT_PLAN_MODEL`, `AGENT_PVT_EXECUTE_MODEL`.
+
 ## The loop
 
 ```
@@ -49,6 +52,46 @@ Override with `AGENT_ORCHESTRATOR_MODEL`, `AGENT_DISCUSS_MODEL`,
 | **ship** | accepted review | commit / PR | you ship |
 
 There is no `/start` command. The artifact file **is** the interface.
+
+## The PVT prep track
+
+Preparing a Production Verification Test is a **second track**, not more phases
+on the first. It ends in SQL scripts another team runs against production, so
+it never reaches execute-the-code or review-the-diff. `PVT_PHASES` /
+`PVT_PHASE` in [`harness.ts`](../harness.ts).
+
+```
+[pvt-discuss] ── pvt-discuss.md ──► [pvt-plan] ── pvt-plan.md ──► [pvt-execute]
+     HITL                              HITL                            HITL
+```
+
+| Phase | Specialist (LangChain / Claude Code) | Receives | Produces |
+| --- | --- | --- | --- |
+| **pvt-discuss** | `pvt-discuss` / `pvt-analyst` | requirements + a case list (CSV, table, or a named story) + live schema | case inventory, tables touched, unrunnable cases, questions |
+| **pvt-plan** | `pvt-plan` / `pvt-planner` | approved pvt-discuss | scenario groups, script set, pre-window vs in-window split, impact |
+| **pvt-execute** | `pvt-execute` / `pvt-scripter` | approved pvt-plan | the numbered SQL scripts, run order, owners |
+
+Two constraints shape the whole track:
+
+1. **The window is the scarce resource.** Data that could have been staged
+   before it must not be created inside it — that is what pvt-plan's
+   pre-window / in-window split is for.
+2. **Every SRE round trip costs the window.** Grouping cases into the fewest
+   shared setups is the point of the planning phase, not a nicety.
+
+Scripts are `NN-<action>[-pvt-NN]_<owner>.sql`, owner `devops` or `sre`,
+numbers unique and ascending in run order, `_(optional)` on the rollbacks:
+
+```
+01-setup-db_devops.sql   02-seed-db_sre.sql        03-patch-data_sre.sql
+04-patch-data-pvt-01_sre.sql   05-patch-data-pvt-02_sre.sql
+06-clear-data-pvt_sre.sql
+08-rollback_devops_(optional).sql   09-rollback_sre_(optional).sql
+```
+
+No phase in this track writes to a database. `run_sql` stays read-only and
+proves the verification queries; the scripts are artifacts, and a human runs
+them. The convention lives in `skills/pvt-prep/SKILL.md`.
 
 The chat GUI is still `POST /chat`. The orchestrator returns JSON
 (`text` / `api_spec` / `sql` / `diagram` / `code`) and waits. It does not
@@ -156,7 +199,7 @@ the repo root: `.claude-plugin/marketplace.json` for Claude Code,
 | `.codex-plugin/plugin.json` | plugin identity + install metadata | Codex |
 | `.mcp.json` | sa-knowledge + jira, spawned at `${SA_AGENT_HOME}` | Claude Code |
 | `.mcp.codex.json` | same servers via [`mcp/sa-mcp`](../../mcp/sa-mcp) | Codex |
-| `agents/*.md` | discuss / plan / execute / test / review | Claude Code |
+| `agents/*.md` | discuss / plan / execute / test / review, plus the three `pvt-*` | Claude Code |
 | `memory/AGENTS.md` | loop + grounding at SessionStart | both |
 | `skills/*/SKILL.md` | how each specialist works | both |
 

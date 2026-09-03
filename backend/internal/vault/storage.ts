@@ -1,6 +1,6 @@
 import { config } from "../../config";
 import { getSupabase } from "../../database/supabase";
-import { throwIfError } from "../httpError";
+import { HttpError, throwIfError } from "../httpError";
 
 export function vaultBucket() {
   return getSupabase().storage.from(config.supabase.vaultBucket);
@@ -41,6 +41,17 @@ export async function uploadVaultObject(
     upsert: false,
   });
   throwIfError(error);
+}
+
+/**
+ * `row.storage_path` is the raw object key. Do not pass the value from
+ * `toFileResponse`, which prefixes the bucket name for display.
+ */
+export async function downloadVaultObject(objectKey: string): Promise<Buffer> {
+  const { data, error } = await vaultBucket().download(objectKey);
+  throwIfError(error);
+  if (!data) throw new HttpError(404, "Vault object is missing from storage.");
+  return Buffer.from(await data.arrayBuffer());
 }
 
 export async function removeVaultObjects(objectKeys: string[]): Promise<void> {
