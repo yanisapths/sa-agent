@@ -8,6 +8,7 @@
     "dev": "bun run express.ts",
     "typecheck": "tsc --noEmit",
     "check:bifrost": "bun run scripts/check-bifrost.ts",
+    "tokens": "bun run scripts/token-probe.ts",
     "ingest:confluence": "bun run agents/ingest/confluence.ts",
     "ingest:ddl": "bun run agents/ingest/ddl.ts",
     "ingest:url": "bun run agents/ingest/url.ts",

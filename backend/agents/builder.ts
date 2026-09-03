@@ -10,6 +10,7 @@ import {
 } from "deepagents";
 import { config } from "../config";
 import { resolveModel } from "./model";
+import { registerGatewayHarness } from "./profile";
 import { resolveTools, type ToolName } from "./tools";
 
 const RESOURCE_ROOT = path.join(
@@ -63,6 +64,12 @@ export interface AgentSpec {
  * harness itself.
  */
 export function defineAgent(spec: AgentSpec) {
+  /**
+   * Before the first `createDeepAgent`, which reads the profile at assembly
+   * time. Here rather than at module scope so it cannot depend on import order.
+   */
+  registerGatewayHarness();
+
   const skills = (spec.skills ?? ["/skills/"]).map(
     (source) => `${RESOURCE_MOUNT}${source}`,
   );
