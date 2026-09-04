@@ -213,10 +213,11 @@ dist
 .DS_Store
 
 .env*
+!.env.example
+# Local, per-machine Claude Code settings. The shared plugin lives in .claude-plugin/.
 /.claude/
-/.claude-plugin/
-/backend/
-/frontend/
+backend/.claude/
+frontend/.claude/
 dist/
 build/
 .cache/
