@@ -1,20 +1,25 @@
 #!/usr/bin/env bash
-# Point Claude Code (or Codex) at Bifrost instead of Anthropic.
+# Point Claude Code at Bifrost instead of api.anthropic.com.
 #
 #   source /path/to/sa-agent/backend/scripts/claude-bifrost.sh
 #   claude
 #
-# Only this shell is affected, so an unset session still uses your normal
-# Claude login. The gateway speaks the Anthropic Messages API at
-# `$BIFROST_BASE_URL/anthropic`.
+# Or:
 #
-# The key has to travel in its own header. A Claude subscription login sends an
-# OAuth bearer token and ignores ANTHROPIC_API_KEY, and the gateway answers
-# that with `401 virtual key is required`. A custom header is independent of
-# whichever auth mode Claude Code is in, so it works either way.
+#   /path/to/sa-agent/backend/scripts/claude
 #
-# This is separate from the backend agent: /chat reads BIFROST_* directly and
-# does not need any of this.
+# Only this shell is affected. The gateway's Anthropic Messages API lives at
+# `$BIFROST_BASE_URL/anthropic` — the origin alone 404s.
+#
+# The gateway authenticates on `x-bf-vk`, not Anthropic's `x-api-key`. Claude
+# Code with a subscription login sends an OAuth bearer and ignores
+# ANTHROPIC_API_KEY, which is exactly `401 virtual key is required`. A custom
+# header is independent of whichever auth mode the CLI is in.
+#
+# Still unset ANTHROPIC_AUTH_TOKEN so a leftover Claude login does not win.
+#
+# The LangChain /chat agent is separate: it reads BIFROST_* and speaks
+# Chat Completions at `$BIFROST_BASE_URL/v1`.
 
 _sa_env="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/.env"
 
@@ -23,7 +28,6 @@ if [ ! -f "$_sa_env" ]; then
   return 1 2>/dev/null || exit 1
 fi
 
-# Read the gateway settings already configured for the backend.
 set -a
 # shellcheck disable=SC1090
 . "$_sa_env"
@@ -34,21 +38,22 @@ if [ -z "$BIFROST_BASE_URL" ] || [ -z "$BIFROST_API_KEY" ]; then
   return 1 2>/dev/null || exit 1
 fi
 
-export ANTHROPIC_BASE_URL="${BIFROST_BASE_URL%/}/anthropic"
-
-# The one that actually authenticates, whatever Claude Code sends alongside it.
-export ANTHROPIC_CUSTOM_HEADERS="${AUTH_HEADER:-${BIFROST_AUTH_HEADER:-x-bf-vk}}: $BIFROST_API_KEY"
-# Used only when you are not signed in to a Claude subscription.
+_base="${BIFROST_BASE_URL%/}"
+_base="${_base%/anthropic}"
+export ANTHROPIC_BASE_URL="${_base}/anthropic"
 export ANTHROPIC_API_KEY="$BIFROST_API_KEY"
+_vk_header="${BIFROST_AUTH_HEADER:-x-bf-vk}"
+export ANTHROPIC_CUSTOM_HEADERS="${_vk_header}: $BIFROST_API_KEY"
 
-# Must be a provider that speaks Anthropic wire format — the `*_claude` ones.
-export ANTHROPIC_MODEL="${CLAUDE_BIFROST_MODEL:-huawei_claude/glm-5.2}"
-# Background chores (titles, summaries) go to something cheaper.
-export ANTHROPIC_SMALL_FAST_MODEL="${CLAUDE_BIFROST_SMALL_MODEL:-dashscope_claude/deepseek-v4-flash-0731}"
+# Any provider the gateway routes — not only Claude ids. Type them with
+# /model; the picker only lists Claude names.
+export ANTHROPIC_MODEL="${CLAUDE_BIFROST_MODEL:-dashscope/qwen3.8-max}"
+export ANTHROPIC_SMALL_FAST_MODEL="${CLAUDE_BIFROST_SMALL_MODEL:-huawei/glm-5.2}"
 export ANTHROPIC_DEFAULT_HAIKU_MODEL="$ANTHROPIC_SMALL_FAST_MODEL"
 
-# A subscription login would otherwise win over the key above.
 unset ANTHROPIC_AUTH_TOKEN
+unset _vk_header
+unset _base
 
 echo "Claude Code → $ANTHROPIC_BASE_URL"
 echo "  model       $ANTHROPIC_MODEL"

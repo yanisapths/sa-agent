@@ -19,6 +19,15 @@ when you have a Figma MCP endpoint.
 
 ## Claude Code
 
+Point the CLI at Bifrost first (reads `backend/.env`):
+
+```bash
+"$SA_AGENT_HOME/backend/scripts/claude"
+# or: source "$SA_AGENT_HOME/backend/scripts/claude-bifrost.sh" && claude
+```
+
+`/status` must show `$BIFROST_BASE_URL/anthropic`. Then:
+
 ```bash
 export SA_AGENT_HOME=/path/to/sa-agent   # add to ~/.zshrc
 cd /path/to/product-repo

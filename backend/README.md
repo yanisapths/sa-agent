@@ -169,6 +169,28 @@ trusting the agent with it:
 ```bash
 bun run check:bifrost              # env, then a real chat and a real tool call
 bun run check:bifrost -- --models  # model ids this key can actually reach
+bun run check:bifrost -- --claude  # Anthropic Messages API Claude Code uses
+```
+
+### Claude Code via Bifrost
+
+The CLI is not the LangChain `/chat` client. It speaks Anthropic Messages at
+`$BIFROST_BASE_URL/anthropic`. The gateway wants the virtual key on `x-bf-vk`
+(`ANTHROPIC_CUSTOM_HEADERS`); a Claude subscription bearer ignores
+`ANTHROPIC_API_KEY` and returns `401 virtual key is required`. The `/anthropic`
+path is required. Do not set `ANTHROPIC_AUTH_TOKEN`.
+
+```bash
+bun run check:bifrost -- --claude
+./scripts/claude                   # source .env, then exec claude
+```
+
+Defaults: `CLAUDE_BIFROST_MODEL=dashscope/qwen3.8-max`,
+`CLAUDE_BIFROST_SMALL_MODEL=huawei/glm-5.2`. Plugin subagents that declare
+`model: haiku` ride the small/fast model. List ids the key can reach:
+
+```bash
+curl -s "$BIFROST_BASE_URL/v1/models" -H "x-api-key: $BIFROST_API_KEY" | jq '.data[].id'
 ```
 
 ### What bites, all handled in `agents/model.ts`

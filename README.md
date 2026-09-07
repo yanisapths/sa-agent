@@ -23,7 +23,8 @@ for how they are wired.
 - [Claude Code](https://code.claude.com/docs/en/quickstart) or
   [Codex](https://developers.openai.com/codex) (plugin path — either is enough)
 - A read-only PostgreSQL URI for the application database
-- Anthropic API key (chat GUI / LangChain path)
+- Bifrost virtual key (`BIFROST_API_KEY`) for the company gateway; an
+  Anthropic API key only if a model id is `anthropic:…`
 - Optional: Chroma Cloud, Ollama embeddings, Jira, Confluence, LangSmith
 
 ## 1. Clone and environment
@@ -45,7 +46,7 @@ Edit `backend/.env`. Required for schema tools and the chat agent:
 | `DATABASE_URL` | Full URI, e.g. `postgresql://user:password@host:5432/database`. Must be a URI, not a hostname. Prefer a read-only role. |
 | `DATABASE_SCHEMA` | Schema to introspect (default `public`) |
 | `BIFROST_BASE_URL`, `BIFROST_API_KEY` | Company LLM gateway. Routes every phase through it; see `backend/README.md` |
-| `ANTHROPIC_API_KEY` | Only when a model id is `anthropic:…` — unused with the gateway |
+| `ANTHROPIC_API_KEY` | Only when a LangChain model id is `anthropic:…`. Claude Code via Bifrost uses `BIFROST_API_KEY` instead. |
 | `CHROMA_HOST`, `CHROMA_API_KEY`, `CHROMA_TENANT`, `CHROMA_DATABASE` | Indexed specs and DDL |
 | `CHROMA_API_COLLECTION`, `CHROMA_DDL_COLLECTION` | Collection names |
 
@@ -113,6 +114,41 @@ different manifests and load the same skills, MCP servers, and memory:
 Both marketplaces are named `sa-agent` and expose one plugin, also `sa-agent`.
 
 ### 2a. Claude Code
+
+Point Claude Code at Bifrost **before** you launch it. The CLI reads
+`ANTHROPIC_BASE_URL` at startup; a session already talking to
+`api.anthropic.com` will keep doing so until you restart (or `/logout`).
+
+```bash
+# once
+curl -fsSL https://claude.ai/install.sh | bash
+claude --version
+
+# every session — loads BIFROST_* from backend/.env
+"$SA_AGENT_HOME/backend/scripts/claude"
+# or: source "$SA_AGENT_HOME/backend/scripts/claude-bifrost.sh" && claude
+```
+
+Confirm with `/status`: the API base URL must be
+`$BIFROST_BASE_URL/anthropic` (the `/anthropic` path is required). Default
+models are `dashscope/qwen3.8-max` and `huawei/glm-5.2` for background work.
+Switch in-session with `/model dashscope/qwen3.8-max` (type the id; the
+picker only lists Claude names). Override defaults with
+`CLAUDE_BIFROST_MODEL` / `CLAUDE_BIFROST_SMALL_MODEL` in `backend/.env`.
+
+Do **not** set `ANTHROPIC_AUTH_TOKEN`. Launch via `scripts/claude` so
+`x-bf-vk` is sent — a Claude login ignores `ANTHROPIC_API_KEY` and the
+gateway returns `401 virtual key is required`. A 404 is a missing
+`/anthropic` suffix.
+
+Prove the surface before relying on it:
+
+```bash
+cd "$SA_AGENT_HOME/backend"
+bun run check:bifrost -- --claude
+```
+
+Then install the plugin.
 
 1. Export `SA_AGENT_HOME` in the same environment that launches Claude Code.
 2. From the **product** repo:

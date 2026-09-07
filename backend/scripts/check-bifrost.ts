@@ -126,26 +126,43 @@ async function checkChat(id: string): Promise<void> {
   }
 }
 
+function anthropicHeaders(): Record<string, string> {
+  return {
+    "content-type": "application/json",
+    "anthropic-version": "2023-06-01",
+    "x-api-key": config.bifrost.apiKey,
+    [config.bifrost.authHeader]: config.bifrost.apiKey,
+    "User-Agent": config.bifrost.userAgent,
+  };
+}
+
 /**
- * Claude Code talks the Anthropic Messages API, not Chat Completions. It gets
- * its own check because both the endpoint and the auth differ: a subscription
- * login sends an OAuth bearer and ignores ANTHROPIC_API_KEY, so the virtual
- * key has to ride in its own header. Send the bogus bearer too, to prove the
- * header wins the way it does in a real session.
+ * Claude Code talks the Anthropic Messages API at `$BASE/anthropic`. The
+ * gateway wants the virtual key on `x-bf-vk`. A subscription login sends an
+ * OAuth bearer and ignores ANTHROPIC_API_KEY, so the check sends a bogus
+ * bearer too — the custom header has to win the way it does in a real session.
  */
 async function checkClaudeSurface(): Promise<void> {
-  const base = `${config.bifrost.baseUrl}/anthropic`;
-  const model = process.env.CLAUDE_BIFROST_MODEL || "huawei_claude/glm-5.2";
+  const origin = config.bifrost.baseUrl.replace(/\/anthropic\/?$/, "");
+  const base = `${origin}/anthropic`;
+  const model =
+    process.env.CLAUDE_BIFROST_MODEL || "dashscope/qwen3.8-max";
+
+  report(
+    !process.env.ANTHROPIC_AUTH_TOKEN,
+    "ANTHROPIC_AUTH_TOKEN",
+    process.env.ANTHROPIC_AUTH_TOKEN
+      ? "set — it overrides the API key; unset it and run /logout"
+      : "unset",
+  );
+
   console.log(`\nPOST ${base}/v1/messages — ${model}\n`);
 
   const response = await fetch(`${base}/v1/messages`, {
     method: "POST",
     headers: {
-      "content-type": "application/json",
-      "anthropic-version": "2023-06-01",
-      [config.bifrost.authHeader]: config.bifrost.apiKey,
+      ...anthropicHeaders(),
       Authorization: "Bearer sk-ant-oat01-not-a-real-subscription-token",
-      "User-Agent": config.bifrost.userAgent,
     },
     body: JSON.stringify({
       model,
@@ -174,7 +191,7 @@ async function checkClaudeSurface(): Promise<void> {
   );
 
   await checkClaudeTools(base, model);
-  console.log(`\n  source scripts/claude-bifrost.sh   # then run claude`);
+  console.log(`\n  ./scripts/claude   # or: source scripts/claude-bifrost.sh && claude`);
 }
 
 /**
@@ -186,12 +203,7 @@ async function checkClaudeSurface(): Promise<void> {
 async function checkClaudeTools(base: string, model: string): Promise<void> {
   const response = await fetch(`${base}/v1/messages`, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "anthropic-version": "2023-06-01",
-      [config.bifrost.authHeader]: config.bifrost.apiKey,
-      "User-Agent": config.bifrost.userAgent,
-    },
+    headers: anthropicHeaders(),
     body: JSON.stringify({
       model,
       max_tokens: config.bifrost.maxTokens,
