@@ -6,7 +6,7 @@ import {
   ChatInput,
   sendButtonVariants,
 } from "@/components/chat-input";
-import { useVaultMentions } from "@/features/vault/useVaultMentions";
+import { useChatMentions } from "@/features/artifacts/useChatMentions";
 import { useChat } from "@/hooks/use-chat";
 import { useGatewayModels } from "@/hooks/use-gateway-models";
 import { useQuota } from "@/hooks/use-quota";
@@ -33,7 +33,7 @@ export function ChatInterface() {
   const { messages, sendMessage, status, stop } = useChat();
   const isLoading = status === "streaming" || status === "submitted";
   const hasMessages = messages.length > 0;
-  const mentions = useVaultMentions();
+  const mentions = useChatMentions();
   const models = useGatewayModels();
   const { refresh: refreshQuota } = useQuota();
   const [input, setInput] = useState("");

@@ -1,7 +1,7 @@
 # sa-agent backend
 
 A Deep Agent harness for system analysis and solution architecture, plus the
-vault storage API.
+vault and artifacts storage APIs.
 
 The agent answers questions about APIs, data models, SQL, and architecture. It
 grounds every answer in the **live PostgreSQL schema** rather than a stale
@@ -55,10 +55,10 @@ mcp/
 database/
   postgres.ts           read-only pooled client
   chroma.ts             vector store collections
-  supabase.ts           vault storage and metadata
+  supabase.ts           vault and artifacts storage and metadata
 
-routes/                 chat and vault HTTP handlers
-internal/               artifact normalisation, errors, vault service
+routes/                 chat, vault, and artifacts HTTP handlers
+internal/               artifact normalisation, errors, vault and artifactStore services
 ```
 
 ## How the agent is grounded
@@ -405,3 +405,20 @@ spend, so put `requireAuth` on it before this listens on anything but localhost.
 
 Local auth uses `VAULT_DEV_TOKEN`; production uses a Supabase access token.
 Create the `vault` bucket, then run `sql/vault.sql` in the Supabase SQL editor.
+
+### Artifacts (`Authorization: Bearer <token>`)
+
+Phase outputs and files from `write_files`. Bytes live in the `artifacts` bucket; metadata in Postgres.
+
+- `GET /v1/artifacts/files?threadId=`
+- `GET /v1/artifacts/files/:fileId`
+- `GET /v1/artifacts/files/:fileId/content?version=`
+- `GET /v1/artifacts/files/:fileId/download?version=`
+- `PUT /v1/artifacts/files/:fileId` — `{ "content": "..." }` (text files; new version)
+- `POST /v1/artifacts/files/:fileId/copy` — optional `{ "name": "..." }`
+- `DELETE /v1/artifacts/files/:fileId`
+- `DELETE /v1/artifacts/files/:fileId/versions/:version`
+- `GET /v1/artifacts/mentions?q=&limit=8`
+
+Create the `artifacts` bucket, then run `sql/artifacts.sql` in the Supabase SQL editor.
+Mention tokens are `@Artifacts/{filename}`.

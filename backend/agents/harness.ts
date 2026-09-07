@@ -62,6 +62,8 @@ const MODEL_READ = [
   "search_decisions",
 ] as const satisfies readonly ToolName[];
 
+const WRITE = ["write_files"] as const satisfies readonly ToolName[];
+
 /** Virtual-FS paths. Next phase reads the file, not the chat history. */
 export const ARTIFACT = {
   context: "/artifacts/context.md",
@@ -107,7 +109,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
     receives:
       "user request, optional ticket key, index hits, live schema orientation",
     produces: `${ARTIFACT.discuss} — scope, gaps, field map, questions for the human`,
-    tools: [...SCHEMA, ...INDEX, ...JIRA, ...MODEL_READ, "build_system_model"],
+    tools: [...SCHEMA, ...INDEX, ...JIRA, ...MODEL_READ, "build_system_model", ...WRITE],
     skills: [
       "/resources/skills/system-analyst/",
       "/resources/skills/system-model/",
@@ -120,7 +122,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.discuss} (approved) + index conventions`,
     produces: `${ARTIFACT.plan} — spec, Mermaid flow, step list for execute`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE],
     skills: [
       "/resources/skills/solution-architect/",
       "/resources/skills/system-model/",
@@ -132,7 +134,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.plan} (approved)`,
     produces: `${ARTIFACT.execute} — what changed, files, residual risks`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, "build_system_model", "record_decision"],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, "build_system_model", "record_decision", ...WRITE],
     skills: [
       "/resources/skills/backend/",
       "/resources/skills/system-model/",
@@ -144,7 +146,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.discuss} + ${ARTIFACT.plan} + ${ARTIFACT.execute}`,
     produces: `${ARTIFACT.test} — cases, fixtures, quiz of the spec, gaps`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE],
     skills: [
       "/resources/skills/test-engineer/",
       "/resources/skills/system-model/",
@@ -156,7 +158,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.plan} + ${ARTIFACT.execute} + ${ARTIFACT.test}`,
     produces: `${ARTIFACT.review} — findings, required refactors, ship-ready or not`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE],
     skills: [
       "/resources/skills/backend/",
       "/resources/skills/system-model/",
@@ -185,7 +187,7 @@ export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
     gate: "human",
     receives: `PVT requirements, the case list at ${ARTIFACT.pvtCasesJson} (from the CSV at ${ARTIFACT.pvtCases}, or a named story), live schema`,
     produces: `${ARTIFACT.pvtDiscuss} — case inventory, tables touched, unrunnable cases, questions`,
-    tools: [...SCHEMA, ...INDEX, ...JIRA, ...MODEL_READ],
+    tools: [...SCHEMA, ...INDEX, ...JIRA, ...MODEL_READ, ...WRITE],
     skills: [
       "/resources/skills/pvt-prep/",
       "/resources/skills/system-analyst/",
@@ -198,7 +200,7 @@ export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.pvtDiscuss} (approved)`,
     produces: `${ARTIFACT.pvtPlan} — scenario groups, script set, pre-window vs in-window split, impact`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE],
     skills: [
       "/resources/skills/pvt-prep/",
       "/resources/skills/test-engineer/",
@@ -211,7 +213,7 @@ export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.pvtPlan} (approved)`,
     produces: `${ARTIFACT.pvtExecute} — the numbered script set, run order, owners`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE],
     skills: [
       "/resources/skills/pvt-prep/",
       "/resources/skills/backend/",
@@ -236,6 +238,7 @@ export const ORCHESTRATOR_TOOLS = [
   "search_api_specs",
   "search_schema_docs",
   "list_tables",
+  "write_files",
 ] as const satisfies readonly ToolName[];
 
 /**

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 
 import { ChatInterface } from "@/components/chat-interface";
@@ -17,11 +17,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname();
   const isChat = pathname === "/";
   const isVault = pathname.startsWith("/vault");
+  const isArtifacts = pathname.startsWith("/artifacts");
   const [keepChat, setKeepChat] = useState(isChat);
-
-  useEffect(() => {
-    if (isChat) setKeepChat(true);
-  }, [isChat]);
+  if (isChat && !keepChat) {
+    setKeepChat(true);
+  }
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-background text-foreground">
@@ -42,7 +42,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               <ChatInterface />
             </div>
           )}
-          {isVault ? <div className="h-full">{children}</div> : null}
+          {isVault || isArtifacts ? (
+            <div className="h-full">{children}</div>
+          ) : null}
         </div>
       </main>
     </div>

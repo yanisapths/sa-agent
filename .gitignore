@@ -234,3 +234,6 @@ temp/
 
 # Graphify knowledge graph (rebuildable)
 graphify-out/
+
+# Cursor
+.cursor/

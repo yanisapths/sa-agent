@@ -437,6 +437,7 @@ export const useChat = () => {
       }
       const assistantId = crypto.randomUUID();
       const usage: ChatUsage | undefined = json.usage;
+      const artifacts = Array.isArray(json.artifacts) ? json.artifacts : [];
 
       const payload = json.data ?? json;
       const type: string = json.type ?? payload.type ?? "text";
@@ -449,6 +450,16 @@ export const useChat = () => {
           text: payload.sql ?? "",
           query: payload.sql ?? "",
           reasoning: payload.reasoning ?? "",
+        } as UIPart;
+      } else if (type === "code") {
+        part = {
+          type: "code",
+          text: payload.code ?? "",
+          language: payload.language ?? "text",
+          filename: payload.filename ?? "",
+          title: payload.title ?? "",
+          description: payload.description ?? "",
+          code: payload.code ?? payload.content ?? "",
         } as UIPart;
       } else if (type === "api_spec") {
         part = {
@@ -510,6 +521,7 @@ export const useChat = () => {
             role: "assistant",
             parts: [rendered],
             usage,
+            artifacts,
           };
           if (at === -1) next.push(message);
           else next[at] = message;

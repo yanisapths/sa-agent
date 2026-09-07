@@ -10,7 +10,7 @@ You can run it in three ways:
 | --- | --- | --- |
 | **Claude Code** (CLI or GUI) | Claude Code in your **product repo** | Skills, subagents, and MCP tools; writes files in that workspace |
 | **Codex** (CLI or ChatGPT desktop) | Codex in your **product repo** | Skills and MCP tools; writes files in that workspace |
-| **Chat GUI** | LangChain Deep Agent behind `POST /chat` | Browser chat + vault; JSON artifacts, no product-repo edits |
+| **Chat GUI** | LangChain Deep Agent behind `POST /chat` | Browser chat + vault + artifacts; JSON artifacts, no product-repo edits |
 
 Same tools and memory. Different runtimes. See
 [`backend/agents/(docs)/ARCHITECTURE.md`](backend/agents/(docs)/ARCHITECTURE.md)
@@ -196,8 +196,8 @@ cd "$SA_AGENT_HOME/frontend" && bun install && bun run dev
 
 Open [http://localhost:3000](http://localhost:3000). Chat hits `POST /chat`.
 Pass the returned `threadId` on later turns (the GUI does this). Vault needs
-Supabase + `sql/vault.sql` as described in
-[`backend/README.md`](backend/README.md).
+Supabase + `sql/vault.sql`. Artifacts need the `artifacts` bucket +
+`sql/artifacts.sql`. See [`backend/README.md`](backend/README.md).
 
 You can also call the agent without the UI:
 
@@ -214,12 +214,12 @@ curl -s -X POST http://localhost:5001/chat \
 sa-agent/
   .claude-plugin/marketplace.json   Claude Code marketplace (points at the plugin)
   .agents/plugins/marketplace.json  Codex marketplace (points at the same plugin)
-  backend/                          Deep Agent, MCP servers, vault API
+  backend/                          Deep Agent, MCP servers, vault and artifacts APIs
     agents/                         harness, tools, skills, plugin
       model/                        system model: scan, graph, impact, decisions
       claude/                       plugin bundle: both manifests, skills, hooks
     mcp/                            sa-knowledge stdio MCP + `sa-mcp` launcher
-  frontend/                         Next.js chat + vault GUI
+  frontend/                         Next.js chat + vault + artifacts GUI
 ```
 
 In each **product** repo the agent also maintains:

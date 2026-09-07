@@ -25,8 +25,17 @@ import {
 import { HttpError } from "../internal/httpError";
 import { isCsvFile, parkPvtCases } from "../internal/pvtCases";
 import {
+  persistPhaseArtifacts,
+  uniqueArtifacts,
+} from "../internal/artifactStore/persist";
+import {
+  artifactMentionTokens,
+  listFiles as listArtifactFiles,
+  resolveMentions as resolveArtifactMentions,
+} from "../internal/artifactStore/service";
+import {
   extractMentionTokens,
-  resolveMentions,
+  resolveMentions as resolveVaultMentions,
 } from "../internal/vault/service";
 import { optionalAuth } from "../middleware/requireAuth";
 
@@ -115,10 +124,11 @@ function requestedMentions(body: Record<string, unknown>): string[] {
   return [];
 }
 
-async function vaultMentions(
+async function chatMentions(
   message: string,
   explicit: readonly string[],
   userId: string | undefined,
+  threadId: string,
 ): Promise<{ files: ChatFile[]; notes: string[] }> {
   // An explicit `mentions[]` is authoritative — the client knows which
   // suggestion the human picked. Scanning the text is the fallback for
@@ -132,21 +142,31 @@ async function vaultMentions(
     return {
       files: [],
       notes: [
-        `[Vault mentions ${tokens.join(", ")} could not be read: this chat request is not signed in. Tell the human to attach the file directly instead.]`,
+        `[Mentions ${tokens.join(", ")} could not be read: this chat request is not signed in. Tell the human to attach the file directly instead.]`,
       ],
     };
   }
 
-  const { files, unresolved } = await resolveMentions(userId, tokens);
+  const { artifact, other } = artifactMentionTokens(tokens);
+  const vault = await resolveVaultMentions(userId, other);
+  const stored = await resolveArtifactMentions(userId, artifact, threadId);
+
   return {
-    files: files.map((file) => ({
+    files: [...vault.files, ...stored.files].map((file) => ({
       name: file.name,
       mimetype: file.mimeType,
       buffer: file.buffer,
     })),
-    notes: unresolved.map(
-      (item) => `[Vault mention ${item.token} could not be read: ${item.reason}.]`,
-    ),
+    notes: [
+      ...vault.unresolved.map(
+        (item) =>
+          `[Vault mention ${item.token} could not be read: ${item.reason}.]`,
+      ),
+      ...stored.unresolved.map(
+        (item) =>
+          `[Artifact mention ${item.token} could not be read: ${item.reason}.]`,
+      ),
+    ],
   };
 }
 
@@ -248,10 +268,14 @@ async function chatHandler(
     model = await requestedModel(body);
     phase = requestedPhase(body);
 
-    const mentioned = await vaultMentions(
+    // A stable threadId keeps the agent's short-term session memory across turns.
+    const threadId: string = req.body.threadId || randomUUID();
+
+    const mentioned = await chatMentions(
       message,
       requestedMentions(body),
       req.userId,
+      threadId,
     );
     const incoming = [...uploads, ...mentioned.files];
     const csvs = incoming.filter(isCsvFile);
@@ -266,9 +290,6 @@ async function chatHandler(
     if (content.length === 0) {
       throw new HttpError(400, "Message or file required.");
     }
-
-    // A stable threadId keeps the agent's short-term session memory across turns.
-    const threadId: string = req.body.threadId || randomUUID();
 
     collector = createUsageCollector(model ?? config.model.orchestrator);
 
@@ -301,7 +322,10 @@ async function chatHandler(
             : {}),
         },
         {
-          configurable: { thread_id: threadId },
+          configurable: {
+            thread_id: threadId,
+            userId: req.userId,
+          },
           recursionLimit: config.agent.recursionLimit,
           signal: abort.signal,
           /**
@@ -342,11 +366,36 @@ async function chatHandler(
       ? normalizeArtifact(parsed)
       : { type: "text", text: raw };
 
+    let artifacts: unknown[] = [];
+    if (req.userId) {
+      try {
+        const persisted = await persistPhaseArtifacts(
+          req.userId,
+          threadId,
+          phase,
+          result,
+          startedAt,
+        );
+        const recent = (await listArtifactFiles(req.userId, threadId)).filter(
+          (file) => Date.parse(file.updatedAt) >= startedAt - 1000,
+        );
+        artifacts = uniqueArtifacts(persisted, recent);
+      } catch (err) {
+        /**
+         * A failed persist must not swallow the turn the human already paid
+         * for. The files still exist in the agent's virtual FS for this
+         * process; the next signed-in turn can retry.
+         */
+        console.error("Failed to persist artifacts:", err);
+      }
+    }
+
     res.json({
       ok: true,
       threadId,
       type: data.type,
       data,
+      artifacts,
       usage: await usagePayload(collector, model, phase, startedAt),
     });
   } catch (err) {

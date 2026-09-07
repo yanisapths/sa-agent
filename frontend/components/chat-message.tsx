@@ -1,8 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useCallback } from "react";
-import { Bot, User, Copy, Check, FileText, GitBranch } from "lucide-react";
+import { Bot, User, Copy, Check, FileText, GitBranch, Download } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { type ChatUsage } from "@/features/gateway/types";
+import {
+  artifactService,
+  triggerBlobDownload,
+} from "@/features/artifacts/service";
+import { type ChatArtifact } from "@/features/artifacts/types";
 import { UsageBadge } from "./usage-badge";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -19,6 +25,8 @@ export interface UIMessage {
   parts: UIMessagePart[];
   /** Tokens and cost for the turn that produced this message. */
   usage?: ChatUsage;
+  /** Files persisted this turn for download. */
+  artifacts?: ChatArtifact[];
 }
 
 export interface ApiSpecPart extends UIMessagePart {
@@ -55,13 +63,23 @@ export interface DiagramPart extends UIMessagePart {
   content: string;
 }
 
+export interface CodePart extends UIMessagePart {
+  type: "code";
+  language?: string;
+  filename?: string;
+  title?: string;
+  description?: string;
+  code: string;
+}
+
 export type UIPart =
   | UIMessagePart
   | ApiSpecPart
   | SqlPart
   | ImagePart
   | FilePart
-  | FilePart;
+  | DiagramPart
+  | CodePart;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -766,6 +784,82 @@ function SqlDisplay({ part }: { part: SqlPart }) {
   );
 }
 
+function CodeDisplay({ part }: { part: CodePart }) {
+  const download = () => {
+    const blob = new Blob([part.code], { type: "text/plain" });
+    triggerBlobDownload(blob, part.filename || "code.txt");
+  };
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden text-sm">
+      <div className="flex items-center justify-between px-3 py-2 bg-muted/10 border-b border-border">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-muted uppercase tracking-wide">
+            {part.title || part.filename || part.language || "Code"}
+          </p>
+          {part.description ? (
+            <p className="text-xs text-muted mt-0.5 truncate">
+              {part.description}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <CopyButton text={part.code} />
+          <button
+            type="button"
+            onClick={download}
+            className="flex items-center gap-1 text-xs text-muted hover:text-foreground transition-colors"
+          >
+            <Download className="w-3 h-3" />
+            Download
+          </button>
+        </div>
+      </div>
+      <pre className="px-3 py-3 text-xs font-mono text-foreground overflow-x-auto bg-surface">
+        {part.code}
+      </pre>
+    </div>
+  );
+}
+
+function ArtifactChips({ artifacts }: { artifacts: ChatArtifact[] }) {
+  const download = async (artifact: ChatArtifact) => {
+    const blob = await artifactService.downloadFile(artifact.id);
+    triggerBlobDownload(blob, artifact.name);
+  };
+
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {artifacts.map((artifact) => (
+        <li
+          key={artifact.id}
+          className="flex items-center gap-2 rounded-lg border border-border bg-surface/80 px-2.5 py-1.5 text-xs"
+        >
+          <FileText className="w-3.5 h-3.5 shrink-0 text-muted" />
+          <span className="min-w-0 truncate font-medium">{artifact.name}</span>
+          <span className="shrink-0 text-muted">
+            {artifact.mentionToken}
+          </span>
+          <button
+            type="button"
+            onClick={() => void download(artifact)}
+            className="ml-auto flex shrink-0 items-center gap-1 text-muted hover:text-foreground"
+          >
+            <Download className="w-3 h-3" />
+            Download
+          </button>
+          <Link
+            href={`/artifacts?file=${encodeURIComponent(artifact.id)}`}
+            className="shrink-0 text-muted hover:text-foreground"
+          >
+            Open
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // ─── Message Part ─────────────────────────────────────────────────────────────
 
 function MessagePart({ part }: { part: UIPart }) {
@@ -774,6 +868,7 @@ function MessagePart({ part }: { part: UIPart }) {
   if (part.type === "api_spec")
     return <ApiSpecDisplay part={part as ApiSpecPart} />;
   if (part.type === "sql") return <SqlDisplay part={part as SqlPart} />;
+  if (part.type === "code") return <CodeDisplay part={part as CodePart} />;
 
   if (part.type === "image") {
     const p = part as ImagePart;
@@ -875,6 +970,11 @@ export function ChatMessage({
             {isStreaming && (
               <span className="inline-block w-0.5 h-4 bg-muted ml-0.5 align-middle animate-pulse rounded" />
             )}
+            {!isUser &&
+              !isStreaming &&
+              (message.artifacts?.length ?? 0) > 0 && (
+                <ArtifactChips artifacts={message.artifacts ?? []} />
+              )}
           </div>
         </div>
         {/* Only once the answer is complete — a cost that ticks up mid-render reads as noise. */}

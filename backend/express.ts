@@ -5,6 +5,7 @@ import { config } from "./config";
 import { errorHandler } from "./middleware/errorHandler";
 import { chat } from "./routes/chat";
 import { gateway } from "./routes/gateway";
+import { artifacts } from "./routes/artifacts";
 import { vault } from "./routes/vault";
 
 const app = express();
@@ -25,6 +26,7 @@ app.get("/health", (_req, res) => {
 app.use("/chat", chat);
 app.use("/v1/gateway", gateway);
 app.use("/v1/vault", vault);
+app.use("/v1/artifacts", artifacts);
 app.use(errorHandler);
 
 app.listen(config.port, () => {

@@ -14,6 +14,7 @@ import {
   searchDecisions,
   simulateImpact,
 } from "./system-model";
+import { writeFiles } from "./write-files";
 
 /**
  * Single source of truth for every tool an agent may be granted.
@@ -40,6 +41,7 @@ export const TOOL_REGISTRY = {
   search_decisions: searchDecisions,
   get_jira_ticket: getJiraTicket,
   read_jira_user_story: readJiraUserStory,
+  write_files: writeFiles,
 } satisfies Record<string, StructuredToolInterface>;
 
 export type ToolName = keyof typeof TOOL_REGISTRY;
