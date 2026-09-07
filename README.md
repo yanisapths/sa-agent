@@ -10,7 +10,7 @@ You can run it in three ways:
 | --- | --- | --- |
 | **Claude Code** (CLI or GUI) | Claude Code in your **product repo** | Skills, subagents, and MCP tools; writes files in that workspace |
 | **Codex** (CLI or ChatGPT desktop) | Codex in your **product repo** | Skills and MCP tools; writes files in that workspace |
-| **Chat GUI** | LangChain Deep Agent behind `POST /chat` | Browser chat + vault + artifacts; JSON artifacts, no product-repo edits |
+| **Chat GUI** | LangChain Deep Agent behind `POST /chat` | Browser chat + vault + artifacts + local project folders (same machine) |
 
 Same tools and memory. Different runtimes. See
 [`backend/agents/(docs)/ARCHITECTURE.md`](backend/agents/(docs)/ARCHITECTURE.md)
@@ -172,8 +172,12 @@ is on.
 
 ## 3. Chat GUI (this repo)
 
-Use this for a browser chat that talks to the Deep Agent over HTTP. It does not
-edit a product workspace.
+Use this for a browser chat that talks to the Deep Agent over HTTP. Vault and
+artifacts are uploaded copies. To have the agent **read and edit a local repo**,
+register that folder as a Project (sidebar or **Work in a folder**). The backend
+must be running on the same computer as the folder. Mention files as
+`@Projects/name/src/foo.ts`. Execute can write inside that root; it still does
+not commit or open a PR.
 
 Align ports so Next and Express do not collide. Example:
 
@@ -197,7 +201,8 @@ cd "$SA_AGENT_HOME/frontend" && bun install && bun run dev
 Open [http://localhost:3000](http://localhost:3000). Chat hits `POST /chat`.
 Pass the returned `threadId` on later turns (the GUI does this). Vault needs
 Supabase + `sql/vault.sql`. Artifacts need the `artifacts` bucket +
-`sql/artifacts.sql`. See [`backend/README.md`](backend/README.md).
+`sql/artifacts.sql`. Local project folders need `sql/workspaces.sql`. See
+[`backend/README.md`](backend/README.md).
 
 You can also call the agent without the UI:
 

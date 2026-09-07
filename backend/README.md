@@ -1,7 +1,7 @@
 # sa-agent backend
 
 A Deep Agent harness for system analysis and solution architecture, plus the
-vault and artifacts storage APIs.
+vault, artifacts, and local-workspace storage APIs.
 
 The agent answers questions about APIs, data models, SQL, and architecture. It
 grounds every answer in the **live PostgreSQL schema** rather than a stale
@@ -42,6 +42,8 @@ agents/
     knowledge.ts        LangChain wrappers for Chroma retrieval
     system-model.ts     LangChain wrappers for the graph and decision tools
     jira.ts             explicit Jira MCP wrappers (ticket + user story)
+    write-files.ts      persist generated files to the Artifacts library
+    workspace.ts        LangChain wrappers for the attached local project folder
   ingest/               one-off pipelines that populate the vector store
     confluence.ts       Confluence API spec pages
     ddl.ts              a .sql DDL dump
@@ -57,8 +59,8 @@ database/
   chroma.ts             vector store collections
   supabase.ts           vault and artifacts storage and metadata
 
-routes/                 chat, vault, and artifacts HTTP handlers
-internal/               artifact normalisation, errors, vault and artifactStore services
+routes/                 chat, vault, artifacts, and workspaces HTTP handlers
+internal/               artifact normalisation, errors, vault, artifactStore, workspace
 ```
 
 ## How the agent is grounded
@@ -69,6 +71,7 @@ internal/               artifact normalisation, errors, vault and artifactStore 
 | System model | `query_system_model`, `simulate_impact`, `search_decisions`         | Last `build_system_model` |
 | Knowledge   | `search_api_specs`, `search_schema_docs`                             | Last ingestion run   |
 | Jira MCP    | `get_jira_ticket`, `read_jira_user_story`                            | Only on explicit ask |
+| Project folder | `ls` / `read_file` / `glob` / `grep` on the attached root; also `workspace_*` | Attached local path |
 | Skills      | `resources/skills/*/SKILL.md`                                        | On demand            |
 | Memory      | `resources/AGENTS.md`                                                | Every turn           |
 | Session     | Per-`threadId` checkpointer                                          | Lifetime of process  |
@@ -422,3 +425,21 @@ Phase outputs and files from `write_files`. Bytes live in the `artifacts` bucket
 
 Create the `artifacts` bucket, then run `sql/artifacts.sql` in the Supabase SQL editor.
 Mention tokens are `@Artifacts/{filename}`.
+
+### Project folders (`Authorization: Bearer <token>`)
+
+Registered absolute paths on the machine running this process. The Chat GUI
+and backend must share a disk. Optional `WORKSPACE_ALLOWED_ROOTS` limits which
+prefixes can be registered.
+
+- `GET /v1/workspaces`
+- `POST /v1/workspaces/pick` — opens the macOS Finder folder panel; `{ "path": "/Users/…/repo" }` or `{ "path": null }` if cancelled
+- `POST /v1/workspaces` — `{ "name": "admin-service", "path": "/Users/you/src/admin-service" }`
+- `DELETE /v1/workspaces/:workspaceId`
+- `GET /v1/workspaces/mentions?q=&limit=20`
+
+Run `sql/workspaces.sql` in the Supabase SQL editor.
+Mention tokens are `@Projects/{name}` and `@Projects/{name}/relative/path`.
+`POST /chat` accepts `workspaceId` so specialists' `ls` / `read_file` / `glob` /
+`grep` (and `workspace_*`) see that folder as `/`. Phase artifacts stay at
+`/artifacts/*.md`.

@@ -37,6 +37,13 @@ import {
   extractMentionTokens,
   resolveMentions as resolveVaultMentions,
 } from "../internal/vault/service";
+import {
+  getWorkspace,
+  liveWorkspaceRoot,
+  resolveMentions as resolveWorkspaceMentions,
+  workspaceMentionTokens,
+} from "../internal/workspace/service";
+import { withWorkspaceRoot } from "../internal/workspace/runtime";
 import { optionalAuth } from "../middleware/requireAuth";
 
 const upload = multer({
@@ -63,9 +70,35 @@ const TEXT_EXTENSIONS = new Set([
   ".json",
   ".ts",
   ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
   ".sql",
   ".yaml",
   ".yml",
+  ".py",
+  ".go",
+  ".java",
+  ".kt",
+  ".rb",
+  ".php",
+  ".rs",
+  ".c",
+  ".h",
+  ".cpp",
+  ".hpp",
+  ".cs",
+  ".sh",
+  ".html",
+  ".css",
+  ".xml",
+  ".toml",
+  ".ini",
+  ".graphql",
+  ".proto",
+  ".vue",
+  ".svelte",
 ]);
 
 function toFileBlock(file: ChatFile): ContentBlock {
@@ -147,12 +180,14 @@ async function chatMentions(
     };
   }
 
-  const { artifact, other } = artifactMentionTokens(tokens);
+  const { artifact, other: notArtifact } = artifactMentionTokens(tokens);
+  const { workspace, other } = workspaceMentionTokens(notArtifact);
   const vault = await resolveVaultMentions(userId, other);
   const stored = await resolveArtifactMentions(userId, artifact, threadId);
+  const projects = await resolveWorkspaceMentions(userId, workspace);
 
   return {
-    files: [...vault.files, ...stored.files].map((file) => ({
+    files: [...vault.files, ...stored.files, ...projects.files].map((file) => ({
       name: file.name,
       mimetype: file.mimeType,
       buffer: file.buffer,
@@ -165,6 +200,10 @@ async function chatMentions(
       ...stored.unresolved.map(
         (item) =>
           `[Artifact mention ${item.token} could not be read: ${item.reason}.]`,
+      ),
+      ...projects.unresolved.map(
+        (item) =>
+          `[Project mention ${item.token} could not be read: ${item.reason}.]`,
       ),
     ],
   };
@@ -225,6 +264,45 @@ function phaseDirective(phase: string): string {
   return `[Phase: ${phase}] The human explicitly selected this phase, so the routing decision is already made. task() the \`${phase}\` specialist for this turn and return its artifact. Do not choose a different specialist, and do not answer directly even if you believe you could — an explicit phase overrides the rule about questions that need no specialist.`;
 }
 
+function requestedWorkspaceId(body: Record<string, unknown>): string | undefined {
+  const raw = body.workspaceId;
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  return raw.trim();
+}
+
+function workspaceDirective(name: string, root: string): string {
+  return (
+    `[Workspace: ${name} at ${root}] The product repo is mounted as the agent's filesystem. ` +
+    `ls, read_file, glob, and grep from / see this folder (e.g. ls /internal/handler/voting or glob **/*.go). ` +
+    `Do not pass ${root}/… — use /path/from/repo/root. ` +
+    `If a name is wrong, ls the parent; spelling and case may differ (e.g. Redme.md). ` +
+    `/artifacts/*.md is still virtual phase scratch (write_file). /resources is skills. ` +
+    `workspace_ls / workspace_read / workspace_grep also work with relative paths.`
+  );
+}
+
+async function attachedWorkspace(
+  userId: string | undefined,
+  workspaceId: string | undefined,
+): Promise<{ id: string; name: string; path: string } | undefined> {
+  if (!workspaceId) return undefined;
+  if (!userId) {
+    throw new HttpError(
+      400,
+      "Sign in to work in a local folder. The chat request needs a vault token.",
+    );
+  }
+  try {
+    const ws = await getWorkspace(userId, workspaceId);
+    return { id: ws.id, name: ws.name, path: liveWorkspaceRoot(ws.path) };
+  } catch (err) {
+    if (err instanceof HttpError && err.status === 404) {
+      throw new HttpError(400, "Unknown project folder.");
+    }
+    throw err;
+  }
+}
+
 /** The `usage` block on a response, successful or not. */
 async function usagePayload(
   collector: UsageCollector,
@@ -267,6 +345,10 @@ async function chatHandler(
     const body = (req.body ?? {}) as Record<string, unknown>;
     model = await requestedModel(body);
     phase = requestedPhase(body);
+    const workspace = await attachedWorkspace(
+      req.userId,
+      requestedWorkspaceId(body),
+    );
 
     // A stable threadId keeps the agent's short-term session memory across turns.
     const threadId: string = req.body.threadId || randomUUID();
@@ -284,6 +366,9 @@ async function chatHandler(
     const content = toContentBlocks(message, otherFiles, [
       ...mentioned.notes,
       ...parked.notes,
+      ...(workspace
+        ? [workspaceDirective(workspace.name, workspace.path)]
+        : []),
       ...(phase ? [phaseDirective(phase)] : []),
     ]);
 
@@ -292,6 +377,7 @@ async function chatHandler(
     }
 
     collector = createUsageCollector(model ?? config.model.orchestrator);
+    const usage = collector;
 
     const abort = new AbortController();
     const timer = setTimeout(
@@ -314,27 +400,35 @@ async function chatHandler(
 
     let result;
     try {
-      result = await agentFor(model).invoke(
-        {
-          messages: [new HumanMessage({ content })],
-          ...(Object.keys(parked.files).length > 0
-            ? { files: parked.files }
-            : {}),
-        },
-        {
-          configurable: {
-            thread_id: threadId,
-            userId: req.userId,
+      result = await withWorkspaceRoot(workspace?.path, () =>
+        agentFor(model).invoke(
+          {
+            messages: [new HumanMessage({ content })],
+            ...(Object.keys(parked.files).length > 0
+              ? { files: parked.files }
+              : {}),
           },
-          recursionLimit: config.agent.recursionLimit,
-          signal: abort.signal,
-          /**
-           * deepagents' `task` tool spreads this config into the subagent
-           * invoke, so the collector sees the specialists' completions too —
-           * which is where nearly all of the tokens are spent.
-           */
-          callbacks: [collector.handler],
-        },
+          {
+            configurable: {
+              thread_id: threadId,
+              userId: req.userId,
+              ...(workspace
+                ? {
+                    workspaceId: workspace.id,
+                    workspaceRoot: workspace.path,
+                  }
+                : {}),
+            },
+            recursionLimit: config.agent.recursionLimit,
+            signal: abort.signal,
+            /**
+             * deepagents' `task` tool spreads this config into the subagent
+             * invoke, so the collector sees the specialists' completions too —
+             * which is where nearly all of the tokens are spent.
+             */
+            callbacks: [usage.handler],
+          },
+        ),
       );
     } catch (err) {
       if (abort.signal.aborted || isAbortError(err)) {

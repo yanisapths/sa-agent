@@ -7,6 +7,7 @@ import { chat } from "./routes/chat";
 import { gateway } from "./routes/gateway";
 import { artifacts } from "./routes/artifacts";
 import { vault } from "./routes/vault";
+import { workspaces } from "./routes/workspaces";
 
 const app = express();
 app.disable("x-powered-by");
@@ -27,6 +28,7 @@ app.use("/chat", chat);
 app.use("/v1/gateway", gateway);
 app.use("/v1/vault", vault);
 app.use("/v1/artifacts", artifacts);
+app.use("/v1/workspaces", workspaces);
 app.use(errorHandler);
 
 app.listen(config.port, () => {

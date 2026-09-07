@@ -183,7 +183,7 @@ Jira is Discuss only, and only when a ticket or story is named.
 1. **Orchestrator model** — haiku. Tools: index + `list_tables` only.
 2. **Skills** — none on the router. Each specialist loads its own.
 3. **`task`** — Deep Agents delegation. One specialist per gate.
-4. **Scratch files** — `/artifacts/*.md` on the per-thread StateBackend.
+4. **Scratch files** — `/artifacts/*.md` on the per-thread StateBackend. When a project folder is attached, `ls` / `read_file` / `glob` / `grep` from `/` see that repo; `/artifacts` stays in state.
 5. **Memory** — `/resources/AGENTS.md` every turn.
 6. **JSON contract** — [`prompt.ts`](../prompt.ts) so the GUI still parses.
 

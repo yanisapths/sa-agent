@@ -38,10 +38,10 @@ export function registerGatewayHarness(): void {
     excludedMiddleware: ["todoListMiddleware"],
     /**
      * The orchestrator reads and writes named artifact paths. It never searches
-     * for them. Exclusions apply to the main agent only, so specialists — the
-     * coder especially — keep `glob` and `grep`.
+     * the product repo. Exclusions apply to the main agent only, so specialists
+     * keep `ls` / `glob` / `grep` — and those tools see the attached folder.
      */
-    excludedTools: ["glob", "grep"],
+    excludedTools: ["glob", "grep", "ls"],
     /**
      * Routing is the whole job here: an unlabelled catch-all subagent is a way
      * to skip a phase, and it would inherit the orchestrator's tools to do it.

@@ -6,10 +6,10 @@ import {
   ChatInput,
   sendButtonVariants,
 } from "@/components/chat-input";
-import { useChatMentions } from "@/features/artifacts/useChatMentions";
 import { useChat } from "@/hooks/use-chat";
 import { useGatewayModels } from "@/hooks/use-gateway-models";
 import { useQuota } from "@/hooks/use-quota";
+import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
 import { Button } from "./ui/Button";
 import { Code, FileText } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -33,9 +33,9 @@ export function ChatInterface() {
   const { messages, sendMessage, status, stop } = useChat();
   const isLoading = status === "streaming" || status === "submitted";
   const hasMessages = messages.length > 0;
-  const mentions = useChatMentions();
   const models = useGatewayModels();
   const { refresh: refreshQuota } = useQuota();
+  const { attached } = useWorkspace();
   const [input, setInput] = useState("");
   /** `null` means the server's configured default. */
   const [model, setModel] = useState<string | null>(null);
@@ -54,6 +54,7 @@ export function ChatInterface() {
       mentions,
       model,
       phase,
+      workspaceId: attached?.id,
       onSettled: refreshQuota,
     });
     setInput("");
@@ -97,7 +98,6 @@ export function ChatInterface() {
                 isLoading={isLoading}
                 value={input}
                 onChange={setInput}
-                mentions={mentions}
                 onStop={stop}
                 models={models}
                 model={model}
@@ -136,7 +136,6 @@ export function ChatInterface() {
             placeholder="Write a message..."
             value={input}
             onChange={setInput}
-            mentions={mentions}
             onStop={stop}
             models={models}
             model={model}

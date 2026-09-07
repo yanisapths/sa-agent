@@ -1,6 +1,7 @@
 "use client";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ThemeProvider } from "@/components/theme-provider";
+import { WorkspaceProvider } from "@/features/workspace/WorkspaceProvider";
 import { useNoScroll } from "@/hooks/use-no-scroll";
 import { ReactNode } from "react";
 
@@ -13,7 +14,9 @@ export const Providers = ({ children }: providersProps) => {
 
   return (
     <ThemeProvider>
-      <DashboardLayout>{children}</DashboardLayout>
+      <WorkspaceProvider>
+        <DashboardLayout>{children}</DashboardLayout>
+      </WorkspaceProvider>
     </ThemeProvider>
   );
 };

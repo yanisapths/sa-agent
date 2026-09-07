@@ -350,14 +350,16 @@ const MAX_MENTION_FILE_BYTES = 1024 * 1024;
 const MAX_MENTION_TOTAL_BYTES = 4 * 1024 * 1024;
 
 /**
- * Tokens are `@folder/file.ext`. Folder names have their whitespace collapsed
- * to dashes by `toMentionToken`, and `safeFileName` limits filenames to
- * alphanumerics, dot, underscore, and dash — so the token charset is closed.
+ * Tokens are `@folder/file.ext` or nested project paths
+ * `@Projects/name/src/foo.ts`. Folder names have their whitespace collapsed
+ * to dashes by `toMentionToken`, and filenames are limited to alphanumerics,
+ * dot, underscore, and dash — so the token charset is closed.
  *
  * The leading boundary matters: without it `yanisa@example.com` reads as a
  * mention of `@example.com`.
  */
-const MENTION_PATTERN = /(?<=^|[\s([{"'])@[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?/g;
+const MENTION_PATTERN =
+  /(?<=^|[\s([{"'])@[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*/g;
 
 /** A token at the end of a sentence keeps the sentence's punctuation. */
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}]+$/;

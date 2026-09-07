@@ -1,23 +1,14 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { PanelLeft, Plus, SparklesIcon } from "lucide-react";
+import { Folder, FolderGit2, PanelLeft, Plus, SparklesIcon, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
+import { AddFolderDialog } from "@/features/workspace/AddFolderDialog";
+import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
 import { Button } from "../ui/Button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/Tooltip";
-
-const mainNavItems = [
-  // { title: 'History', url: '/history', icon: Clock },
-  // { title: 'Vault', url: '/vault', icon: FolderLock },
-  // { title: 'Library', url: '/library', icon: BookOpen },
-  // { title: 'Guidance', url: '/guidance', icon: Compass },
-];
-
-const bottomNavItems = [
-  // { title: 'Settings', url: '/dashboard', icon: Settings },
-  // { title: 'Help', url: '/dashboard', icon: HelpCircle },
-];
 
 interface AppSidebarProps {
   isExpanded: boolean;
@@ -26,38 +17,14 @@ interface AppSidebarProps {
 
 export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
   const pathname = usePathname();
-  const isActive = (path: string) => pathname === path;
+  const router = useRouter();
+  const { workspaces, attached, attach, create, remove, status, error } =
+    useWorkspace();
+  const [addOpen, setAddOpen] = useState(false);
 
-  const NavItem = ({
-    // item,
-    showLabel,
-  }: {
-    // item: (typeof mainNavItems)[0];
-    showLabel: boolean;
-  }) => {
-    //     const content = (
-    //       <Link
-    //         href={item.url}
-    //         className={cn(
-    //           "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-    //           "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-    //           isActive(item.url) &&
-    //             "bg-sidebar-accent text-sidebar-accent-foreground",
-    //         )}
-    //       >
-    //         <item.icon className="h-5 w-5 shrink-0" />
-    //         {showLabel && <span className="truncate">{item.title}</span>}
-    //       </Link>
-    //     );
-    //     if (!showLabel) {
-    //       return (
-    //         <Tooltip delayDuration={0}>
-    //           <TooltipTrigger asChild>{content}</TooltipTrigger>
-    //           <TooltipContent side="right">{item.title}</TooltipContent>
-    //         </Tooltip>
-    //       );
-    //     }
-    //     return content;
+  const selectProject = (id: string) => {
+    attach(id);
+    if (pathname !== "/") router.push("/");
   };
 
   return (
@@ -115,6 +82,106 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
           </Tooltip>
         )}
       </div>
+
+      <div className="flex min-h-0 flex-1 flex-col px-3 pb-3">
+        {isExpanded ? (
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-medium text-sidebar-foreground">
+              Projects
+            </p>
+            <Button
+              variant="icon"
+              size="sm"
+              className="h-7 w-7"
+              title="Choose in Finder"
+              onClick={() => setAddOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : (
+          <div className="mb-2 flex justify-center">
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="icon"
+                  size="sm"
+                  className="h-8 w-8"
+                  onClick={() => setAddOpen(true)}
+                >
+                  <Folder className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Choose in Finder</TooltipContent>
+            </Tooltip>
+          </div>
+        )}
+
+        {isExpanded && status === "error" && error && (
+          <p className="mb-2 px-1 text-[11px] text-rose-600">{error}</p>
+        )}
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          {workspaces.map((ws) => {
+            const isAttached = attached?.id === ws.id;
+            const row = (
+              <div
+                className={cn(
+                  "group flex w-full items-center gap-1 rounded-lg text-sm",
+                  isAttached
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent/70",
+                  !isExpanded && "justify-center",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => selectProject(ws.id)}
+                  className={cn(
+                    "min-w-0 flex-1 truncate px-2 py-1.5 text-left",
+                    !isExpanded && "flex justify-center px-0",
+                  )}
+                >
+                  {isExpanded ? (
+                    <span className="flex min-w-0 items-center gap-2">
+                      <FolderGit2 className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{ws.name}</span>
+                    </span>
+                  ) : (
+                    <FolderGit2 className="h-4 w-4" />
+                  )}
+                </button>
+                {isExpanded && (
+                  <button
+                    type="button"
+                    className="mr-1 hidden shrink-0 rounded p-0.5 text-muted hover:text-rose-600 group-hover:inline-flex"
+                    onClick={() => void remove(ws.id)}
+                    aria-label={`Remove ${ws.name}`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            );
+
+            if (isExpanded) return <div key={ws.id}>{row}</div>;
+            return (
+              <Tooltip key={ws.id} delayDuration={0}>
+                <TooltipTrigger asChild>{row}</TooltipTrigger>
+                <TooltipContent side="right">{ws.name}</TooltipContent>
+              </Tooltip>
+            );
+          })}
+        </div>
+      </div>
+
+      <AddFolderDialog
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onCreate={async (name, path) => {
+          await create({ name, path });
+          if (pathname !== "/") router.push("/");
+        }}
+      />
     </aside>
   );
 }

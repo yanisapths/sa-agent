@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, PlusIcon, Square, X, FileText } from "lucide-react";
+import { ArrowUp, Folder, FolderGit2, PlusIcon, Square, X, FileText } from "lucide-react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { Button } from "./ui/Button";
 import { SlashCommandChip } from "./slash-command-chip";
@@ -25,6 +25,9 @@ import {
 } from "./slash-commands";
 import { ModelPicker } from "./model-picker";
 import { type GatewayModel } from "@/features/gateway/types";
+import { useChatMentions } from "@/features/artifacts/useChatMentions";
+import { AddFolderDialog } from "@/features/workspace/AddFolderDialog";
+import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
 
 export interface Attachment {
   id: string;
@@ -50,7 +53,6 @@ interface ChatInputProps {
   placeholder?: string;
   value: string;
   onChange: (val: string) => void;
-  mentions?: MentionItem[];
   /** Cancels the in-flight turn. Required for the stop button to appear. */
   onStop?: () => void;
   models?: GatewayModel[];
@@ -77,7 +79,6 @@ export function ChatInput({
   placeholder,
   value,
   onChange,
-  mentions = [],
   onStop,
   models = [],
   model = null,
@@ -87,7 +88,16 @@ export function ChatInput({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
   const [pickedMentions, setPickedMentions] = useState<string[]>([]);
+  const [folderMenuOpen, setFolderMenuOpen] = useState(false);
+  const [addFolderOpen, setAddFolderOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const {
+    workspaces,
+    attached,
+    attach,
+    detach,
+    create,
+  } = useWorkspace();
   const slashQuery = matchSlashQuery(value);
   const slashOptions =
     slashQuery === null
@@ -98,6 +108,7 @@ export function ChatInput({
         );
   const mentionMatch = slashQuery !== null ? null : value.match(/@([^\s]*)$/);
   const mentionQuery = mentionMatch ? mentionMatch[1] : null;
+  const mentions = useChatMentions(mentionQuery);
   const mentionOptions =
     mentionQuery === null
       ? []
@@ -109,7 +120,7 @@ export function ChatInput({
               item.label.toLowerCase().includes(q)
             );
           })
-          .slice(0, 6);
+          .slice(0, 8);
 
   const insertMention = (token: string) => {
     onChange(value.replace(/@[^\s]*$/, `${token} `));
@@ -197,7 +208,8 @@ export function ChatInput({
   };
 
   const canSend = value.trim().length > 0 || attachments.length > 0;
-  const hasPills = attachments.length > 0 || slashCommands.length > 0;
+  const hasPills =
+    attachments.length > 0 || slashCommands.length > 0 || Boolean(attached);
   const activePhase = slashCommands.find((command) => command.kind === "phase");
   const inputPlaceholder = slashCommands.some(
     (command) => command.token === "/jira",
@@ -228,7 +240,7 @@ export function ChatInput({
         {mentionOptions.length > 0 && (
           <ul
             role="listbox"
-            aria-label="Vault mentions"
+            aria-label="File mentions"
             className="absolute bottom-full left-0 right-0 z-10 mb-2 overflow-hidden rounded-xl border border-border bg-surface shadow-[6px_2px_35px_rgba(0,0,0,0.05)]"
           >
             {mentionOptions.map((item, index) => (
@@ -250,6 +262,45 @@ export function ChatInput({
             ))}
           </ul>
         )}
+        {folderMenuOpen && (
+          <div className="absolute bottom-14 left-3 z-20 w-64 overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+            {workspaces.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-muted">
+                No project folders yet.
+              </p>
+            ) : (
+              <ul className="max-h-48 overflow-y-auto py-1">
+                {workspaces.map((ws) => (
+                  <li key={ws.id}>
+                    <button
+                      type="button"
+                      className="flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-muted/10"
+                      onClick={() => {
+                        attach(ws.id);
+                        setFolderMenuOpen(false);
+                      }}
+                    >
+                      <span className="font-medium truncate">{ws.name}</span>
+                      <span className="text-[11px] text-muted truncate">
+                        {ws.path}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button
+              type="button"
+              className="w-full border-t border-border px-3 py-2 text-left text-xs font-medium hover:bg-muted/10"
+              onClick={() => {
+                setFolderMenuOpen(false);
+                setAddFolderOpen(true);
+              }}
+            >
+              Choose in Finder…
+            </button>
+          </div>
+        )}
         <div className="relative overflow-hidden rounded-2xl border border-border bg-surface shadow-[6px_2px_35px_rgba(0,0,0,0.05)]">
           <AnimatePresence>
             {hasPills && (
@@ -259,6 +310,34 @@ export function ChatInput({
                 exit={{ opacity: 0, height: 0 }}
                 className="flex flex-wrap items-center gap-2 px-3 pt-3"
               >
+                {attached && (
+                  <motion.div
+                    key={attached.id}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/20 px-2.5 py-1.5 max-w-[240px]"
+                  >
+                    <FolderGit2 size={14} className="shrink-0" />
+                    <div className="overflow-hidden">
+                      <p className="text-xs font-medium truncate leading-tight">
+                        {attached.name}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground truncate">
+                        {attached.path}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={detach}
+                      className="cursor-pointer ml-1 text-muted hover:text-foreground"
+                      title="Stop working in this folder"
+                      aria-label="Stop working in this folder"
+                    >
+                      <X size={12} strokeWidth={3} />
+                    </button>
+                  </motion.div>
+                )}
                 {slashCommands.map((command) => (
                   <motion.div
                     key={command.token}
@@ -330,7 +409,7 @@ export function ChatInput({
             onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isLoading}
-            className="w-full min-h-[120px] resize-none border-0 bg-transparent outline-none ring-0 p-4 text-foreground placeholder:text-muted block"
+            className="w-full min-h-[120px] resize-none border-0 bg-transparent outline-none ring-0 p-4 pb-14 text-foreground placeholder:text-muted block"
             style={{ boxShadow: "none" }}
           />
 
@@ -343,6 +422,17 @@ export function ChatInput({
               title="Attach files or images"
             >
               <PlusIcon size={18} />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 rounded-lg px-2 text-xs"
+              onClick={() => setFolderMenuOpen((open) => !open)}
+              title="Work in a folder"
+            >
+              <Folder size={14} />
+              Work in a folder
             </Button>
             {onModelChange && (
               <ModelPicker
@@ -407,6 +497,13 @@ export function ChatInput({
           </AnimatePresence>
         </div>
       </form>
+      <AddFolderDialog
+        open={addFolderOpen}
+        onClose={() => setAddFolderOpen(false)}
+        onCreate={async (name, path) => {
+          await create({ name, path });
+        }}
+      />
     </div>
   );
 }

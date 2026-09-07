@@ -14,6 +14,12 @@ import {
   searchDecisions,
   simulateImpact,
 } from "./system-model";
+import {
+  workspaceGrep,
+  workspaceLs,
+  workspaceRead,
+  workspaceWrite,
+} from "./workspace";
 import { writeFiles } from "./write-files";
 
 /**
@@ -25,7 +31,8 @@ import { writeFiles } from "./write-files";
  *
  * System-model tools read the graph in the product repo's `.sa/`. They are the
  * "what is connected to what" and "why is it like this" layer, on top of the
- * live schema's "what exists".
+ * live schema's "what exists". Workspace tools operate on a folder the human
+ * attached in the Chat GUI; they stay inside that root.
  */
 export const TOOL_REGISTRY = {
   list_tables: listTables,
@@ -42,6 +49,10 @@ export const TOOL_REGISTRY = {
   get_jira_ticket: getJiraTicket,
   read_jira_user_story: readJiraUserStory,
   write_files: writeFiles,
+  workspace_ls: workspaceLs,
+  workspace_read: workspaceRead,
+  workspace_grep: workspaceGrep,
+  workspace_write: workspaceWrite,
 } satisfies Record<string, StructuredToolInterface>;
 
 export type ToolName = keyof typeof TOOL_REGISTRY;

@@ -1,4 +1,4 @@
-import type { SubAgent } from "deepagents";
+import type { FilesystemPermission, SubAgent } from "deepagents";
 import { config } from "../config";
 import { resolveModel } from "./model";
 import { resolveTools, type ToolName } from "./tools";
@@ -64,6 +64,14 @@ const MODEL_READ = [
 
 const WRITE = ["write_files"] as const satisfies readonly ToolName[];
 
+const WORKSPACE_READ = [
+  "workspace_ls",
+  "workspace_read",
+  "workspace_grep",
+] as const satisfies readonly ToolName[];
+
+const WORKSPACE_WRITE = ["workspace_write"] as const satisfies readonly ToolName[];
+
 /** Virtual-FS paths. Next phase reads the file, not the chat history. */
 export const ARTIFACT = {
   context: "/artifacts/context.md",
@@ -109,7 +117,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
     receives:
       "user request, optional ticket key, index hits, live schema orientation",
     produces: `${ARTIFACT.discuss} — scope, gaps, field map, questions for the human`,
-    tools: [...SCHEMA, ...INDEX, ...JIRA, ...MODEL_READ, "build_system_model", ...WRITE],
+    tools: [...SCHEMA, ...INDEX, ...JIRA, ...MODEL_READ, "build_system_model", ...WRITE, ...WORKSPACE_READ],
     skills: [
       "/resources/skills/system-analyst/",
       "/resources/skills/system-model/",
@@ -122,7 +130,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.discuss} (approved) + index conventions`,
     produces: `${ARTIFACT.plan} — spec, Mermaid flow, step list for execute`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE, ...WORKSPACE_READ],
     skills: [
       "/resources/skills/solution-architect/",
       "/resources/skills/system-model/",
@@ -134,7 +142,16 @@ export const PHASE: Record<Phase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.plan} (approved)`,
     produces: `${ARTIFACT.execute} — what changed, files, residual risks`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, "build_system_model", "record_decision", ...WRITE],
+    tools: [
+      ...SCHEMA,
+      ...INDEX,
+      ...MODEL_READ,
+      "build_system_model",
+      "record_decision",
+      ...WRITE,
+      ...WORKSPACE_READ,
+      ...WORKSPACE_WRITE,
+    ],
     skills: [
       "/resources/skills/backend/",
       "/resources/skills/system-model/",
@@ -146,7 +163,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.discuss} + ${ARTIFACT.plan} + ${ARTIFACT.execute}`,
     produces: `${ARTIFACT.test} — cases, fixtures, quiz of the spec, gaps`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE, ...WORKSPACE_READ],
     skills: [
       "/resources/skills/test-engineer/",
       "/resources/skills/system-model/",
@@ -158,7 +175,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.plan} + ${ARTIFACT.execute} + ${ARTIFACT.test}`,
     produces: `${ARTIFACT.review} — findings, required refactors, ship-ready or not`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE, ...WORKSPACE_READ, ...WORKSPACE_WRITE],
     skills: [
       "/resources/skills/backend/",
       "/resources/skills/system-model/",
@@ -187,7 +204,7 @@ export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
     gate: "human",
     receives: `PVT requirements, the case list at ${ARTIFACT.pvtCasesJson} (from the CSV at ${ARTIFACT.pvtCases}, or a named story), live schema`,
     produces: `${ARTIFACT.pvtDiscuss} — case inventory, tables touched, unrunnable cases, questions`,
-    tools: [...SCHEMA, ...INDEX, ...JIRA, ...MODEL_READ, ...WRITE],
+    tools: [...SCHEMA, ...INDEX, ...JIRA, ...MODEL_READ, ...WRITE, ...WORKSPACE_READ],
     skills: [
       "/resources/skills/pvt-prep/",
       "/resources/skills/system-analyst/",
@@ -200,7 +217,7 @@ export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.pvtDiscuss} (approved)`,
     produces: `${ARTIFACT.pvtPlan} — scenario groups, script set, pre-window vs in-window split, impact`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE, ...WORKSPACE_READ],
     skills: [
       "/resources/skills/pvt-prep/",
       "/resources/skills/test-engineer/",
@@ -213,7 +230,7 @@ export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.pvtPlan} (approved)`,
     produces: `${ARTIFACT.pvtExecute} — the numbered script set, run order, owners`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE],
+    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE, ...WORKSPACE_READ],
     skills: [
       "/resources/skills/pvt-prep/",
       "/resources/skills/backend/",
@@ -239,6 +256,9 @@ export const ORCHESTRATOR_TOOLS = [
   "search_schema_docs",
   "list_tables",
   "write_files",
+  "workspace_ls",
+  "workspace_read",
+  "workspace_grep",
 ] as const satisfies readonly ToolName[];
 
 /**
@@ -246,27 +266,60 @@ export const ORCHESTRATOR_TOOLS = [
  * wins over the phase's env-configured default, because the router only
  * delegates — if the override stopped at the orchestrator the picker would not
  * change which model does any of the actual work.
+ *
+ * deepagents lists *children* of each skills source as packages. PHASE.skills
+ * names the package (`/resources/skills/backend/`); the source is its parent.
  */
+function skillSources(paths: readonly string[]): string[] {
+  const sources = new Set<string>();
+  for (const raw of paths) {
+    const trimmed = raw.replace(/\/+$/, "");
+    const slash = trimmed.lastIndexOf("/");
+    sources.add(slash <= 0 ? `${trimmed}/` : `${trimmed.slice(0, slash)}/`);
+  }
+  return [...sources];
+}
+
+/** Phase artifacts only — discuss/plan/test must not write the product repo. */
+const ARTIFACT_WRITES: FilesystemPermission[] = [
+  { operations: ["write"], paths: ["/artifacts/**"], mode: "allow" },
+  { operations: ["write"], paths: ["/large_tool_results/**"], mode: "allow" },
+  { operations: ["write"], paths: ["/conversation_history/**"], mode: "allow" },
+  { operations: ["write"], paths: ["/**"], mode: "deny" },
+];
+
+/** Execute/review may write the attached repo; never skills/memory. */
+const PRODUCT_WRITES: FilesystemPermission[] = [
+  { operations: ["write"], paths: ["/resources/**"], mode: "deny" },
+];
+
 function specialist(
   row: PhaseContract,
   description: string,
   systemPrompt: string,
   modelOverride?: string,
 ): SubAgent {
+  const canWriteProduct = row.tools.includes("workspace_write");
   return {
     name: row.owner as string,
     description,
     systemPrompt,
     model: resolveModel(modelOverride ?? (row.model as string)),
     tools: resolveTools(row.tools) as NonNullable<SubAgent["tools"]>,
-    skills: [...row.skills],
+    skills: skillSources(row.skills),
+    permissions: canWriteProduct ? PRODUCT_WRITES : ARTIFACT_WRITES,
   };
 }
 
 const GROUNDING = `Ground every claim in list_tables / describe_tables /
 inspect_relationships, or in search_api_specs / search_schema_docs.
 Never invent a table, column, or endpoint. Write your artifact to the
-path named in the task. Return a short report, not raw tool dumps.`;
+path named in the task. Return a short report, not raw tool dumps.
+When a local project folder is attached, ls / read_file / glob / grep
+see that repo from / (e.g. /internal/handler/voting). /artifacts is
+phase scratch; /resources is skills. Do not pass a host path like
+/Users/…. workspace_ls / workspace_read / workspace_grep also work
+with paths relative to the folder root.`;
 
 export function harnessSubagents(modelOverride?: string): SubAgent[] {
   return [
@@ -281,7 +334,9 @@ or story is named, jira.
    request touches, and search_decisions for why they are built that way.
 3. Index existing contracts (search_api_specs, search_schema_docs).
 4. Confirm tables and FKs on the live schema.
-5. Write ${ARTIFACT.discuss}: in/out scope, entities, field map, existing
+5. If a local project folder is attached, inspect it with ls / read_file /
+   glob / grep (or workspace_ls / workspace_read / workspace_grep).
+6. Write ${ARTIFACT.discuss}: in/out scope, entities, field map, existing
    components, constraining decisions, gaps, questions for the human.
 
 Do not write a build plan or application source. ${GROUNDING}`,
@@ -309,6 +364,10 @@ Do not implement application source. ${GROUNDING}`,
       `You are the Execute specialist. Load backend.
 
 Read ${ARTIFACT.plan}. Follow that checklist and product conventions.
+If a local project folder is attached, implement with write_file or
+workspace_write. Inspect with ls / read_file / glob / grep (paths from
+the repo root, never /Users/…). Phase notes still go to
+${ARTIFACT.execute} with write_file. Human downloads still use write_files.
 Parameterize SQL with $1. Map snake_case columns to camelCase at the
 boundary. Verify backing queries with run_sql.
 

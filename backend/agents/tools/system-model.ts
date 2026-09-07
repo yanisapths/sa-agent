@@ -1,5 +1,7 @@
 import { tool } from "@langchain/core/tools";
+import type { RunnableConfig } from "@langchain/core/runnables";
 import { z } from "zod";
+import { workspaceRootOf } from "./core/workspace";
 import {
   buildModel,
   queryModel,
@@ -8,18 +10,26 @@ import {
   simulate,
 } from "./core/system-model";
 
-export const buildSystemModel = tool(async () => buildModel(), {
-  name: "build_system_model",
-  description:
-    "Scan this repository and rebuild the system model: files, imports, HTTP endpoints, " +
-    "table access, tests, docs, and the live database schema, as a typed graph in .sa/system-model.db. " +
-    "Run it once before the other system-model tools, and again after code changes. " +
-    "Deterministic and free — it calls no model.",
-  schema: z.object({}),
-});
+function rootOf(config: RunnableConfig): string | undefined {
+  return workspaceRootOf(config);
+}
+
+export const buildSystemModel = tool(
+  async (_input, config: RunnableConfig) => buildModel(rootOf(config)),
+  {
+    name: "build_system_model",
+    description:
+      "Scan this repository and rebuild the system model: files, imports, HTTP endpoints, " +
+      "table access, tests, docs, and the live database schema, as a typed graph in .sa/system-model.db. " +
+      "Run it once before the other system-model tools, and again after code changes. " +
+      "When a local project folder is attached, scans that folder. Deterministic and free — it calls no model.",
+    schema: z.object({}),
+  },
+);
 
 export const querySystemModel = tool(
-  async ({ query, kind, limit }) => queryModel(query, kind, limit),
+  async ({ query, kind, limit }, config: RunnableConfig) =>
+    queryModel(query, kind, limit, rootOf(config)),
   {
     name: "query_system_model",
     description:
@@ -53,7 +63,8 @@ export const querySystemModel = tool(
 );
 
 export const simulateImpact = tool(
-  async ({ target, depth }) => simulate(target, depth),
+  async ({ target, depth }, config: RunnableConfig) =>
+    simulate(target, depth, rootOf(config)),
   {
     name: "simulate_impact",
     description:
@@ -77,7 +88,8 @@ export const simulateImpact = tool(
 );
 
 export const recordDecision = tool(
-  async (input) => recordDecisionCore(input),
+  async (input, config: RunnableConfig) =>
+    recordDecisionCore({ ...input, root: rootOf(config) }),
   {
     name: "record_decision",
     description:
@@ -107,7 +119,8 @@ export const recordDecision = tool(
 );
 
 export const searchDecisions = tool(
-  async ({ query, limit }) => searchDecisionsCore(query, limit),
+  async ({ query, limit }, config: RunnableConfig) =>
+    searchDecisionsCore(query, limit, rootOf(config)),
   {
     name: "search_decisions",
     description:

@@ -339,6 +339,7 @@ export const useChat = () => {
     mentions = [],
     model,
     phase,
+    workspaceId,
     onSettled,
   }: {
     text: string;
@@ -348,6 +349,8 @@ export const useChat = () => {
     model?: string | null;
     /** Phase specialist to pin; omit to let the router choose. */
     phase?: string;
+    /** Registered local project folder for this turn. */
+    workspaceId?: string;
     /** Runs when the turn finishes, however it finishes. */
     onSettled?: () => void;
   }) => {
@@ -391,6 +394,7 @@ export const useChat = () => {
       if (threadId) formData.append("threadId", threadId);
       if (model) formData.append("model", model);
       if (phase) formData.append("phase", phase);
+      if (workspaceId) formData.append("workspaceId", workspaceId);
 
       // Same bearer the vault uses. Chat itself does not require auth; this is
       // what lets the backend resolve `@folder/file` mentions to real bytes.

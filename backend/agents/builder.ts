@@ -6,9 +6,11 @@ import {
   createDeepAgent,
   FilesystemBackend,
   StateBackend,
+  type FilesystemPermission,
   type SubAgent,
 } from "deepagents";
 import { config } from "../config";
+import { AttachedProjectBackend } from "./backends/attached-project";
 import { resolveModel } from "./model";
 import { registerGatewayHarness } from "./profile";
 import { resolveTools, type ToolName } from "./tools";
@@ -32,21 +34,32 @@ const RESOURCE_MOUNT = "/resources";
 const SESSION = new MemorySaver();
 
 /**
- * Read-only mount of `agents/resources` for skills and memory; everything else
- * is ephemeral per-thread state the agent can use as scratch space for context
- * offloading.
+ * Read-only mount of `agents/resources` for skills and memory.
+ *
+ * The default backend is the attached product repo when `/chat` sets
+ * `workspaceRoot`, otherwise per-thread StateBackend. `/artifacts` and other
+ * harness scratch paths stay in state (see AttachedProjectBackend).
  *
  * The route key needs the trailing slash — CompositeBackend strips it when
  * delegating to the mounted backend.
  */
 function createBackend(): CompositeBackend {
-  return new CompositeBackend(new StateBackend(), {
+  const state = new StateBackend();
+  return new CompositeBackend(new AttachedProjectBackend(state), {
     [`${RESOURCE_MOUNT}/`]: new FilesystemBackend({
       rootDir: RESOURCE_ROOT,
       virtualMode: true,
     }),
   });
 }
+
+/** Orchestrator may write phase artifacts only — never the product repo. */
+const ORCHESTRATOR_FS_PERMISSIONS: FilesystemPermission[] = [
+  { operations: ["write"], paths: ["/artifacts/**"], mode: "allow" },
+  { operations: ["write"], paths: ["/large_tool_results/**"], mode: "allow" },
+  { operations: ["write"], paths: ["/conversation_history/**"], mode: "allow" },
+  { operations: ["write"], paths: ["/**"], mode: "deny" },
+];
 
 export interface AgentSpec {
   /** Identifies the agent in traces and streams. */
@@ -94,9 +107,7 @@ export function defineAgent(spec: AgentSpec) {
     memory: spec.memory === false ? undefined : [`${RESOURCE_MOUNT}/AGENTS.md`],
     subagents: spec.subagents ?? [],
     checkpointer: spec.session === false ? undefined : SESSION,
-    permissions: [
-      { operations: ["write"], paths: [`${RESOURCE_MOUNT}/**`], mode: "deny" },
-    ],
+    permissions: ORCHESTRATOR_FS_PERMISSIONS,
   }).withConfig({
     /**
      * deepagents binds 10000. A later withConfig wins, and `/chat` passes the

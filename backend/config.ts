@@ -81,7 +81,9 @@ function positiveInt(name: string, fallback: number): number {
   if (!raw) return fallback;
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`BIFROST_${name} must be a positive integer (got "${raw}")`);
+    throw new Error(
+      `BIFROST_${name} must be a positive integer (got "${raw}")`,
+    );
   }
   return value;
 }
@@ -238,10 +240,8 @@ export const config = {
 
   supabase: {
     vaultBucket: process.env.SUPABASE_VAULT_BUCKET || "vault",
-    /** Optional object-key prefix inside the bucket, e.g. `vault`. */
     vaultFolder: process.env.VAULT_STORAGE_FOLDER || "",
     artifactsBucket: process.env.SUPABASE_ARTIFACTS_BUCKET || "artifacts",
-    /** Optional object-key prefix inside the artifacts bucket. */
     artifactsFolder: process.env.ARTIFACTS_STORAGE_FOLDER || "",
   },
 
@@ -253,6 +253,21 @@ export const config = {
 
   artifacts: {
     maxFileBytes: 20 * 1024 * 1024,
+  },
+
+  /**
+   * Local project folders the chat agent can read and write. Paths are on the
+   * machine running this process — the GUI and backend must share a disk.
+   */
+  workspace: {
+    maxReadBytes: 1024 * 1024,
+    maxWriteBytes: 1024 * 1024,
+    maxListEntries: 200,
+    maxGrepHits: 50,
+    allowedRoots: (process.env.WORKSPACE_ALLOWED_ROOTS ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
   },
 
   /**

@@ -1,12 +1,16 @@
 "use client";
 
-import { type MentionItem } from "@/components/chat-input";
 import { useVaultMentions } from "@/features/vault/useVaultMentions";
+import { useWorkspaceMentions } from "@/features/workspace/useWorkspaceMentions";
 import { useArtifactMentions } from "./useArtifactMentions";
 
-/** Vault folders/files plus `@Artifacts/...` tokens for chat autocomplete. */
-export function useChatMentions(): MentionItem[] {
+/** Vault, artifacts, and `@Projects/...` tokens for chat autocomplete. */
+export function useChatMentions(query: string | null = null): {
+  token: string;
+  label: string;
+}[] {
   const vault = useVaultMentions();
   const artifacts = useArtifactMentions();
-  return [...vault, ...artifacts];
+  const projects = useWorkspaceMentions(query);
+  return [...vault, ...artifacts, ...projects];
 }
