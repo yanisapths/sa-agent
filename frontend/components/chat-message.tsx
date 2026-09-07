@@ -92,7 +92,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={copy}
-      className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+      className="flex items-center gap-1 text-xs text-muted hover:text-foreground transition-colors"
     >
       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
       {copied ? "Copied" : "Copy"}
@@ -243,7 +243,7 @@ function renderInline(text: string): React.ReactNode[] {
       parts.push(
         <code
           key={key++}
-          className="px-1 py-0.5 rounded text-[11px] font-mono bg-gray-100 text-gray-700 border border-gray-200"
+          className="px-1 py-0.5 rounded text-[11px] font-mono bg-muted/15 text-foreground/80 border border-border"
         >
           {chunk.slice(1, -1)}
         </code>,
@@ -257,9 +257,9 @@ function renderInline(text: string): React.ReactNode[] {
 
 function MarkdownCodeBlock({ lang, code }: { lang: string; code: string }) {
   return (
-    <div className="my-2 rounded-lg border border-gray-200 overflow-hidden">
+    <div className="my-2 rounded-lg border border-border overflow-hidden">
       <div className="flex items-center justify-between px-3 py-1.5 bg-gray-900 border-b border-gray-700">
-        <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider">
+        <span className="text-[10px] font-mono text-muted uppercase tracking-wider">
           {lang || "code"}
         </span>
         <CopyButton text={code} />
@@ -279,14 +279,14 @@ function MarkdownTable({
   rows: string[][];
 }) {
   return (
-    <div className="my-2 rounded-lg border border-gray-200 overflow-hidden">
+    <div className="my-2 rounded-lg border border-border overflow-hidden">
       <table className="w-full text-xs">
         <thead>
-          <tr className="bg-gray-50 border-b border-gray-200">
+          <tr className="bg-muted/10 border-b border-border">
             {headers.map((h, i) => (
               <th
                 key={i}
-                className="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wide text-[10px]"
+                className="px-3 py-2 text-left font-medium text-muted uppercase tracking-wide text-[10px]"
               >
                 {renderInline(h)}
               </th>
@@ -298,14 +298,14 @@ function MarkdownTable({
             <tr
               key={ri}
               className={cn(
-                "border-t border-gray-100",
-                ri % 2 === 1 ? "bg-gray-50/50" : "bg-white",
+                "border-t border-border",
+                ri % 2 === 1 ? "bg-muted/10" : "bg-surface",
               )}
             >
               {row.map((cell, ci) => (
                 <td
                   key={ci}
-                  className="px-3 py-2 text-gray-700 font-mono leading-relaxed"
+                  className="px-3 py-2 text-foreground/80 font-mono leading-relaxed"
                 >
                   {renderInline(cell)}
                 </td>
@@ -341,10 +341,10 @@ function MarkdownContent({ text }: { text: string }) {
     if (token.kind === "heading") {
       const Tag = `h${token.level}` as "h1" | "h2" | "h3" | "h4";
       const cls = {
-        h1: "text-base font-semibold text-gray-900 mt-3 mb-1",
-        h2: "text-sm font-semibold text-gray-800 mt-2.5 mb-1",
-        h3: "text-xs font-semibold text-gray-700 mt-2 mb-0.5 uppercase tracking-wide",
-        h4: "text-xs font-medium text-gray-600 mt-1.5 mb-0.5",
+        h1: "text-base font-semibold text-foreground mt-3 mb-1",
+        h2: "text-sm font-semibold text-foreground mt-2.5 mb-1",
+        h3: "text-xs font-semibold text-foreground/80 mt-2 mb-0.5 uppercase tracking-wide",
+        h4: "text-xs font-medium text-muted mt-1.5 mb-0.5",
       }[Tag];
       nodes.push(
         <Tag key={key++} className={cls}>
@@ -363,10 +363,10 @@ function MarkdownContent({ text }: { text: string }) {
       nodes.push(
         <div
           key={key++}
-          className="flex gap-2 text-sm text-gray-700 leading-relaxed"
+          className="flex gap-2 text-sm text-foreground/80 leading-relaxed"
           style={{ paddingLeft: `${token.depth * 12}px` }}
         >
-          <span className="text-gray-400 mt-0.5 select-none">•</span>
+          <span className="text-muted mt-0.5 select-none">•</span>
           <span>{renderInline(token.text)}</span>
         </div>,
       );
@@ -374,19 +374,19 @@ function MarkdownContent({ text }: { text: string }) {
       nodes.push(
         <div
           key={key++}
-          className="flex gap-2 text-sm text-gray-700 leading-relaxed"
+          className="flex gap-2 text-sm text-foreground/80 leading-relaxed"
         >
-          <span className="text-gray-400 tabular-nums w-4 text-right shrink-0">
+          <span className="text-muted tabular-nums w-4 text-right shrink-0">
             {token.index}.
           </span>
           <span>{renderInline(token.text)}</span>
         </div>,
       );
     } else if (token.kind === "hr") {
-      nodes.push(<hr key={key++} className="border-t border-gray-200 my-2" />);
+      nodes.push(<hr key={key++} className="border-t border-border my-2" />);
     } else if (token.kind === "paragraph") {
       nodes.push(
-        <p key={key++} className="text-sm text-gray-700 leading-relaxed">
+        <p key={key++} className="text-sm text-foreground/80 leading-relaxed">
           {renderInline(token.text)}
         </p>,
       );
@@ -400,17 +400,17 @@ function MarkdownContent({ text }: { text: string }) {
 
 function DiagramDisplay({ part }: { part: DiagramPart }) {
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden text-sm w-full">
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+    <div className="border border-border rounded-lg overflow-hidden text-sm w-full">
+      <div className="flex items-center justify-between px-3 py-2 bg-muted/10 border-b border-border">
         <div className="flex items-center gap-2">
           <GitBranch className="w-3.5 h-3.5 text-violet-500" />
-          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+          <span className="text-xs font-medium text-muted uppercase tracking-wide">
             {part.title || part.diagramType || "Diagram"}
           </span>
         </div>
         <CopyButton text={part.content} />
       </div>
-      <pre className="px-3 py-3 text-xs font-mono text-gray-800 overflow-x-auto bg-white whitespace-pre">
+      <pre className="px-3 py-3 text-xs font-mono text-foreground overflow-x-auto bg-surface whitespace-pre">
         {part.content}
       </pre>
     </div>
@@ -430,7 +430,7 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
 
   const methodColor =
     METHOD_COLOR[(part.method ?? "").toUpperCase()] ??
-    "text-gray-600 bg-gray-50 border-gray-200";
+    "text-muted bg-muted/10 border-border";
 
   const getFields = (
     r: Record<string, unknown>,
@@ -465,8 +465,8 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
     r.example ?? (r.content as any)?.["application/json"]?.example;
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden text-sm w-full">
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 border-b border-gray-200">
+    <div className="border border-border rounded-lg overflow-hidden text-sm w-full">
+      <div className="flex items-center gap-2 px-3 py-2.5 bg-muted/10 border-b border-border">
         <span
           className={cn(
             "px-2 py-0.5 rounded text-xs font-mono font-semibold border",
@@ -475,45 +475,45 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
         >
           {part.method?.toUpperCase()}
         </span>
-        <code className="text-gray-800 text-xs font-mono">{part.endpoint}</code>
+        <code className="text-foreground text-xs font-mono">{part.endpoint}</code>
       </div>
 
       {part.description && (
-        <p className="px-3 py-2 text-gray-600 text-xs border-b border-gray-100">
+        <p className="px-3 py-2 text-muted text-xs border-b border-border">
           {part.description}
         </p>
       )}
 
       {part.auth && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
-          <span className="text-xs text-gray-400 w-16">Auth</span>
-          <code className="text-xs text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+          <span className="text-xs text-muted w-16">Auth</span>
+          <code className="text-xs text-foreground/80 bg-muted/15 px-1.5 py-0.5 rounded">
             {part.auth}
           </code>
         </div>
       )}
 
       {parameters.length > 0 && (
-        <div className="border-b border-gray-100">
-          <p className="px-3 py-1.5 text-xs font-medium text-gray-400 uppercase tracking-wide">
+        <div className="border-b border-border">
+          <p className="px-3 py-1.5 text-xs font-medium text-muted uppercase tracking-wide">
             Parameters
           </p>
           {parameters.map((p: any, i) => (
             <div
               key={i}
-              className="flex items-center gap-3 px-3 py-1.5 border-t border-gray-50"
+              className="flex items-center gap-3 px-3 py-1.5 border-t border-border"
             >
-              <code className="text-xs text-gray-700 w-32 truncate">
+              <code className="text-xs text-foreground/80 w-32 truncate">
                 {p.name}
               </code>
-              <span className="text-xs text-gray-400 bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded">
+              <span className="text-xs text-muted bg-muted/10 border border-border px-1.5 py-0.5 rounded">
                 {p.in}
               </span>
               {p.required && (
                 <span className="text-xs text-red-400">required</span>
               )}
               {p.description && (
-                <span className="text-xs text-gray-400 truncate">
+                <span className="text-xs text-muted truncate">
                   {p.description}
                 </span>
               )}
@@ -524,7 +524,7 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
 
       {Object.keys(responses).length > 0 && (
         <div>
-          <p className="px-3 py-1.5 text-xs font-medium text-gray-400 uppercase tracking-wide border-b border-gray-100">
+          <p className="px-3 py-1.5 text-xs font-medium text-muted uppercase tracking-wide border-b border-border">
             Responses
           </p>
           {Object.entries(responses).map(([code, resp]) => {
@@ -541,13 +541,13 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
               example !== undefined;
             const statusColor =
               STATUS_COLOR[code[0]] ??
-              "text-gray-600 bg-gray-50 border-gray-200";
+              "text-muted bg-muted/10 border-border";
 
             return (
-              <div key={code} className="border-t border-gray-100">
+              <div key={code} className="border-t border-border">
                 <button
                   onClick={() => hasDetail && setOpenCode(isOpen ? null : code)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/10 transition-colors"
                 >
                   <span
                     className={cn(
@@ -557,13 +557,13 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
                   >
                     {code}
                   </span>
-                  <span className="text-xs text-gray-500 flex-1">
+                  <span className="text-xs text-muted flex-1">
                     {String(r.description ?? "")}
                   </span>
                   {hasDetail && (
                     <span
                       className={cn(
-                        "text-gray-400 text-xs transition-transform",
+                        "text-muted text-xs transition-transform",
                         isOpen && "rotate-180",
                       )}
                     >
@@ -573,11 +573,11 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
                 </button>
 
                 {isOpen && hasDetail && (
-                  <div className="px-3 pb-3 space-y-2 bg-gray-50/50">
+                  <div className="px-3 pb-3 space-y-2 bg-muted/10">
                     {Object.keys(fields).length > 0 && (
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="text-gray-400">
+                          <tr className="text-muted">
                             <th className="text-left py-1 font-medium">
                               field
                             </th>
@@ -589,14 +589,14 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
                         </thead>
                         <tbody>
                           {Object.entries(fields).map(([name, s]) => (
-                            <tr key={name} className="border-t border-gray-100">
-                              <td className="py-1 pr-3 font-mono text-gray-700">
+                            <tr key={name} className="border-t border-border">
+                              <td className="py-1 pr-3 font-mono text-foreground/80">
                                 {name}
                               </td>
                               <td className="py-1 pr-3 text-sky-600">
                                 {String(s.type ?? "")}
                               </td>
-                              <td className="py-1 text-gray-400">
+                              <td className="py-1 text-muted">
                                 {String(s.description ?? "")}
                               </td>
                             </tr>
@@ -612,12 +612,12 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
                         const req = (resolvedSchema.required ?? []) as string[];
                         return (
                           <div>
-                            <p className="text-xs text-gray-400 mb-1 font-mono">
+                            <p className="text-xs text-muted mb-1 font-mono">
                               {refName}
                             </p>
                             <table className="w-full text-xs">
                               <thead>
-                                <tr className="text-gray-400">
+                                <tr className="text-muted">
                                   <th className="text-left py-1 font-medium">
                                     field
                                   </th>
@@ -633,9 +633,9 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
                                 {Object.entries(props).map(([name, s]) => (
                                   <tr
                                     key={name}
-                                    className="border-t border-gray-100"
+                                    className="border-t border-border"
                                   >
-                                    <td className="py-1 pr-3 font-mono text-gray-700">
+                                    <td className="py-1 pr-3 font-mono text-foreground/80">
                                       {name}
                                       {req.includes(name) && (
                                         <span className="text-red-400 ml-1">
@@ -646,7 +646,7 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
                                     <td className="py-1 pr-3 text-sky-600">
                                       {String(s.type ?? "")}
                                     </td>
-                                    <td className="py-1 text-gray-400">
+                                    <td className="py-1 text-muted">
                                       {String(s.description ?? "")}
                                     </td>
                                   </tr>
@@ -676,8 +676,8 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
       )}
 
       {Object.keys(schemas).length > 0 && (
-        <details className="border-t border-gray-100">
-          <summary className="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-600 hover:bg-gray-50">
+        <details className="border-t border-border">
+          <summary className="px-3 py-2 text-xs text-muted cursor-pointer hover:text-foreground hover:bg-muted/10">
             Schemas ({Object.keys(schemas).length})
           </summary>
           <div className="px-3 pb-3 space-y-3">
@@ -689,10 +689,10 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
               const req = (s.required ?? []) as string[];
               return (
                 <div key={name}>
-                  <p className="text-xs font-mono text-gray-500 mb-1">{name}</p>
+                  <p className="text-xs font-mono text-muted mb-1">{name}</p>
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="text-gray-400">
+                      <tr className="text-muted">
                         <th className="text-left py-1 font-medium">field</th>
                         <th className="text-left py-1 font-medium">type</th>
                         <th className="text-left py-1 font-medium">
@@ -702,8 +702,8 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
                     </thead>
                     <tbody>
                       {Object.entries(props).map(([fn, fs]) => (
-                        <tr key={fn} className="border-t border-gray-100">
-                          <td className="py-1 pr-3 font-mono text-gray-700">
+                        <tr key={fn} className="border-t border-border">
+                          <td className="py-1 pr-3 font-mono text-foreground/80">
                             {fn}
                             {req.includes(fn) && (
                               <span className="text-red-400 ml-1">*</span>
@@ -712,7 +712,7 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
                           <td className="py-1 pr-3 text-sky-600">
                             {String(fs.type ?? "")}
                           </td>
-                          <td className="py-1 text-gray-400">
+                          <td className="py-1 text-muted">
                             {String(fs.description ?? "")}
                           </td>
                         </tr>
@@ -727,13 +727,13 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
       )}
 
       {(part.notes ?? []).length > 0 && (
-        <div className="border-t border-gray-100 px-3 py-2.5 space-y-1">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5">
+        <div className="border-t border-border px-3 py-2.5 space-y-1">
+          <p className="text-xs font-medium text-muted uppercase tracking-wide mb-1.5">
             Notes
           </p>
           {part.notes!.map((note, i) => (
-            <p key={i} className="text-xs text-gray-500 flex gap-2">
-              <span className="text-gray-300 select-none">—</span>
+            <p key={i} className="text-xs text-muted flex gap-2">
+              <span className="text-muted/50 select-none">—</span>
               {note}
             </p>
           ))}
@@ -747,18 +747,18 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
 
 function SqlDisplay({ part }: { part: SqlPart }) {
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden text-sm">
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
-        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+    <div className="border border-border rounded-lg overflow-hidden text-sm">
+      <div className="flex items-center justify-between px-3 py-2 bg-muted/10 border-b border-border">
+        <span className="text-xs font-medium text-muted uppercase tracking-wide">
           SQL
         </span>
         <CopyButton text={part.query ?? part.text} />
       </div>
-      <pre className="px-3 py-3 text-xs font-mono text-gray-800 overflow-x-auto bg-white">
+      <pre className="px-3 py-3 text-xs font-mono text-foreground overflow-x-auto bg-surface">
         {part.query ?? part.text}
       </pre>
       {part.reasoning && (
-        <p className="px-3 py-2 text-xs text-gray-500 border-t border-gray-100 bg-gray-50">
+        <p className="px-3 py-2 text-xs text-muted border-t border-border bg-muted/10">
           {part.reasoning}
         </p>
       )}
@@ -791,7 +791,7 @@ function MessagePart({ part }: { part: UIPart }) {
   if (part.type === "file") {
     const p = part as FilePart;
     return (
-      <div className="flex items-center gap-2 bg-white/10 rounded-lg px-2.5 py-1.5 text-xs">
+      <div className="flex items-center gap-2 bg-surface/10 rounded-lg px-2.5 py-1.5 text-xs">
         <FileText className="w-3.5 h-3.5 shrink-0" />
         <span className="truncate max-w-[160px]">{p.name}</span>
       </div>
@@ -844,12 +844,12 @@ export function ChatMessage({
         className={cn(
           "flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5 border",
           isUser
-            ? "bg-gray-100 border-gray-200"
-            : "bg-violet-50 border-violet-500",
+            ? "bg-muted/15 border-border"
+            : "bg-violet-50 dark:bg-violet-500/15 border-violet-300 dark:border-violet-500/40",
         )}
       >
         {isUser ? (
-          <User className="w-3.5 h-3.5 text-gray-800" />
+          <User className="w-3.5 h-3.5 text-foreground" />
         ) : (
           <Bot className="w-3.5 h-3.5 text-violet-500" />
         )}
@@ -864,8 +864,8 @@ export function ChatMessage({
           className={cn(
             "rounded-2xl px-4 py-2.5 text-sm",
             isUser
-              ? "bg-[#dfdad5]/50 text-gray-800 rounded-tr-sm"
-              : "bg-white border border-gray-200 text-gray-800 rounded-tl-sm",
+              ? "bg-muted/30 text-foreground rounded-tr-sm"
+              : "bg-surface border border-border text-foreground rounded-tl-sm",
           )}
         >
           <div className="space-y-2">
@@ -873,7 +873,7 @@ export function ChatMessage({
               <MessagePart key={i} part={part as UIPart} />
             ))}
             {isStreaming && (
-              <span className="inline-block w-0.5 h-4 bg-[#dfdad5]/50 ml-0.5 align-middle animate-pulse rounded" />
+              <span className="inline-block w-0.5 h-4 bg-muted ml-0.5 align-middle animate-pulse rounded" />
             )}
           </div>
         </div>
@@ -889,14 +889,14 @@ export function ChatMessage({
 export function TypingIndicator() {
   return (
     <div className="flex gap-3 px-4 py-4">
-      <div className="w-7 h-7 rounded-full bg-violet-50 border border-violet-300 flex items-center justify-center">
+      <div className="w-7 h-7 rounded-full bg-violet-50 dark:bg-violet-500/15 border border-violet-300 dark:border-violet-500/40 flex items-center justify-center">
         <Bot className="w-3.5 h-3.5 text-violet-500" />
       </div>
-      <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1.5 h-10">
+      <div className="bg-surface border border-border rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1.5 h-10">
         {[0, 150, 300].map((d) => (
           <span
             key={d}
-            className="w-1.5 h-1.5 rounded-full bg-gray-300 animate-bounce"
+            className="w-1.5 h-1.5 rounded-full bg-muted animate-bounce"
             style={{ animationDelay: `${d}ms`, animationDuration: "1.1s" }}
           />
         ))}

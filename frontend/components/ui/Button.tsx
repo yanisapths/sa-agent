@@ -41,19 +41,19 @@ const variants: Record<ButtonVariant, string> = {
 
   secondary: [
     "bg-transparent border-2 border-pink-300 text-pink-700",
-    "hover:bg-pink-50",
+    "hover:bg-pink-50 dark:hover:bg-pink-300/10",
     "focus-visible:ring-pink-300",
   ].join(" "),
 
   outline: [
-    "shadow-none bg-transparent border border-[#716D65]/15 text-black",
-    "hover:bg-[#716D65]/10",
-    "focus-visible:ring-[#716D65]/50",
+    "shadow-none bg-transparent border border-border text-foreground",
+    "hover:bg-muted/10",
+    "focus-visible:ring-muted/50",
   ].join(" "),
 
   ghost: [
-    "bg-transparent text-pink-700",
-    "hover:bg-pink-100",
+    "bg-transparent text-pink-700 dark:text-pink-300",
+    "hover:bg-pink-100 dark:hover:bg-pink-300/10",
     "focus-visible:ring-pink-300",
   ].join(" "),
 
@@ -64,9 +64,9 @@ const variants: Record<ButtonVariant, string> = {
   ].join(" "),
 
   icon: [
-    "text-[#121212]",
-    "hover:bg-[#716D65]/15",
-    "focus-visible:ring-[#716D65]/15",
+    "text-foreground",
+    "hover:bg-muted/15",
+    "focus-visible:ring-muted/15",
     "rounded-lg",
   ].join(" "),
 };

@@ -68,7 +68,7 @@ export function ChatInterface() {
   }, [messages]);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       <main className="flex-1 overflow-y-auto">
         {hasMessages ? (
           <div className="max-w-6xl mx-auto py-6">
@@ -102,6 +102,7 @@ export function ChatInterface() {
                 models={models}
                 model={model}
                 onModelChange={setModel}
+                hasMessages={false}
               />
             </div>
 
@@ -140,6 +141,7 @@ export function ChatInterface() {
             models={models}
             model={model}
             onModelChange={setModel}
+            hasMessages
           />
         </div>
       )}

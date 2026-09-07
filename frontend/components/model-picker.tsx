@@ -58,7 +58,7 @@ export function ModelPicker({
     <DropdownMenu.Root>
       <DropdownMenu.Trigger
         disabled={disabled}
-        className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-medium text-[#716D65] transition-colors hover:bg-[#716D65]/15 disabled:pointer-events-none disabled:opacity-50"
+        className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-medium text-muted transition-colors hover:bg-muted/15 disabled:pointer-events-none disabled:opacity-50"
       >
         {active ? shortName(active.id) : "Default model"}
         <ChevronDown size={13} className="shrink-0" />
@@ -76,37 +76,37 @@ export function ModelPicker({
           align="start"
           sideOffset={6}
           collisionPadding={8}
-          className="z-50 flex max-h-[var(--radix-dropdown-menu-content-available-height)] w-80 flex-col overflow-y-auto overscroll-contain rounded-xl border border-[#716D65]/15 bg-white p-1 shadow-[6px_2px_35px_rgba(0,0,0,0.12)]"
+          className="z-50 flex max-h-[var(--radix-dropdown-menu-content-available-height)] w-80 flex-col overflow-y-auto overscroll-contain rounded-xl border border-border bg-surface p-1 text-foreground shadow-[6px_2px_35px_rgba(0,0,0,0.12)]"
         >
           <DropdownMenu.Item
             onSelect={() => onModelChange(null)}
-            className="flex shrink-0 cursor-pointer items-start gap-2 rounded-lg px-2 py-2 text-sm outline-none data-[highlighted]:bg-[#716D65]/10"
+            className="flex shrink-0 cursor-pointer items-start gap-2 rounded-lg px-2 py-2 text-sm outline-none data-[highlighted]:bg-muted/10"
           >
             <span className="mt-0.5 w-3.5 shrink-0">
               {model === null && <Check size={14} />}
             </span>
             <span className="flex min-w-0 flex-col">
               <span className="font-medium">Default model</span>
-              <span className="text-xs text-[#716D65]">
+              <span className="text-xs text-muted">
                 Whatever the server is configured to use
               </span>
             </span>
           </DropdownMenu.Item>
 
-          <DropdownMenu.Separator className="my-1 h-px shrink-0 bg-[#716D65]/15" />
+          <DropdownMenu.Separator className="my-1 h-px shrink-0 bg-border" />
 
           {models.map((item) => (
             <DropdownMenu.Item
               key={item.id}
               onSelect={() => onModelChange(item.id)}
-              className="flex shrink-0 cursor-pointer items-start gap-2 rounded-lg px-2 py-2 text-sm outline-none data-[highlighted]:bg-[#716D65]/10"
+              className="flex shrink-0 cursor-pointer items-start gap-2 rounded-lg px-2 py-2 text-sm outline-none data-[highlighted]:bg-muted/10"
             >
               <span className="mt-0.5 w-3.5 shrink-0">
                 {item.id === model && <Check size={14} />}
               </span>
               <span className="flex min-w-0 flex-col">
                 <span className="truncate font-medium">{item.id}</span>
-                <span className="text-xs text-[#716D65]">
+                <span className="text-xs text-muted">
                   {[formatContext(item.contextLength), formatPrice(item)]
                     .filter(Boolean)
                     .join(" · ")}

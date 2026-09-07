@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import type { SlashCommand } from "./slash-commands";
 import { CommandIcon } from "./slash-command-icon";
 
@@ -28,9 +29,11 @@ function heightAbove(anchor: HTMLElement): number {
 export function SlashCommandMenu({
   commands,
   onSelect,
+  hasMessages,
 }: {
   commands: SlashCommand[];
   onSelect: (command: SlashCommand) => void;
+  hasMessages?: boolean;
 }) {
   const listRef = useRef<HTMLUListElement>(null);
   const [maxHeight, setMaxHeight] = useState<number>();
@@ -58,7 +61,10 @@ export function SlashCommandMenu({
       role="listbox"
       aria-label="Commands"
       style={maxHeight !== undefined ? { maxHeight } : undefined}
-      className="absolute -bottom-60 left-0 right-0 z-10 mb-2 flex flex-col overflow-y-auto overscroll-contain rounded-xl border border-[#716D65]/15 bg-white shadow-[6px_2px_35px_rgba(0,0,0,0.05)]"
+      className={cn(
+        "absolute left-0 right-0 z-10 mb-2 flex flex-col overflow-y-auto overscroll-contain rounded-xl border border-border bg-surface shadow-[6px_2px_35px_rgba(0,0,0,0.05)]",
+        hasMessages ? "bottom-32" : "-bottom-60",
+      )}
     >
       {commands.map((command, index) => (
         <li key={command.token} className="shrink-0">
@@ -70,23 +76,21 @@ export function SlashCommandMenu({
               event.preventDefault();
               onSelect(command);
             }}
-            className="flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left text-sm hover:bg-[#716D65]/10"
+            className="flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left text-sm hover:bg-muted/10"
           >
             <CommandIcon
               command={command}
               size={14}
-              className="mt-0.5 shrink-0 text-[#716D65]"
+              className="mt-0.5 shrink-0 text-muted"
             />
             <span className="flex min-w-0 flex-col">
               <span className="font-medium">
                 {command.token}
-                <span className="ml-2 font-normal text-[#716D65]">
+                <span className="ml-2 font-normal text-muted">
                   {command.label}
                 </span>
               </span>
-              <span className="text-xs text-[#716D65]">
-                {command.description}
-              </span>
+              <span className="text-xs text-muted">{command.description}</span>
             </span>
           </button>
         </li>

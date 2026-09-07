@@ -106,7 +106,7 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <Link href="/">
-                <Button variant="icon" className="bg-[#716D65]/5 rounded-full">
+                <Button variant="icon" className="bg-muted/5 rounded-full">
                   <Plus className="h-4 w-4" />
                 </Button>
               </Link>

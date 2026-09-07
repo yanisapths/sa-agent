@@ -5,11 +5,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { QuotaMeter } from "@/components/quota-meter";
 import { useQuota } from "@/hooks/use-quota";
+import { ThemeToggle } from "./ThemeToggle";
 
 const tabs = [
   { href: "/vault", label: "Vault" },
   { href: "/", label: "Chat Agent" },
-  { href: "/spec", label: "Spec Design Agent" },
 ] as const;
 
 export function AppTabs() {
@@ -24,7 +24,7 @@ export function AppTabs() {
   return (
     <nav
       aria-label="Workspace"
-      className="flex shrink-0 gap-1 border-b border-black/15 px-4"
+      className="flex shrink-0 gap-1 border-b border-border px-4"
     >
       {tabs.map((tab) => {
         const isActive =
@@ -38,8 +38,8 @@ export function AppTabs() {
             className={cn(
               "border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",
               isActive
-                ? "border-pink-300 text-black"
-                : "border-transparent text-black/60 hover:text-blackck/40",
+                ? "border-pink-300 text-foreground"
+                : "border-transparent text-foreground/60 hover:text-foreground",
             )}
           >
             {tab.label}
@@ -47,7 +47,10 @@ export function AppTabs() {
         );
       })}
 
-      <QuotaMeter quota={quota} />
+      <div className="ml-auto flex items-center gap-1">
+        <QuotaMeter quota={quota} />
+        <ThemeToggle />
+      </div>
     </nav>
   );
 }

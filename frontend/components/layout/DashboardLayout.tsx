@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
+import { ChatInterface } from "@/components/chat-interface";
+import { cn } from "@/lib/utils";
 import { AppSidebar } from "./AppSideBar";
 import { AppTabs } from "./AppTabs";
 
@@ -11,9 +14,17 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const pathname = usePathname();
+  const isChat = pathname === "/";
+  const isVault = pathname.startsWith("/vault");
+  const [keepChat, setKeepChat] = useState(isChat);
+
+  useEffect(() => {
+    if (isChat) setKeepChat(true);
+  }, [isChat]);
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-[#fbfaf9]">
+    <div className="flex h-full w-full overflow-hidden bg-background text-foreground">
       <AppSidebar
         isExpanded={sidebarExpanded}
         onToggle={() => setSidebarExpanded(!sidebarExpanded)}
@@ -21,7 +32,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
       <main className="flex h-screen min-h-0 flex-1 flex-col overflow-hidden">
         <AppTabs />
-        <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          {keepChat && (
+            <div
+              className={cn("h-full w-full", !isChat && "hidden")}
+              aria-hidden={!isChat}
+              inert={!isChat ? true : undefined}
+            >
+              <ChatInterface />
+            </div>
+          )}
+          {isVault ? <div className="h-full">{children}</div> : null}
+        </div>
       </main>
     </div>
   );

@@ -56,6 +56,7 @@ interface ChatInputProps {
   models?: GatewayModel[];
   model?: string | null;
   onModelChange?: (model: string | null) => void;
+  hasMessages?: boolean;
 }
 
 export const sendButtonVariants: Variants = {
@@ -81,6 +82,7 @@ export function ChatInput({
   models = [],
   model = null,
   onModelChange,
+  hasMessages,
 }: ChatInputProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
@@ -212,7 +214,7 @@ export function ChatInput({
         type="file"
         multiple
         accept="image/*,.pdf,.txt,.csv,.docx,.xlsx"
-        className="hidden text-black"
+        className="hidden"
         onChange={(e) => handleFiles(e.target.files)}
         onClick={(e) => ((e.target as HTMLInputElement).value = "")}
       />
@@ -221,12 +223,13 @@ export function ChatInput({
         <SlashCommandMenu
           commands={slashOptions}
           onSelect={insertSlashCommand}
+          hasMessages={hasMessages}
         />
         {mentionOptions.length > 0 && (
           <ul
             role="listbox"
             aria-label="Vault mentions"
-            className="absolute bottom-full left-0 right-0 z-10 mb-2 overflow-hidden rounded-xl border border-[#716D65]/15 bg-white shadow-[6px_2px_35px_rgba(0,0,0,0.05)]"
+            className="absolute bottom-full left-0 right-0 z-10 mb-2 overflow-hidden rounded-xl border border-border bg-surface shadow-[6px_2px_35px_rgba(0,0,0,0.05)]"
           >
             {mentionOptions.map((item, index) => (
               <li key={item.token}>
@@ -238,16 +241,16 @@ export function ChatInput({
                     event.preventDefault();
                     insertMention(item.token);
                   }}
-                  className="flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-[#716D65]/10"
+                  className="flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-muted/10"
                 >
                   <span className="font-medium">{item.token}</span>
-                  <span className="text-xs text-[#716D65]">{item.label}</span>
+                  <span className="text-xs text-muted">{item.label}</span>
                 </button>
               </li>
             ))}
           </ul>
         )}
-        <div className="relative overflow-hidden rounded-2xl border border-[#716D65]/20 bg-white shadow-[6px_2px_35px_rgba(0,0,0,0.05)]">
+        <div className="relative overflow-hidden rounded-2xl border border-border bg-surface shadow-[6px_2px_35px_rgba(0,0,0,0.05)]">
           <AnimatePresence>
             {hasPills && (
               <motion.div
@@ -282,7 +285,7 @@ export function ChatInput({
                     className="relative group"
                   >
                     {att.isImage ? (
-                      <div className="relative rounded-lg overflow-hidden border border-black/10">
+                      <div className="relative rounded-lg overflow-hidden border border-border">
                         <Image
                           width={64}
                           height={64}
@@ -292,7 +295,7 @@ export function ChatInput({
                         />
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2 rounded-lg border border-black/10 bg-muted/50 px-2.5 py-2 max-w-[180px]">
+                      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-2.5 py-2 max-w-[180px]">
                         <FileText
                           size={20}
                           className="text-muted-foreground shrink-0"
@@ -327,7 +330,7 @@ export function ChatInput({
             onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isLoading}
-            className="w-full min-h-[120px] resize-none border-0 bg-transparent outline-none ring-0 p-4 text-foreground placeholder:text-black block"
+            className="w-full min-h-[120px] resize-none border-0 bg-transparent outline-none ring-0 p-4 text-foreground placeholder:text-muted block"
             style={{ boxShadow: "none" }}
           />
 
@@ -374,7 +377,7 @@ export function ChatInput({
                   onClick={onStop}
                   title="Stop generating"
                   aria-label="Stop generating"
-                  className="bg-[#716D65] text-white hover:bg-[#5c5952] rounded-lg"
+                  className="bg-muted text-white hover:opacity-90 rounded-lg"
                 >
                   <Square size={13} strokeWidth={3} />
                 </Button>

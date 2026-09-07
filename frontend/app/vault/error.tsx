@@ -10,7 +10,7 @@ export default function VaultError({
   return (
     <section className="flex h-full flex-col items-start justify-center gap-3 p-6">
       <h1 className="text-lg font-semibold">Could not load Vault</h1>
-      <p className="text-sm text-[#716D65]">{error.message}</p>
+      <p className="text-sm text-muted">{error.message}</p>
       <button
         type="button"
         onClick={reset}
