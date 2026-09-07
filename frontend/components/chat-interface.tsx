@@ -34,9 +34,13 @@ export function ChatInterface() {
   const mentions = useVaultMentions();
   const [input, setInput] = useState("");
 
-  const handleSend = (text: string, attachments: Attachment[]) => {
+  const handleSend = (
+    text: string,
+    attachments: Attachment[],
+    mentions: string[],
+  ) => {
     if ((!text.trim() && attachments.length === 0) || isLoading) return;
-    sendMessage({ text, attachments });
+    sendMessage({ text, attachments, mentions });
     setInput("");
   };
 

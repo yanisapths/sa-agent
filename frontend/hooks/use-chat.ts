@@ -310,13 +310,16 @@ function inferSchema(value: unknown): Record<string, unknown> {
 export const useChat = () => {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [status, setStatus] = useState<Status>("idle");
+  const [threadId, setThreadId] = useState<string | null>(null);
 
   const sendMessage = async ({
     text,
     attachments = [],
+    mentions = [],
   }: {
     text: string;
     attachments?: Attachment[];
+    mentions?: string[];
   }) => {
     const parts: UIPart[] = [];
 
@@ -349,6 +352,8 @@ export const useChat = () => {
       const formData = new FormData();
       formData.append("message", text);
       attachments.forEach((att) => formData.append("files", att.file));
+      mentions.forEach((token) => formData.append("mentions", token));
+      if (threadId) formData.append("threadId", threadId);
 
       // Same bearer the vault uses. Chat itself does not require auth; this is
       // what lets the backend resolve `@folder/file` mentions to real bytes.
@@ -362,6 +367,9 @@ export const useChat = () => {
       });
 
       const json = await res.json();
+      if (typeof json.threadId === "string" && json.threadId) {
+        setThreadId(json.threadId);
+      }
       const assistantId = crypto.randomUUID();
 
       const payload = json.data ?? json;

@@ -40,8 +40,16 @@ Accept a CSV or table with at least: case id, scenario, precondition data,
 steps, expected result. Map anything else onto those five. When a column is
 missing, say which cases are unusable without it.
 
-Normalise to one row per case and keep the source id — the SRE-facing scripts
-and the result log are read side by side, so the ids must match.
+When the source is a CSV:
+
+- **Chat GUI.** The runtime already parked it at `/artifacts/pvt-cases.csv`
+  and ran the extractor into `/artifacts/pvt-cases.json`. `read_file` those
+  paths. Do not look under `/conversation_history` and do not run python.
+- **Claude Code / a product repo.** Run the extractor on the path the human
+  named (`$SA_AGENT_HOME/backend/agents/scripts/testcase-extractor.py`).
+
+Keep the source ids — the SRE-facing scripts and the result log are read
+side by side, so the ids must match.
 
 ## Grouping
 

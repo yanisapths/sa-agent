@@ -29,9 +29,9 @@ A separate loop, for preparing a Production Verification Test. Same rule: one
 phase, one subagent, then stop for the human. Do not mix it with the harness
 loop above — it has its own artifacts.
 
-1. **pvt-discuss** (`pvt-analyst`) — requirements + the test case list (CSV,
-   table, or a named Jira story), grounded on the live schema → case inventory
-   and gaps. Human approves.
+1. **pvt-discuss** (`pvt-analyst`) — requirements + the test case list (CSV
+   via `testcase-extractor.py`, a table, or a named Jira story), grounded on
+   the live schema → case inventory and gaps. Human approves.
 2. **pvt-plan** (`pvt-planner`) — approved pvt-discuss → scenario groups that
    share one data setup, the numbered script set, and the pre-window /
    in-window split. Human approves.

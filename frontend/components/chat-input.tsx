@@ -35,7 +35,11 @@ export interface MentionItem {
 }
 
 interface ChatInputProps {
-  onSend: (message: string, attachments: Attachment[]) => void;
+  onSend: (
+    message: string,
+    attachments: Attachment[],
+    mentions: string[],
+  ) => void;
   isLoading?: boolean;
   placeholder?: string;
   value: string;
@@ -65,6 +69,7 @@ export function ChatInput({
 }: ChatInputProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
+  const [pickedMentions, setPickedMentions] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const slashQuery = matchSlashQuery(value);
   const slashOptions =
@@ -91,6 +96,9 @@ export function ChatInput({
 
   const insertMention = (token: string) => {
     onChange(value.replace(/@[^\s]*$/, `${token} `));
+    setPickedMentions((prev) =>
+      prev.includes(token) ? prev : [...prev, token],
+    );
   };
 
   const insertSlashCommand = (
@@ -147,10 +155,11 @@ export function ChatInput({
   const submit = () => {
     const message = composeSlashMessage(value, slashCommands);
     if ((!message && attachments.length === 0) || isLoading) return;
-    onSend(message, attachments);
+    onSend(message, attachments, pickedMentions);
     onChange("");
     setAttachments([]);
     setSlashCommands([]);
+    setPickedMentions([]);
   };
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {

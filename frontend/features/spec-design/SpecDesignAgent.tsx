@@ -18,7 +18,11 @@ export function SpecDesignAgent() {
   const [messages, setMessages] = useState<{ id: string; text: string }[]>([]);
   const [spec, setSpec] = useState(STARTER);
 
-  const handleSend = (text: string, attachments: Attachment[]) => {
+  const handleSend = (
+    text: string,
+    attachments: Attachment[],
+    _mentions: string[],
+  ) => {
     if (!text.trim() && attachments.length === 0) return;
     const names = attachments.map((item) => item.file.name);
     setMessages((prev) => [

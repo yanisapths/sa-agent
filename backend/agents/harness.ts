@@ -76,6 +76,8 @@ export const ARTIFACT = {
    * pvt-discuss specialist never sees the cases it is supposed to inventory.
    */
   pvtCases: "/artifacts/pvt-cases.csv",
+  /** Normalised case list from testcase-extractor.py. Prefer this over the CSV. */
+  pvtCasesJson: "/artifacts/pvt-cases.json",
   pvtDiscuss: "/artifacts/pvt-discuss.md",
   pvtPlan: "/artifacts/pvt-plan.md",
   pvtExecute: "/artifacts/pvt-execute.md",
@@ -181,7 +183,7 @@ export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
     owner: "pvt-discuss",
     model: config.model.pvtDiscuss,
     gate: "human",
-    receives: `PVT requirements, the case list at ${ARTIFACT.pvtCases} (or a named story), live schema`,
+    receives: `PVT requirements, the case list at ${ARTIFACT.pvtCasesJson} (from the CSV at ${ARTIFACT.pvtCases}, or a named story), live schema`,
     produces: `${ARTIFACT.pvtDiscuss} — case inventory, tables touched, unrunnable cases, questions`,
     tools: [...SCHEMA, ...INDEX, ...JIRA, ...MODEL_READ],
     skills: [
@@ -328,10 +330,12 @@ You may name refactors; do not commit or open a PR. ${GROUNDING}`,
       `You are the PVT Discuss specialist. Load pvt-prep and system-analyst,
 plus jira if a ticket or story is named.
 
-1. Read the case source: ${ARTIFACT.pvtCases} if the router parked one there,
-   otherwise the story or the table in the task. Normalise every case to case
-   id, scenario, precondition data, steps, expected result. Keep the source
-   ids. If neither exists, say so and stop — do not invent cases.
+1. Intake the cases. read_file ${ARTIFACT.pvtCasesJson} if it exists, else
+   ${ARTIFACT.pvtCases}, else the table or story in the task. Inventory each
+   case as id, scenario, precondition data, steps, expected result. Keep the
+   source ids. /conversation_history is an eviction dump of the prompt — not
+   the case list; do not read it and do not invent a host path for the CSV.
+   If no source exists, say so and stop — do not invent cases.
 2. Ground each case with describe_tables and inspect_relationships, and find
    the components behind it with query_system_model.
 3. Write ${ARTIFACT.pvtDiscuss}: the window and its goal, the case inventory,

@@ -16,6 +16,7 @@ import {
   tryParseJsonObject,
 } from "../internal/artifacts";
 import { HttpError } from "../internal/httpError";
+import { isCsvFile, parkPvtCases } from "../internal/pvtCases";
 import {
   extractMentionTokens,
   resolveMentions,
@@ -162,11 +163,14 @@ async function chatHandler(
       requestedMentions(req.body ?? {}),
       req.userId,
     );
-    const content = toContentBlocks(
-      message,
-      [...uploads, ...mentioned.files],
-      mentioned.notes,
-    );
+    const incoming = [...uploads, ...mentioned.files];
+    const csvs = incoming.filter(isCsvFile);
+    const otherFiles = incoming.filter((file) => !isCsvFile(file));
+    const parked = await parkPvtCases(csvs);
+    const content = toContentBlocks(message, otherFiles, [
+      ...mentioned.notes,
+      ...parked.notes,
+    ]);
 
     if (content.length === 0) {
       throw new HttpError(400, "Message or file required.");
@@ -176,7 +180,12 @@ async function chatHandler(
     const threadId: string = req.body.threadId || randomUUID();
 
     const result = await saAgent.invoke(
-      { messages: [new HumanMessage({ content })] },
+      {
+        messages: [new HumanMessage({ content })],
+        ...(Object.keys(parked.files).length > 0
+          ? { files: parked.files }
+          : {}),
+      },
       { configurable: { thread_id: threadId } },
     );
 
