@@ -19,6 +19,9 @@ when you have a Figma MCP endpoint.
 
 ## Claude Code
 
+Full setup (clone → Bifrost → plugin → phases):
+[BIFROST.md](BIFROST.md).
+
 Point the CLI at Bifrost first (reads `backend/.env`):
 
 ```bash

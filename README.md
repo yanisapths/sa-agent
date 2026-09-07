@@ -115,68 +115,11 @@ Both marketplaces are named `sa-agent` and expose one plugin, also `sa-agent`.
 
 ### 2a. Claude Code
 
-Point Claude Code at Bifrost **before** you launch it. The CLI reads
-`ANTHROPIC_BASE_URL` at startup; a session already talking to
-`api.anthropic.com` will keep doing so until you restart (or `/logout`).
+Step-by-step for a fresh clone (gateway, launcher, plugin, phases):
+[`backend/agents/claude/BIFROST.md`](backend/agents/claude/BIFROST.md).
 
-```bash
-# once
-curl -fsSL https://claude.ai/install.sh | bash
-claude --version
-
-# every session — loads BIFROST_* from backend/.env
-"$SA_AGENT_HOME/backend/scripts/claude"
-# or: source "$SA_AGENT_HOME/backend/scripts/claude-bifrost.sh" && claude
-```
-
-Confirm with `/status`: the API base URL must be
-`$BIFROST_BASE_URL/anthropic` (the `/anthropic` path is required). Default
-models are `dashscope/qwen3.8-max` and `huawei/glm-5.2` for background work.
-Switch in-session with `/model dashscope/qwen3.8-max` (type the id; the
-picker only lists Claude names). Override defaults with
-`CLAUDE_BIFROST_MODEL` / `CLAUDE_BIFROST_SMALL_MODEL` in `backend/.env`.
-
-Do **not** set `ANTHROPIC_AUTH_TOKEN`. Launch via `scripts/claude` so
-`x-bf-vk` is sent — a Claude login ignores `ANTHROPIC_API_KEY` and the
-gateway returns `401 virtual key is required`. A 404 is a missing
-`/anthropic` suffix.
-
-Prove the surface before relying on it:
-
-```bash
-cd "$SA_AGENT_HOME/backend"
-bun run check:bifrost -- --claude
-```
-
-Then install the plugin.
-
-1. Export `SA_AGENT_HOME` in the same environment that launches Claude Code.
-2. From the **product** repo:
-
-   ```bash
-   cd /path/to/product-repo
-   claude plugin marketplace add "$SA_AGENT_HOME"
-   ```
-
-3. Install the plugin:
-
-   - **CLI session:** `/plugin install sa-agent@sa-agent`
-   - **Claude Code GUI:** Settings → Plugins → marketplace `sa-agent` → install
-     **sa-agent**.
-
-4. Confirm MCP: `/mcp` (or the MCP panel). You should see **sa-knowledge**
-   (Postgres + Chroma) and **jira**. If they fail to start, `SA_AGENT_HOME` is
-   unset or `backend/.env` is incomplete.
-
-5. Run one phase at a time. `/agents` picks **system-analyst** (discuss),
-   **solution-architect** (plan), **coder** (execute), **test-engineer**,
-   or **reviewer**. Approve the artifact before the next phase.
-
-   For a Production Verification Test, use the PVT track instead:
-   **pvt-analyst** (pvt-discuss), **pvt-planner** (test planning), then
-   **pvt-scripter** (the SQL script set). Same gates, its own artifacts.
-
-Details: [`backend/agents/claude/README.md`](backend/agents/claude/README.md).
+Plugin internals:
+[`backend/agents/claude/README.md`](backend/agents/claude/README.md).
 
 ### 2b. Codex
 

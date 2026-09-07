@@ -174,6 +174,8 @@ bun run check:bifrost -- --claude  # Anthropic Messages API Claude Code uses
 
 ### Claude Code via Bifrost
 
+Friend-facing walkthrough: [`agents/claude/BIFROST.md`](agents/claude/BIFROST.md).
+
 The CLI is not the LangChain `/chat` client. It speaks Anthropic Messages at
 `$BIFROST_BASE_URL/anthropic`. The gateway wants the virtual key on `x-bf-vk`
 (`ANTHROPIC_CUSTOM_HEADERS`); a Claude subscription bearer ignores
