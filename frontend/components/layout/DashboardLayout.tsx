@@ -18,6 +18,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const isChat = pathname === "/";
   const isVault = pathname.startsWith("/vault");
   const isArtifacts = pathname.startsWith("/artifacts");
+  const isWorkflow = pathname.startsWith("/workflow");
   const [keepChat, setKeepChat] = useState(isChat);
   if (isChat && !keepChat) {
     setKeepChat(true);
@@ -42,7 +43,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               <ChatInterface />
             </div>
           )}
-          {isVault || isArtifacts ? (
+          {isVault || isArtifacts || isWorkflow ? (
             <div className="h-full">{children}</div>
           ) : null}
         </div>

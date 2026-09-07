@@ -426,6 +426,15 @@ Phase outputs and files from `write_files`. Bytes live in the `artifacts` bucket
 Create the `artifacts` bucket, then run `sql/artifacts.sql` in the Supabase SQL editor.
 Mention tokens are `@Artifacts/{filename}`.
 
+### Notification sounds (`Authorization: Bearer <token>`)
+
+HITL cues for the Workflow board. Bytes live at
+`NOTIFICATIONS_SOUND/PENDING.mp3` and `READY.mp3` in the `core` bucket
+(`SUPABASE_SOUNDS_BUCKET` / `SUPABASE_SOUNDS_FOLDER`).
+
+- `GET /v1/sounds/pending`
+- `GET /v1/sounds/ready`
+
 ### Project folders (`Authorization: Bearer <token>`)
 
 Registered absolute paths on the machine running this process. The Chat GUI

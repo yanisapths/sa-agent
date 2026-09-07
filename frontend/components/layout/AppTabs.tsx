@@ -10,6 +10,7 @@ import { ThemeToggle } from "./ThemeToggle";
 const tabs = [
   { href: "/vault", label: "Vault" },
   { href: "/artifacts", label: "Artifacts" },
+  { href: "/workflow", label: "Workflow" },
   { href: "/", label: "Chat Agent" },
 ] as const;
 

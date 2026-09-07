@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useRef, useState } from "react";
 import { UIMessage, UIPart } from "@/components/chat-message";
 import { Attachment } from "@/components/chat-input";
+import { useChatSession } from "@/features/chat-session/ChatSessionProvider";
 import { type ChatUsage } from "@/features/gateway/types";
 import { AGENT_API, VAULT_TOKEN } from "@/lib/api";
 
@@ -312,10 +312,22 @@ function inferSchema(value: unknown): Record<string, unknown> {
 
 // ─── useChat ──────────────────────────────────────────────────────────────────
 
+function phaseFromTurn(
+  usage: ChatUsage | undefined,
+  artifacts: { phase?: string | null }[],
+  requested?: string,
+): string | null {
+  if (usage?.phase) return usage.phase;
+  if (requested) return requested;
+  const fromFile = artifacts.find((file) => file.phase)?.phase;
+  return fromFile ?? null;
+}
+
 export const useChat = () => {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [status, setStatus] = useState<Status>("idle");
   const [threadId, setThreadId] = useState<string | null>(null);
+  const { setLive, settleTurn } = useChatSession();
 
   /** In-flight request, so Stop can cancel it. */
   const abortRef = useRef<AbortController | null>(null);
@@ -331,7 +343,8 @@ export const useChat = () => {
     abortRef.current?.abort();
     abortRef.current = null;
     setStatus("idle");
-  }, []);
+    setLive({ status: "idle" });
+  }, [setLive]);
 
   const sendMessage = async ({
     text,
@@ -382,6 +395,7 @@ export const useChat = () => {
 
     setMessages((prev) => [...prev, userMessage]);
     setStatus("submitted");
+    setLive({ status: "submitted", phase: phase ?? null, threadId });
 
     const abort = new AbortController();
     abortRef.current = abort;
@@ -432,6 +446,10 @@ export const useChat = () => {
             },
           ]);
           setStatus("error");
+          setLive({
+            status: "error",
+            phase: json?.usage?.phase ?? phase ?? null,
+          });
         }
         return;
       }
@@ -439,9 +457,14 @@ export const useChat = () => {
       if (typeof json.threadId === "string" && json.threadId) {
         setThreadId(json.threadId);
       }
+      const nextThreadId =
+        typeof json.threadId === "string" && json.threadId
+          ? json.threadId
+          : threadId;
       const assistantId = crypto.randomUUID();
       const usage: ChatUsage | undefined = json.usage;
       const artifacts = Array.isArray(json.artifacts) ? json.artifacts : [];
+      const nextPhase = phaseFromTurn(usage, artifacts, phase);
 
       const payload = json.data ?? json;
       const type: string = json.type ?? payload.type ?? "text";
@@ -515,6 +538,11 @@ export const useChat = () => {
       if (turn !== turnRef.current) return;
 
       setStatus("streaming");
+      setLive({
+        status: "streaming",
+        threadId: nextThreadId,
+        phase: nextPhase,
+      });
 
       const show = (rendered: UIPart) =>
         setMessages((prev) => {
@@ -545,6 +573,11 @@ export const useChat = () => {
 
       if (turn !== turnRef.current) return;
       setStatus("idle");
+      settleTurn({
+        ok: true,
+        threadId: nextThreadId,
+        phase: nextPhase,
+      });
     } catch (err) {
       /** A deliberate Stop is not a failure — `stop()` already reset status. */
       if (isAbortError(err)) return;
@@ -567,6 +600,7 @@ export const useChat = () => {
           },
         ]);
         setStatus("error");
+        setLive({ status: "error", phase: phase ?? null });
       }
     } finally {
       if (abortRef.current === abort) abortRef.current = null;

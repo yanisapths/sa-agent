@@ -243,6 +243,12 @@ export const config = {
     vaultFolder: process.env.VAULT_STORAGE_FOLDER || "",
     artifactsBucket: process.env.SUPABASE_ARTIFACTS_BUCKET || "artifacts",
     artifactsFolder: process.env.ARTIFACTS_STORAGE_FOLDER || "",
+    /**
+     * HITL notification mp3s. Bucket `core`, folder `NOTIFICATIONS_SOUND`.
+     * Object keys: `NOTIFICATIONS_SOUND/PENDING.mp3` and `READY.mp3`.
+     */
+    soundsBucket: process.env.SUPABASE_SOUNDS_BUCKET || "core",
+    soundsFolder: process.env.SUPABASE_SOUNDS_FOLDER || "NOTIFICATIONS_SOUND",
   },
 
   vault: {
