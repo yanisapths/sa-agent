@@ -153,8 +153,9 @@ Chroma). Do not add another store.
    die with it.
 4. Next phase reads the file, not the conversation.
 
-Live schema (`describe_tables`, `inspect_relationships`, `run_sql`) stays
-inside the specialist. The router may only `list_tables` and search.
+Live schema orientation (`list_tables`, `describe_tables`,
+`inspect_relationships`) is on the router so it can finish a brief without
+asking the human for columns. `run_sql` stays inside the specialist.
 
 Jira is Discuss only, and only when a ticket or story is named.
 
@@ -180,7 +181,8 @@ Jira is Discuss only, and only when a ticket or story is named.
 
 [`harness.ts`](../harness.ts) + [`sa-agent.ts`](../sa-agent.ts):
 
-1. **Orchestrator model** — haiku. Tools: index + `list_tables` only.
+1. **Orchestrator model** — haiku. Tools: index + schema orientation
+   (`list_tables`, `describe_tables`, `inspect_relationships`). No `run_sql`.
 2. **Skills** — none on the router. Each specialist loads its own.
 3. **`task`** — Deep Agents delegation. One specialist per gate.
 4. **Scratch files** — `/artifacts/*.md` on the per-thread StateBackend. When a project folder is attached, `ls` / `read_file` / `glob` / `grep` from `/` see that repo; `/artifacts` stays in state.

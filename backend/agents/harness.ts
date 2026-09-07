@@ -250,11 +250,17 @@ export const PHASE_OWNERS: ReadonlySet<string> = new Set(
     .filter((owner): owner is string => owner !== null),
 );
 
-/** Orchestrator: index only. Specialists own schema, SQL, and Jira. */
+/**
+ * Orchestrator: index + live schema orientation. Specialists own `run_sql`,
+ * Jira, and phase writes. Without `describe_tables` / `inspect_relationships`
+ * here, the router can list tables then get stuck asking the human for columns.
+ */
 export const ORCHESTRATOR_TOOLS = [
   "search_api_specs",
   "search_schema_docs",
   "list_tables",
+  "describe_tables",
+  "inspect_relationships",
   "write_files",
   "workspace_ls",
   "workspace_read",
