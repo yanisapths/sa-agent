@@ -11,6 +11,7 @@ import {
 } from "deepagents";
 import { config } from "../config";
 import { AttachedProjectBackend } from "./backends/attached-project";
+import { normalizeVirtualFsPaths } from "./middleware/normalize-virtual-fs-paths";
 import { resolveModel } from "./model";
 import { registerGatewayHarness } from "./profile";
 import { resolveTools, type ToolName } from "./tools";
@@ -108,6 +109,9 @@ export function defineAgent(spec: AgentSpec) {
     subagents: spec.subagents ?? [],
     checkpointer: spec.session === false ? undefined : SESSION,
     permissions: ORCHESTRATOR_FS_PERMISSIONS,
+    // After filesystem middleware so relative read_file paths are fixed before
+    // deepagents permission validatePath runs.
+    middleware: [normalizeVirtualFsPaths],
   }).withConfig({
     /**
      * deepagents binds 10000. A later withConfig wins, and `/chat` passes the
