@@ -8,7 +8,9 @@ import {
 } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
+import { GraphRecursionError } from "@langchain/langgraph";
 import { saAgent } from "../agents";
+import { config } from "../config";
 import {
   lastAssistantContent,
   normalizeArtifact,
@@ -179,15 +181,54 @@ async function chatHandler(
     // A stable threadId keeps the agent's short-term session memory across turns.
     const threadId: string = req.body.threadId || randomUUID();
 
-    const result = await saAgent.invoke(
-      {
-        messages: [new HumanMessage({ content })],
-        ...(Object.keys(parked.files).length > 0
-          ? { files: parked.files }
-          : {}),
-      },
-      { configurable: { thread_id: threadId } },
+    const abort = new AbortController();
+    const timer = setTimeout(
+      () => abort.abort(),
+      config.agent.invokeTimeoutMs,
     );
+    const onClose = () => {
+      if (!res.writableEnded) abort.abort();
+    };
+    req.on("close", onClose);
+
+    let result;
+    try {
+      result = await saAgent.invoke(
+        {
+          messages: [new HumanMessage({ content })],
+          ...(Object.keys(parked.files).length > 0
+            ? { files: parked.files }
+            : {}),
+        },
+        {
+          configurable: { thread_id: threadId },
+          recursionLimit: config.agent.recursionLimit,
+          signal: abort.signal,
+        },
+      );
+    } catch (err) {
+      if (abort.signal.aborted || isAbortError(err)) {
+        throw new HttpError(
+          504,
+          req.destroyed
+            ? "Chat cancelled."
+            : `Agent timed out after ${config.agent.invokeTimeoutMs}ms.`,
+        );
+      }
+      if (
+        err instanceof GraphRecursionError ||
+        (err instanceof Error && /recursion limit/i.test(err.message))
+      ) {
+        throw new HttpError(
+          504,
+          `Agent stopped after ${config.agent.recursionLimit} steps to prevent a retry loop.`,
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+      req.off("close", onClose);
+    }
 
     const raw = stripThinking(lastAssistantContent(result));
     const parsed = tryParseJsonObject(raw);
@@ -203,5 +244,11 @@ async function chatHandler(
 
 const chat = Router();
 chat.post("/", optionalAuth, upload.array("files"), chatHandler);
+
+function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const name = "name" in err ? String(err.name) : "";
+  return name === "AbortError" || name === "TimeoutError";
+}
 
 export { chat };

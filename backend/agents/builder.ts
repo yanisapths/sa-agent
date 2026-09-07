@@ -87,5 +87,11 @@ export function defineAgent(spec: AgentSpec) {
     permissions: [
       { operations: ["write"], paths: [`${RESOURCE_MOUNT}/**`], mode: "deny" },
     ],
+  }).withConfig({
+    /**
+     * deepagents binds 10000. A later withConfig wins, and `/chat` passes the
+     * same cap so nested `task()` specialists inherit it.
+     */
+    recursionLimit: config.agent.recursionLimit,
   });
 }

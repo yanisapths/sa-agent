@@ -41,11 +41,14 @@ export function isGatewayModel(id: string): boolean {
 const models = new Map<string, BaseChatModel>();
 
 export function gatewayModel(id: string): ChatOpenAI {
-  const { apiKey, authHeader, userAgent, maxTokens } = config.bifrost;
+  const { apiKey, authHeader, userAgent, maxTokens, requestTimeoutMs, llmRetries } =
+    config.bifrost;
 
   return new ChatOpenAI({
     model: id,
     maxTokens,
+    timeout: requestTimeoutMs,
+    maxRetries: llmRetries,
     /**
      * The gateway exposes Chat Completions only. Left to itself the client
      * would switch some model names over to the Responses API and 404.
@@ -166,10 +169,20 @@ function warnOnTruncation(output: LLMResult): void {
   for (const batch of output.generations) {
     for (const generation of batch) {
       if (generation.generationInfo?.finish_reason !== "length") continue;
+      const empty = !generation.text;
       console.error(
         `[bifrost] Reply truncated at max_tokens=${config.bifrost.maxTokens}` +
-          `${generation.text ? "" : " with empty content"}. Raise BIFROST_MAX_TOKENS.`,
+          `${empty ? " with empty content" : ""}. Raise BIFROST_MAX_TOKENS.`,
       );
+      /**
+       * Empty truncated turns look like "do nothing" to the agent loop, which
+       * then retries until recursionLimit. Fail the completion instead.
+       */
+      if (empty) {
+        throw new Error(
+          `Model returned empty content after hitting max_tokens=${config.bifrost.maxTokens}.`,
+        );
+      }
     }
   }
 }

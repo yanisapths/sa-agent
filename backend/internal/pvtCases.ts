@@ -42,6 +42,15 @@ function toFileData(text: string): FileData {
   };
 }
 
+/** Excel/Windows CSV is often cp1252, not UTF-8 (0x85 is an ellipsis). */
+export function decodeCsvBuffer(buffer: Buffer): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {
+    return new TextDecoder("windows-1252").decode(buffer);
+  }
+}
+
 function runExtractor(csvPath: string, jsonPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("python3", [EXTRACTOR, csvPath, "-o", jsonPath], {
@@ -70,7 +79,7 @@ export async function parkPvtCases(csvs: ParkedFile[]): Promise<ParkedPvtCases> 
   if (csvs.length === 0) return { files: {}, notes: [] };
 
   const primary = csvs[0];
-  const csvText = primary.buffer.toString("utf-8");
+  const csvText = decodeCsvBuffer(primary.buffer);
   const files: Record<string, FileData> = {
     [ARTIFACT.pvtCases]: toFileData(csvText),
   };

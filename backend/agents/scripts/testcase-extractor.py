@@ -9,10 +9,15 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+# Excel on Windows often saves CSV as Windows-1252 (byte 0x85 is an ellipsis).
+# Try UTF-8 first, then cp1252. latin-1 is last because it never fails.
+CSV_ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
 
 DEVICES = frozenset({"Desktop", "Mobile or Tablet"})
 
@@ -139,58 +144,66 @@ def data_from_text(combined: str) -> list[str]:
     return precondition_data
 
 
+def decode_csv_text(data: bytes) -> str:
+    for encoding in CSV_ENCODINGS:
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("latin-1")
+
+
 def extract_cases(csv_file: Path) -> list[dict]:
     cases: list[dict] = []
     current_section: str | None = None
     current_device: str | None = None
 
-    with csv_file.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.reader(handle)
-        for row in reader:
-            if is_blank_row(row):
-                continue
+    reader = csv.reader(io.StringIO(decode_csv_text(csv_file.read_bytes())))
+    for row in reader:
+        if is_blank_row(row):
+            continue
 
-            if is_section_row(row):
-                current_section = row[0].strip()
-                continue
+        if is_section_row(row):
+            current_section = row[0].strip()
+            continue
 
-            if row[0].strip() in DEVICES:
-                current_device = row[0].strip()
-                continue
+        if row[0].strip() in DEVICES:
+            current_device = row[0].strip()
+            continue
 
-            if not current_section or not current_device:
-                continue
+        if not current_section or not current_device:
+            continue
 
-            test_id = cell(row, 1)
-            if not test_id.startswith(TEST_ID_PREFIX):
-                continue
+        test_id = cell(row, 1)
+        if not test_id.startswith(TEST_ID_PREFIX):
+            continue
 
-            summary = cell(row, 2)
-            test_steps = cell(row, 3)
-            expected_result = cell(row, 4)
-            pos_neg = cell(row, 5)
-            priority = cell(row, 12)
+        summary = cell(row, 2)
+        test_steps = cell(row, 3)
+        expected_result = cell(row, 4)
+        pos_neg = cell(row, 5)
+        priority = cell(row, 12)
 
-            combined = f"{summary} {test_steps} {expected_result}".lower()
-            timing_sensitive, timing_conditions = timing_from_text(combined)
-            precondition_data = data_from_text(combined)
+        combined = f"{summary} {test_steps} {expected_result}".lower()
+        timing_sensitive, timing_conditions = timing_from_text(combined)
+        precondition_data = data_from_text(combined)
 
-            cases.append(
-                {
-                    "test_id": test_id,
-                    "section": current_section,
-                    "device": current_device,
-                    "summary": summary[:200],
-                    "steps": test_steps,
-                    "expected_result": expected_result,
-                    "positive_negative": pos_neg,
-                    "priority": priority if priority else "Not specified",
-                    "precondition_text": precondition_from_steps(test_steps)[:300],
-                    "precondition_data": sorted(set(precondition_data)),
-                    "timing_sensitive": timing_sensitive,
-                    "timing_conditions": sorted(set(timing_conditions)),
-                }
-            )
+        cases.append(
+            {
+                "test_id": test_id,
+                "section": current_section,
+                "device": current_device,
+                "summary": summary[:200],
+                "steps": test_steps,
+                "expected_result": expected_result,
+                "positive_negative": pos_neg,
+                "priority": priority if priority else "Not specified",
+                "precondition_text": precondition_from_steps(test_steps)[:300],
+                "precondition_data": sorted(set(precondition_data)),
+                "timing_sensitive": timing_sensitive,
+                "timing_conditions": sorted(set(timing_conditions)),
+            }
+        )
 
     return cases
 

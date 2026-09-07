@@ -17,5 +17,6 @@ export const saAgent = defineAgent({
   systemPrompt: SA_AGENT_PROMPT,
   tools: ORCHESTRATOR_TOOLS,
   skills: [],
+  memory: false,
   subagents: harnessSubagents(),
 });

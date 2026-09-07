@@ -86,6 +86,16 @@ function positiveInt(name: string, fallback: number): number {
   return value;
 }
 
+function envPositiveInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer (got "${raw}")`);
+  }
+  return value;
+}
+
 /**
  * The Bifrost gateway is on when a base URL is present. Everything downstream
  * keys off this, including which model ids the phase defaults use.
@@ -152,6 +162,13 @@ export const config = {
      * `finish_reason: "length"` — an agent loop that silently does nothing.
      */
     maxTokens: positiveInt("MAX_TOKENS", 4096),
+    /** Per-completion HTTP timeout. A hung gateway call otherwise sits for minutes. */
+    requestTimeoutMs: positiveInt("REQUEST_TIMEOUT_MS", 90_000),
+    /**
+     * LangChain retries a failed completion, each attempt billed. Cloudflare
+     * challenges already retry in `gatewayFetch`; keep this at 1.
+     */
+    llmRetries: positiveInt("LLM_RETRIES", 1),
     /** Retries for the Cloudflare bot challenge, on top of the SDK's own. */
     challengeRetries: positiveInt("CHALLENGE_RETRIES", 2),
     /** Providers this gateway can route to. `anthropic` and `openai` are not. */
@@ -184,6 +201,19 @@ export const config = {
     database: process.env.CHROMA_DATABASE,
     apiSpecCollection: process.env.CHROMA_API_COLLECTION || "aster-system",
     ddlCollection: process.env.CHROMA_DDL_COLLECTION || "aster-database_ddl",
+  },
+
+  /**
+   * Hard caps on the Deep Agent loop. `createDeepAgent` binds
+   * `recursionLimit: 10000`, which is an unbounded tool/model retry in
+   * practice: a truncated or looping specialist re-sends the growing
+   * context until the bill is millions of tokens.
+   */
+  agent: {
+    /** Graph supersteps for the orchestrator and every `task()` specialist. */
+    recursionLimit: envPositiveInt("AGENT_RECURSION_LIMIT", 24),
+    /** Wall clock for one `/chat` invoke, including nested specialists. */
+    invokeTimeoutMs: envPositiveInt("AGENT_INVOKE_TIMEOUT_MS", 180_000),
   },
 
   embeddings: {
