@@ -171,6 +171,13 @@ export const config = {
     llmRetries: positiveInt("LLM_RETRIES", 1),
     /** Retries for the Cloudflare bot challenge, on top of the SDK's own. */
     challengeRetries: positiveInt("CHALLENGE_RETRIES", 2),
+    /**
+     * The GUI re-reads the budget after every turn, so the quota response is
+     * cached briefly. Short enough that a meter still tracks your own spend.
+     */
+    quotaCacheMs: positiveInt("QUOTA_CACHE_MS", 30_000),
+    /** The model catalogue and its price list change on the order of weeks. */
+    modelsCacheMs: positiveInt("MODELS_CACHE_MS", 600_000),
     /** Providers this gateway can route to. `anthropic` and `openai` are not. */
     providers: [
       "dashscope",

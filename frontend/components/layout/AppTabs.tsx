@@ -3,6 +3,8 @@
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { QuotaMeter } from "@/components/quota-meter";
+import { useQuota } from "@/hooks/use-quota";
 
 const tabs = [
   { href: "/vault", label: "Vault" },
@@ -12,6 +14,12 @@ const tabs = [
 
 export function AppTabs() {
   const pathname = usePathname();
+  /**
+   * The gateway budget is not per-conversation, so it belongs in the chrome
+   * rather than in the chat. This reads it on mount; `ChatInterface` refreshes
+   * its own copy after each turn.
+   */
+  const { quota } = useQuota();
 
   return (
     <nav
@@ -38,6 +46,8 @@ export function AppTabs() {
           </Link>
         );
       })}
+
+      <QuotaMeter quota={quota} />
     </nav>
   );
 }

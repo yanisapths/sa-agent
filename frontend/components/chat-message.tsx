@@ -2,6 +2,8 @@
 import { useState, useCallback } from "react";
 import { Bot, User, Copy, Check, FileText, GitBranch } from "lucide-react";
 import Image from "next/image";
+import { type ChatUsage } from "@/features/gateway/types";
+import { UsageBadge } from "./usage-badge";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,6 +17,8 @@ export interface UIMessage {
   id: string;
   role: Role;
   parts: UIMessagePart[];
+  /** Tokens and cost for the turn that produced this message. */
+  usage?: ChatUsage;
 }
 
 export interface ApiSpecPart extends UIMessagePart {
@@ -873,6 +877,10 @@ export function ChatMessage({
             )}
           </div>
         </div>
+        {/* Only once the answer is complete — a cost that ticks up mid-render reads as noise. */}
+        {!isUser && !isStreaming && message.usage && (
+          <UsageBadge usage={message.usage} />
+        )}
       </div>
     </div>
   );

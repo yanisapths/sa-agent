@@ -4,6 +4,7 @@ import express from "express";
 import { config } from "./config";
 import { errorHandler } from "./middleware/errorHandler";
 import { chat } from "./routes/chat";
+import { gateway } from "./routes/gateway";
 import { vault } from "./routes/vault";
 
 const app = express();
@@ -22,6 +23,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/chat", chat);
+app.use("/v1/gateway", gateway);
 app.use("/v1/vault", vault);
 app.use(errorHandler);
 

@@ -1,11 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { UIMessage, UIPart } from "@/components/chat-message";
 import { Attachment } from "@/components/chat-input";
+import { type ChatUsage } from "@/features/gateway/types";
 import { AGENT_API, VAULT_TOKEN } from "@/lib/api";
 
 type Status = "idle" | "submitted" | "streaming" | "error";
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
 
 // ─── Markdown API Spec Parser ─────────────────────────────────────────────────
 //
@@ -312,14 +317,39 @@ export const useChat = () => {
   const [status, setStatus] = useState<Status>("idle");
   const [threadId, setThreadId] = useState<string | null>(null);
 
+  /** In-flight request, so Stop can cancel it. */
+  const abortRef = useRef<AbortController | null>(null);
+  /**
+   * The typewriter below runs after the response has fully arrived, so aborting
+   * the fetch cannot stop it. Each turn takes a ticket and checks it every
+   * frame; Stop and the next send both invalidate the ticket.
+   */
+  const turnRef = useRef(0);
+
+  const stop = useCallback(() => {
+    turnRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStatus("idle");
+  }, []);
+
   const sendMessage = async ({
     text,
     attachments = [],
     mentions = [],
+    model,
+    phase,
+    onSettled,
   }: {
     text: string;
     attachments?: Attachment[];
     mentions?: string[];
+    /** Gateway model id; omit to use the server's configured default. */
+    model?: string | null;
+    /** Phase specialist to pin; omit to let the router choose. */
+    phase?: string;
+    /** Runs when the turn finishes, however it finishes. */
+    onSettled?: () => void;
   }) => {
     const parts: UIPart[] = [];
 
@@ -344,9 +374,14 @@ export const useChat = () => {
       parts,
     };
 
-    const nextMessages = [...messages, userMessage];
-    setMessages(nextMessages);
+    turnRef.current += 1;
+    const turn = turnRef.current;
+
+    setMessages((prev) => [...prev, userMessage]);
     setStatus("submitted");
+
+    const abort = new AbortController();
+    abortRef.current = abort;
 
     try {
       const formData = new FormData();
@@ -354,6 +389,8 @@ export const useChat = () => {
       attachments.forEach((att) => formData.append("files", att.file));
       mentions.forEach((token) => formData.append("mentions", token));
       if (threadId) formData.append("threadId", threadId);
+      if (model) formData.append("model", model);
+      if (phase) formData.append("phase", phase);
 
       // Same bearer the vault uses. Chat itself does not require auth; this is
       // what lets the backend resolve `@folder/file` mentions to real bytes.
@@ -364,13 +401,42 @@ export const useChat = () => {
         method: "POST",
         headers,
         body: formData,
+        signal: abort.signal,
       });
 
       const json = await res.json();
+
+      /**
+       * The backend answers errors as `{ ok: false, error }` — a timeout, a
+       * recursion cap, a rejected model. Surfacing them is what makes Stop and
+       * the 180s cap legible instead of a reply that never arrives.
+       */
+      if (!res.ok || json?.ok === false) {
+        const detail =
+          typeof json?.error === "string" && json.error
+            ? json.error
+            : `Request failed (${res.status})`;
+        if (turn === turnRef.current) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              parts: [{ type: "text", text: detail } as UIPart],
+              /** A timed-out or capped turn still spent tokens; show them. */
+              usage: json?.usage,
+            },
+          ]);
+          setStatus("error");
+        }
+        return;
+      }
+
       if (typeof json.threadId === "string" && json.threadId) {
         setThreadId(json.threadId);
       }
       const assistantId = crypto.randomUUID();
+      const usage: ChatUsage | undefined = json.usage;
 
       const payload = json.data ?? json;
       const type: string = json.type ?? payload.type ?? "text";
@@ -430,34 +496,72 @@ export const useChat = () => {
         }
       }
 
+      /** A turn superseded while the response was in flight must not render. */
+      if (turn !== turnRef.current) return;
+
       setStatus("streaming");
+
+      const show = (rendered: UIPart) =>
+        setMessages((prev) => {
+          const next = [...prev];
+          const at = next.findIndex((item) => item.id === assistantId);
+          const message: UIMessage = {
+            id: assistantId,
+            role: "assistant",
+            parts: [rendered],
+            usage,
+          };
+          if (at === -1) next.push(message);
+          else next[at] = message;
+          return next;
+        });
 
       if (part.type === "text" && part.text) {
         const words = part.text.split(" ");
         for (let i = 0; i < words.length; i++) {
-          setMessages([
-            ...nextMessages,
-            {
-              id: assistantId,
-              role: "assistant",
-              parts: [{ ...part, text: words.slice(0, i + 1).join(" ") }],
-            },
-          ]);
+          if (turn !== turnRef.current) return;
+          show({ ...part, text: words.slice(0, i + 1).join(" ") });
           await sleep(20);
         }
       } else {
-        setMessages([
-          ...nextMessages,
-          { id: assistantId, role: "assistant", parts: [part] },
-        ]);
+        show(part);
       }
 
+      if (turn !== turnRef.current) return;
       setStatus("idle");
     } catch (err) {
+      /** A deliberate Stop is not a failure — `stop()` already reset status. */
+      if (isAbortError(err)) return;
       console.error(err);
-      setStatus("error");
+      if (turn === turnRef.current) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            parts: [
+              {
+                type: "text",
+                text:
+                  err instanceof Error
+                    ? `Could not reach the agent: ${err.message}`
+                    : "Could not reach the agent.",
+              } as UIPart,
+            ],
+          },
+        ]);
+        setStatus("error");
+      }
+    } finally {
+      if (abortRef.current === abort) abortRef.current = null;
+      /**
+       * Unconditional: a turn the human stopped still spent tokens, and its
+       * ticket is already invalidated, so gating this on the ticket would skip
+       * the one refresh that matters most.
+       */
+      onSettled?.();
     }
   };
 
-  return { messages, sendMessage, status };
+  return { messages, sendMessage, status, stop };
 };

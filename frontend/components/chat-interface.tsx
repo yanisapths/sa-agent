@@ -8,6 +8,8 @@ import {
 } from "@/components/chat-input";
 import { useVaultMentions } from "@/features/vault/useVaultMentions";
 import { useChat } from "@/hooks/use-chat";
+import { useGatewayModels } from "@/hooks/use-gateway-models";
+import { useQuota } from "@/hooks/use-quota";
 import { Button } from "./ui/Button";
 import { Code, FileText } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -28,19 +30,32 @@ const onboardingTags = [
 
 export function ChatInterface() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { messages, sendMessage, status } = useChat();
+  const { messages, sendMessage, status, stop } = useChat();
   const isLoading = status === "streaming" || status === "submitted";
   const hasMessages = messages.length > 0;
   const mentions = useVaultMentions();
+  const models = useGatewayModels();
+  const { refresh: refreshQuota } = useQuota();
   const [input, setInput] = useState("");
+  /** `null` means the server's configured default. */
+  const [model, setModel] = useState<string | null>(null);
 
   const handleSend = (
     text: string,
     attachments: Attachment[],
     mentions: string[],
+    phase?: string,
   ) => {
     if ((!text.trim() && attachments.length === 0) || isLoading) return;
-    sendMessage({ text, attachments, mentions });
+    /** Re-read the budget once the turn settles — it just moved. */
+    void sendMessage({
+      text,
+      attachments,
+      mentions,
+      model,
+      phase,
+      onSettled: refreshQuota,
+    });
     setInput("");
   };
 
@@ -83,6 +98,10 @@ export function ChatInterface() {
                 value={input}
                 onChange={setInput}
                 mentions={mentions}
+                onStop={stop}
+                models={models}
+                model={model}
+                onModelChange={setModel}
               />
             </div>
 
@@ -117,6 +136,10 @@ export function ChatInterface() {
             value={input}
             onChange={setInput}
             mentions={mentions}
+            onStop={stop}
+            models={models}
+            model={model}
+            onModelChange={setModel}
           />
         </div>
       )}

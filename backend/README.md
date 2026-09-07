@@ -327,11 +327,43 @@ bun run model:build                 # graph the repo containing cwd
 ### Chat
 
 - `POST /chat` — multipart or JSON: `message`, optional `files[]`, optional
-  `threadId`.
+  `threadId`, optional `model`, optional `phase`.
 
 Pass the `threadId` returned by the previous response to continue a session.
-Responses are `{ ok, threadId, type, data }` where `type` is one of `text`,
-`api_spec`, `sql`, `diagram`, or `code`.
+Responses are `{ ok, threadId, type, data, usage }` where `type` is one of
+`text`, `api_spec`, `sql`, `diagram`, or `code`.
+
+**`model`.** A gateway id from `GET /v1/gateway/models`, e.g.
+`dashscope/qwen3.8-max`. Anything else is a `400` — an unknown id would
+otherwise surface as a gateway `404` several supersteps into a run you have
+already paid for. The override applies to the router *and* every phase
+specialist: the router only delegates, so overriding it alone would not change
+which model does the work. Omit it to use the configured `config.model.*`
+defaults. Agents are cached per model and share one checkpointer, so switching
+model mid-thread keeps the conversation.
+
+**`phase`.** One of `discuss`, `plan`, `execute`, `test`, `review`,
+`pvt-discuss`, `pvt-plan`, `pvt-execute` — the `owner` names in `harness.ts`.
+`ship` is not selectable; a human closes git. This pins the specialist for the
+turn instead of letting the router pick, which it otherwise does by reading the
+message (and starts at discuss when unsure). It is a directive in the prompt,
+not a hard constraint: the router almost always honours it, but it is still an
+LLM deciding.
+
+**`usage`.** Tokens and cost for the turn — `{ model, phase, durationMs, calls,
+inputTokens, outputTokens, reasoningTokens, cacheReadTokens, costUsd,
+costEstimated, models[] }`. It covers the specialists, not just the router,
+which is where nearly all of the spend is: deepagents' `task` tool hands the
+subagent a fresh message list and returns only text, so nothing a specialist
+spends appears in the returned graph state. The count comes from a per-request
+callback handler instead, which `task` does propagate into the child invoke.
+A `504` from a timeout or the step cap carries `usage` too — those are the
+turns most worth costing.
+
+`costEstimated` means the figure is a blended rate derived from what this key
+has already been billed (`total_cost / total_tokens` from the quota endpoint)
+rather than a published price. The gateway publishes real pricing for only some
+models — not including the default `BIFROST_MODEL` — so this is the common case.
 
 **Vault mentions.** `@folder/file.csv` in `message` is resolved to the file's
 bytes and inlined the same way an upload is. This needs an identity, so send
@@ -344,6 +376,23 @@ Caps: 5 files per message, 1 MB per file, 4 MB total. A mention naming a folder
 resolves to the files in it. `.pdf`, `.docx`, and `.xlsx` are uploadable but are
 containers, so they are named and skipped rather than decoded as UTF-8 — export
 a CSV or Markdown for those.
+
+### Gateway
+
+- `GET /v1/gateway/models` — `{ ok, models }`: the chat models this virtual key
+  can reach, with context length and per-token pricing. Embedding models are
+  filtered out; the chat picker would 404 on one.
+- `GET /v1/gateway/quota` — `{ ok, quota }`: the key's budget for the period,
+  its per-model usage, and the per-provider sub-budgets, flattened from Bifrost's
+  `GET /api/governance/virtual-keys/quota`.
+
+Both read the gateway with the same `x-bf-vk` headers as a completion, and both
+are cached in memory (`BIFROST_MODELS_CACHE_MS`, `BIFROST_QUOTA_CACHE_MS`) so the
+GUI can re-read the budget after every turn cheaply. Note the governance path
+hangs off the gateway **origin**, not the `/v1` surface.
+
+Both are `optionalAuth`, matching `/chat`. Quota exposes the key's budget and
+spend, so put `requireAuth` on it before this listens on anything but localhost.
 
 ### Vault (`Authorization: Bearer <token>`)
 

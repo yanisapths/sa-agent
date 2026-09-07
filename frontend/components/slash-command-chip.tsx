@@ -1,7 +1,8 @@
 "use client";
 
-import { Ticket, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { SlashCommand } from "./slash-commands";
+import { CommandIcon } from "./slash-command-icon";
 
 export function SlashCommandChip({
   command,
@@ -12,7 +13,7 @@ export function SlashCommandChip({
 }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-black/10 px-2.5 py-1 text-xs font-medium text-foreground">
-      <Ticket size={12} className="shrink-0" />
+      <CommandIcon command={command} size={12} className="shrink-0" />
       {command.chipLabel}
       <button
         type="button"

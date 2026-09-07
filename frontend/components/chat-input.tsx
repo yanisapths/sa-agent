@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, PlusIcon, X, FileText } from "lucide-react";
+import { ArrowUp, PlusIcon, Square, X, FileText } from "lucide-react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { Button } from "./ui/Button";
 import { SlashCommandChip } from "./slash-command-chip";
@@ -20,7 +20,11 @@ import {
   filterSlashCommands,
   findSlashCommand,
   matchSlashQuery,
+  selectedPhase,
+  withSlashCommand,
 } from "./slash-commands";
+import { ModelPicker } from "./model-picker";
+import { type GatewayModel } from "@/features/gateway/types";
 
 export interface Attachment {
   id: string;
@@ -39,12 +43,19 @@ interface ChatInputProps {
     message: string,
     attachments: Attachment[],
     mentions: string[],
+    /** Phase specialist to pin, from a `/sa-*` or `/pvt-*` command. */
+    phase?: string,
   ) => void;
   isLoading?: boolean;
   placeholder?: string;
   value: string;
   onChange: (val: string) => void;
   mentions?: MentionItem[];
+  /** Cancels the in-flight turn. Required for the stop button to appear. */
+  onStop?: () => void;
+  models?: GatewayModel[];
+  model?: string | null;
+  onModelChange?: (model: string | null) => void;
 }
 
 export const sendButtonVariants: Variants = {
@@ -66,6 +77,10 @@ export function ChatInput({
   value,
   onChange,
   mentions = [],
+  onStop,
+  models = [],
+  model = null,
+  onModelChange,
 }: ChatInputProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
@@ -106,11 +121,8 @@ export function ChatInput({
     fromValue: string = value,
   ) => {
     onChange(consumeSlashToken(fromValue));
-    setSlashCommands((prev) =>
-      prev.some((item) => item.token === command.token)
-        ? prev
-        : [...prev, command],
-    );
+    /** A turn runs one specialist, so a second phase replaces the first. */
+    setSlashCommands((prev) => withSlashCommand(prev, command));
   };
 
   const handleInputChange = (next: string) => {
@@ -155,7 +167,7 @@ export function ChatInput({
   const submit = () => {
     const message = composeSlashMessage(value, slashCommands);
     if ((!message && attachments.length === 0) || isLoading) return;
-    onSend(message, attachments, pickedMentions);
+    onSend(message, attachments, pickedMentions, selectedPhase(slashCommands));
     onChange("");
     setAttachments([]);
     setSlashCommands([]);
@@ -184,11 +196,14 @@ export function ChatInput({
 
   const canSend = value.trim().length > 0 || attachments.length > 0;
   const hasPills = attachments.length > 0 || slashCommands.length > 0;
+  const activePhase = slashCommands.find((command) => command.kind === "phase");
   const inputPlaceholder = slashCommands.some(
     (command) => command.token === "/jira",
   )
     ? "Ticket key, e.g. PROJ-123"
-    : (placeholder ?? "How can I help you today?");
+    : activePhase
+      ? `What should ${activePhase.chipLabel} work on?`
+      : (placeholder ?? "How can I help you today?");
 
   return (
     <div className="w-full">
@@ -316,7 +331,7 @@ export function ChatInput({
             style={{ boxShadow: "none" }}
           />
 
-          <div className="absolute left-3 bottom-3">
+          <div className="absolute left-3 bottom-3 flex items-center gap-1">
             <Button
               type="button"
               variant="icon"
@@ -326,11 +341,20 @@ export function ChatInput({
             >
               <PlusIcon size={18} />
             </Button>
+            {onModelChange && (
+              <ModelPicker
+                models={models}
+                model={model}
+                onModelChange={onModelChange}
+                disabled={isLoading}
+              />
+            )}
           </div>
 
-          <AnimatePresence>
-            {canSend && (
+          <AnimatePresence mode="wait">
+            {isLoading && onStop ? (
               <motion.div
+                key="stop"
                 className="absolute bottom-3 right-3"
                 variants={sendButtonVariants}
                 initial="hidden"
@@ -338,14 +362,44 @@ export function ChatInput({
                 exit="exit"
                 transition={{ type: "spring", stiffness: 400, damping: 15 }}
               >
+                {/*
+                  `type="button"` is load-bearing: the send button relies on the
+                  form's implicit submit, so an untyped button here would send
+                  another message instead of cancelling this one.
+                */}
                 <Button
+                  type="button"
                   variant="icon"
                   size="sm"
-                  className="bg-pink-300 text-white hover:bg-pink-400 rounded-lg"
+                  onClick={onStop}
+                  title="Stop generating"
+                  aria-label="Stop generating"
+                  className="bg-[#716D65] text-white hover:bg-[#5c5952] rounded-lg"
                 >
-                  <ArrowUp size={18} />
+                  <Square size={13} strokeWidth={3} />
                 </Button>
               </motion.div>
+            ) : (
+              canSend && (
+                <motion.div
+                  key="send"
+                  className="absolute bottom-3 right-3"
+                  variants={sendButtonVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                  transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                >
+                  <Button
+                    variant="icon"
+                    size="sm"
+                    aria-label="Send message"
+                    className="bg-pink-300 text-white hover:bg-pink-400 rounded-lg"
+                  >
+                    <ArrowUp size={18} />
+                  </Button>
+                </motion.div>
+              )
             )}
           </AnimatePresence>
         </div>

@@ -22,6 +22,16 @@ const RESOURCE_ROOT = path.join(
 const RESOURCE_MOUNT = "/resources";
 
 /**
+ * One checkpointer for every agent this module builds, not one per agent.
+ *
+ * `/chat` asks for an agent per model id so the human can switch models, and a
+ * per-agent checkpointer would give each of those its own store: the same
+ * `threadId` would silently start a fresh conversation the moment you changed
+ * model. Sharing it keeps a thread's history attached to the thread.
+ */
+const SESSION = new MemorySaver();
+
+/**
  * Read-only mount of `agents/resources` for skills and memory; everything else
  * is ephemeral per-thread state the agent can use as scratch space for context
  * offloading.
@@ -83,7 +93,7 @@ export function defineAgent(spec: AgentSpec) {
     skills,
     memory: spec.memory === false ? undefined : [`${RESOURCE_MOUNT}/AGENTS.md`],
     subagents: spec.subagents ?? [],
-    checkpointer: spec.session === false ? undefined : new MemorySaver(),
+    checkpointer: spec.session === false ? undefined : SESSION,
     permissions: [
       { operations: ["write"], paths: [`${RESOURCE_MOUNT}/**`], mode: "deny" },
     ],

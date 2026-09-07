@@ -232,5 +232,5 @@ temp/
 .sa/*.db-shm
 .sa/*.db-wal
 
-graphify-out/*
-graphify-out
+# Graphify knowledge graph (rebuildable)
+graphify-out/

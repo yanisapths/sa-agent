@@ -219,6 +219,18 @@ export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
   },
 };
 
+/**
+ * Every phase a caller may ask for by name, from the tables above rather than a
+ * second hardcoded list that could drift from them. `ship` is absent by
+ * construction: its `owner` is null because a human closes git, so there is no
+ * specialist to force.
+ */
+export const PHASE_OWNERS: ReadonlySet<string> = new Set(
+  [...Object.values(PHASE), ...Object.values(PVT_PHASE)]
+    .map((row) => row.owner)
+    .filter((owner): owner is string => owner !== null),
+);
+
 /** Orchestrator: index only. Specialists own schema, SQL, and Jira. */
 export const ORCHESTRATOR_TOOLS = [
   "search_api_specs",
@@ -226,16 +238,23 @@ export const ORCHESTRATOR_TOOLS = [
   "list_tables",
 ] as const satisfies readonly ToolName[];
 
+/**
+ * `modelOverride` is the model the human picked in the GUI for this request. It
+ * wins over the phase's env-configured default, because the router only
+ * delegates — if the override stopped at the orchestrator the picker would not
+ * change which model does any of the actual work.
+ */
 function specialist(
   row: PhaseContract,
   description: string,
   systemPrompt: string,
+  modelOverride?: string,
 ): SubAgent {
   return {
     name: row.owner as string,
     description,
     systemPrompt,
-    model: resolveModel(row.model as string),
+    model: resolveModel(modelOverride ?? (row.model as string)),
     tools: resolveTools(row.tools) as NonNullable<SubAgent["tools"]>,
     skills: [...row.skills],
   };
@@ -246,7 +265,7 @@ inspect_relationships, or in search_api_specs / search_schema_docs.
 Never invent a table, column, or endpoint. Write your artifact to the
 path named in the task. Return a short report, not raw tool dumps.`;
 
-export function harnessSubagents(): SubAgent[] {
+export function harnessSubagents(modelOverride?: string): SubAgent[] {
   return [
     specialist(
       PHASE.discuss,
@@ -263,6 +282,7 @@ or story is named, jira.
    components, constraining decisions, gaps, questions for the human.
 
 Do not write a build plan or application source. ${GROUNDING}`,
+      modelOverride,
     ),
     specialist(
       PHASE.plan,
@@ -278,6 +298,7 @@ tests, docs, the risk level with its reasons, and any decision it works
 against. Affected files with no test become checklist items.
 
 Do not implement application source. ${GROUNDING}`,
+      modelOverride,
     ),
     specialist(
       PHASE.execute,
@@ -295,6 +316,7 @@ record_decision — never invent the reason.
 
 Write ${ARTIFACT.execute}: files touched, what was implemented, what
 was not. ${GROUNDING}`,
+      modelOverride,
     ),
     specialist(
       PHASE.test,
@@ -309,6 +331,7 @@ is a coverage gap to cover or record.
 
 Write ${ARTIFACT.test}: plan, cases, fixture notes, pass/fail, spec
 gaps. Do not insert or update data. ${GROUNDING}`,
+      modelOverride,
     ),
     specialist(
       PHASE.review,
@@ -323,6 +346,7 @@ confirm the change did not reach further than the plan said.
 
 Write ${ARTIFACT.review}: critical / suggestion / ship-ready.
 You may name refactors; do not commit or open a PR. ${GROUNDING}`,
+      modelOverride,
     ),
     specialist(
       PVT_PHASE["pvt-discuss"],
@@ -344,6 +368,7 @@ plus jira if a ticket or story is named.
 
 A case naming a table or column that does not exist is a gap, not a case.
 Do not group scenarios or write scripts. ${GROUNDING}`,
+      modelOverride,
     ),
     specialist(
       PVT_PHASE["pvt-plan"],
@@ -367,6 +392,7 @@ section, one Mermaid diagram of the run order with every label double-quoted,
 and a numbered checklist for execute.
 
 Do not write SQL files. ${GROUNDING}`,
+      modelOverride,
     ),
     specialist(
       PVT_PHASE["pvt-execute"],
@@ -389,6 +415,7 @@ rollback in the same pass as the script it undoes.
 Write ${ARTIFACT.pvtExecute}: the scripts produced, run order with owners,
 what each assumes about prior state, and anything the plan asked for that you
 did not produce. ${GROUNDING}`,
+      modelOverride,
     ),
   ];
 }
