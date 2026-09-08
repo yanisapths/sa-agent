@@ -39,7 +39,7 @@ agents/
     index.ts            TOOL_REGISTRY, TOOL_DEFINITIONS, resolveTools()
     core/               shared implementations used by LangChain and MCP
     postgres.ts         LangChain wrappers for live schema tools
-    knowledge.ts        LangChain wrappers for Chroma retrieval
+    knowledge.ts        LangChain wrappers for Mintlify docs + DDL search
     system-model.ts     LangChain wrappers for the graph and decision tools
     jira.ts             explicit Jira MCP wrappers (ticket + user story)
     write-files.ts      persist generated files to the Artifacts library
@@ -52,7 +52,7 @@ agents/
   templates/            copy-paste starting points for new agents and skills
 
 mcp/
-  server.ts             sa-knowledge stdio MCP (Postgres + Chroma)
+  server.ts             sa-knowledge stdio MCP (Postgres + Mintlify + DDL)
 
 database/
   postgres.ts           read-only pooled client
@@ -69,7 +69,8 @@ internal/               artifact normalisation, errors, vault, artifactStore, wo
 | ----------- | -------------------------------------------------------------------- | -------------------- |
 | Live schema | `list_tables`, `describe_tables`, `inspect_relationships`, `run_sql` | Real time            |
 | System model | `query_system_model`, `simulate_impact`, `search_decisions`         | Last `build_system_model` |
-| Knowledge   | `search_api_specs`, `search_schema_docs`                             | Last ingestion run   |
+| Knowledge   | `search_docs`, `get_doc_page`                                        | Live Mintlify        |
+| Schema docs | `search_schema_docs`                                                 | Last DDL ingest      |
 | Jira MCP    | `get_jira_ticket`, `read_jira_user_story`                            | Only on explicit ask |
 | Project folder | `ls` / `read_file` / `glob` / `grep` on the attached root; also `workspace_*` | Attached local path |
 | Skills      | `resources/skills/*/SKILL.md`                                        | On demand            |
@@ -309,10 +310,12 @@ traces. Each MCP tool call is still recorded in LangSmith as a tool run (tags
 
 ## Ingestion
 
+API contracts come from Mintlify (`search_docs` / `get_doc_page`). Chroma
+ingest is only for DDL narrative (`search_schema_docs`). `ingest:confluence`
+and `ingest:url` remain available but are not used by the docs tools.
+
 ```bash
-bun run ingest:confluence           # index Confluence API spec pages
 bun run ingest:ddl path/schema.sql  # index a DDL dump
-bun run ingest:url https://...      # index a page or text document
 ```
 
 ## System model build

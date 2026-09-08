@@ -11,7 +11,8 @@ ticket or story is named, load `jira` and call `get_jira_ticket` or
 
 Run `build_system_model`, then `query_system_model` to find the components the
 request actually touches, and `search_decisions` for reasons the area is built
-the way it is. Index contracts (`search_api_specs`, `search_schema_docs`), then
+the way it is. Index contracts (`search_docs` then `get_doc_page`, plus
+`search_schema_docs`), then
 confirm tables and FKs on the live schema. Never invent tables, columns, or
 endpoints.
 

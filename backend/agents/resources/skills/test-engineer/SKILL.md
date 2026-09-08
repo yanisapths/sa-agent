@@ -10,8 +10,9 @@ status codes, and edge cases — not invented ones.
 
 ## Procedure
 
-1. `search_api_specs` — recover the contract (auth, params, success and error
-   bodies) so tests assert the published shape, not an imagined one.
+1. `search_docs` then `get_doc_page` — recover the contract (auth, params,
+   success and error bodies) so tests assert the published shape, not an
+   imagined one.
 2. `describe_tables` + `inspect_relationships` — every fixture field maps to a
    real column; joins in setup data follow the live FK graph.
 3. `run_sql` — sample existing rows to seed realistic fixtures. Read-only; never

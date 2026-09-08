@@ -43,7 +43,8 @@ const SCHEMA = [
 ] as const satisfies readonly ToolName[];
 
 const INDEX = [
-  "search_api_specs",
+  "search_docs",
+  "get_doc_page",
   "search_schema_docs",
 ] as const satisfies readonly ToolName[];
 
@@ -264,7 +265,8 @@ export const PHASE_OWNERS: ReadonlySet<string> = new Set(
  * here, the router can list tables then get stuck asking the human for columns.
  */
 export const ORCHESTRATOR_TOOLS = [
-  "search_api_specs",
+  "search_docs",
+  "get_doc_page",
   "search_schema_docs",
   "list_tables",
   "describe_tables",
@@ -328,9 +330,12 @@ function specialist(
 }
 
 const GROUNDING = `Ground every claim in list_tables / describe_tables /
-inspect_relationships, or in search_api_specs / search_schema_docs.
-Never invent a table, column, or endpoint. Write your artifact to the
-path named in the task. Return a short report, not raw tool dumps.
+inspect_relationships, or in live docs (search_docs then get_doc_page)
+and search_schema_docs. Never invent a table, column, or endpoint.
+Do not answer from search_docs snippets — read 1–3 full pages. If the
+first search is ambiguous, search again with a narrower term (budget
+4–6 docs tool calls). Cite page paths. Write your artifact to the path
+named in the task. Return a short report, not raw tool dumps.
 When a local project folder is attached, ls / read_file / glob / grep
 see that repo from / (e.g. /internal/handler/voting). /artifacts is
 phase scratch; /resources is skills; mentioned vault files are at
@@ -349,7 +354,8 @@ or story is named, jira.
 1. If an issue key is present, get_jira_ticket or read_jira_user_story.
 2. build_system_model, then query_system_model to find the components the
    request touches, and search_decisions for why they are built that way.
-3. Index existing contracts (search_api_specs, search_schema_docs).
+3. Index existing contracts: search_docs, then get_doc_page on the
+   matching paths (search_schema_docs for DDL narrative).
 4. Confirm tables and FKs on the live schema.
 5. If a local project folder is attached, inspect it with ls / read_file /
    glob / grep (or workspace_ls / workspace_read / workspace_grep).

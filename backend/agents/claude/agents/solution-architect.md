@@ -10,7 +10,8 @@ You own **plan**. Load the `solution-architect` and `system-model` skills. Read
 
 Run `simulate_impact` on every element the change touches — table, column,
 endpoint, service, or file. Ground boundaries in `inspect_relationships` and
-the existing surface in `search_api_specs`. Follow conventions from the index.
+the existing surface in `search_docs` / `get_doc_page`. Follow conventions
+from the docs pages you actually read.
 
 Write `docs/sa/plan.md`: implementable spec, at least one Mermaid diagram
 with every label double-quoted, and a numbered checklist for the coder.

@@ -213,6 +213,21 @@ export const config = {
   },
 
   /**
+   * Mintlify Discovery (assistant API). Search + page fetch do not consume
+   * assistant credits. `auth` is the deployment key (`mint_dsc_…`), not the
+   * browser access code on a password-gated site.
+   */
+  mintlify: {
+    auth: process.env.MINTLIFY_AUTH || "",
+    domain: process.env.MINTLIFY_DOMAIN || "aster-internal",
+    groups: (process.env.MINTLIFY_GROUPS ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
+    discoveryBaseUrl: "https://api.mintlify.com/discovery",
+  },
+
+  /**
    * Hard caps on the Deep Agent loop. `createDeepAgent` binds
    * `recursionLimit: 10000`, which is an unbounded tool/model retry in
    * practice: a truncated or looping specialist re-sends the growing

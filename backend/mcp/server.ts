@@ -1,5 +1,6 @@
 /**
- * Stdio MCP server for live Postgres schema tools and Chroma retrieval.
+ * Stdio MCP server for live Postgres schema tools, Mintlify docs, and Chroma DDL.
+
  *
  * Spawned by Claude Code via SA_AGENT_HOME, or run directly:
  *   bun run mcp/server.ts
@@ -18,7 +19,8 @@ import {
   runSql,
 } from "../agents/tools/core/postgres";
 import {
-  searchApiSpecs,
+  getDocPage,
+  searchDocs,
   searchSchemaDocs,
 } from "../agents/tools/core/knowledge";
 import {
@@ -182,11 +184,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "search_api_specs",
+      name: "search_docs",
       description:
-        "Search the indexed Confluence API specifications and internal knowledge base. " +
-        "Use for existing endpoints, request/response contracts, auth schemes, and team conventions.",
+        "Scan Aster documentation (Mintlify) for API contracts, endpoints, auth, " +
+        "and conventions. Returns titles, paths, and short snippets only — never answer " +
+        "from snippets. Follow up with get_doc_page on the 1–3 paths that match. " +
+        "If results are ambiguous, search again with a narrower term (budget 4–6 docs calls).",
       inputSchema: SEARCH_SCHEMA,
+    },
+    {
+      name: "get_doc_page",
+      description:
+        "Read full Mintlify documentation pages by the `path` field from search_docs. " +
+        "Pass the slug exactly (no leading slash). Do not request mintlify.site URLs. Max 3 paths per call.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          paths: {
+            type: "array",
+            items: { type: "string" },
+            minItems: 1,
+            maxItems: 3,
+            description:
+              "Exact search_docs path slugs, e.g. aster-admin/orch-admin-service/voting/overview",
+          },
+        },
+        required: ["paths"],
+      },
     },
     {
       name: "search_schema_docs",
@@ -282,8 +306,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return inspectRelationships(asStringArray(args.tables));
         case "run_sql":
           return runSql(asString(args.sql));
-        case "search_api_specs":
-          return searchApiSpecs(asString(args.query), asLimit(args.limit));
+        case "search_docs":
+          return searchDocs(asString(args.query), asLimit(args.limit));
+        case "get_doc_page":
+          return getDocPage(asStringArray(args.paths) ?? []);
         case "search_schema_docs":
           return searchSchemaDocs(asString(args.query), asLimit(args.limit));
         case "build_system_model":

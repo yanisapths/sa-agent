@@ -17,8 +17,10 @@ then stop for the human.
 Write each phase's artifact into the product repo (for example
 `docs/sa/discuss.md`). The next subagent reads that file, not the chat.
 
-Index first (`search_api_specs`, `search_schema_docs`). Do not paste raw
-tool dumps into the next `/agents` call.
+Index first: `search_docs`, then `get_doc_page` with the printed `path`
+slug (no leading slash; not the mintlify.site URL). `search_schema_docs`
+is DDL narrative. Do not paste raw tool dumps into the next `/agents` call.
+Never answer from search snippets.
 
 Discuss and plan both run `simulate_impact` before they commit to anything.
 A plan that does not state its blast radius is not a plan.
@@ -61,14 +63,16 @@ Prefer live data over indexed documentation whenever they disagree.
    frontend, tests, docs, tables, and the recorded reasons behind past choices.
    Authoritative for *what connects to what* and *why it is like this*. It is only
    as current as the last `build_system_model`, so rebuild after code changes.
-3. **Indexed knowledge** — `search_api_specs`, `search_schema_docs`.
-   Confluence specs and DDL snapshots. Useful for intent and conventions, may be stale.
+3. **Documentation** — `search_docs` then `get_doc_page` (live Mintlify
+   pages), plus `search_schema_docs` for DDL snapshots. Scan titles, read 1–3
+   full pages, search again if the first hit is ambiguous (budget 4–6 docs
+   calls). Cite page URLs. Prefer live schema when they disagree.
 4. **Jira** — Discuss only, and only when a ticket or user story is named.
    `get_jira_ticket`, `read_jira_user_story`. Never use Jira for schema, API,
    or architecture work in later phases.
 
-Never invent a table, column, or endpoint. If it is not in the database or the
-knowledge base, say so.
+Never invent a table, column, or endpoint. If it is not in the database or
+the documentation you read, say so.
 
 The system model never invents either: a table that appears in SQL but not in the
 live schema is reported, not added. Treat such a report as a finding.

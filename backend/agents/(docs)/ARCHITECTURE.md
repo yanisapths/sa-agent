@@ -143,8 +143,9 @@ through a factory is invisible. Two rules keep it honest:
 
 ## Context management
 
-The index is the existing RAG (`search_api_specs`, `search_schema_docs` →
-Chroma). Do not add another store.
+The index is live Mintlify (`search_docs` → titles, `get_doc_page` → full
+pages) plus DDL Chroma (`search_schema_docs`). Do not add another vector store
+for API specs.
 
 1. Orchestrator retrieves a short brief → `/artifacts/context.md`
    (Claude Code: a few lines in the task, or `docs/sa/context.md`).
@@ -219,7 +220,7 @@ environment only, which is why it cannot use `${SA_AGENT_HOME}` in `.mcp.json`.
 
 1. Live database.
 2. System model (as current as the last `build_system_model`).
-3. Indexed knowledge (may be stale).
+3. Live Mintlify docs (`search_docs` / `get_doc_page`) and DDL snapshots.
 4. Jira only in discuss, only when named.
 
 Never invent a table, column, or endpoint.

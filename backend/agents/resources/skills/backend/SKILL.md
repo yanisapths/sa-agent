@@ -9,8 +9,8 @@ Design endpoints that are directly implementable against the real schema.
 
 ## Procedure
 
-1. `search_api_specs` — find the existing endpoints for these entities and reuse
-   their naming, auth, envelope, and error shapes.
+1. `search_docs` then `get_doc_page` — find the existing endpoints for these
+   entities and reuse their naming, auth, envelope, and error shapes.
 2. `describe_tables` + `inspect_relationships` — establish the exact columns,
    types, nullability, and joins backing every response field.
 3. Design the contract. Each response field maps to a column or a stated derivation.

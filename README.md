@@ -2,7 +2,8 @@
 
 Capability provider for system analysis and solution architecture. It grounds
 answers in the **live PostgreSQL schema**, a **system model** of the repo it is
-working in, indexed Confluence/DDL knowledge, and (when you ask) Jira tickets.
+working in, **live Mintlify docs**, indexed DDL narrative, and (when you ask)
+Jira tickets.
 
 You can run it in three ways:
 
@@ -25,7 +26,7 @@ for how they are wired.
 - A read-only PostgreSQL URI for the application database
 - Bifrost virtual key (`BIFROST_API_KEY`) for the company gateway; an
   Anthropic API key only if a model id is `anthropic:…`
-- Optional: Chroma Cloud, Ollama embeddings, Jira, Confluence, LangSmith
+- Optional: Mintlify assistant key, Chroma Cloud, Ollama embeddings, Jira, LangSmith
 
 ## 1. Clone and environment
 
@@ -47,15 +48,18 @@ Edit `backend/.env`. Required for schema tools and the chat agent:
 | `DATABASE_SCHEMA` | Schema to introspect (default `public`) |
 | `BIFROST_BASE_URL`, `BIFROST_API_KEY` | Company LLM gateway. Routes every phase through it; see `backend/README.md` |
 | `ANTHROPIC_API_KEY` | Only when a LangChain model id is `anthropic:…`. Claude Code via Bifrost uses `BIFROST_API_KEY` instead. |
-| `CHROMA_HOST`, `CHROMA_API_KEY`, `CHROMA_TENANT`, `CHROMA_DATABASE` | Indexed specs and DDL |
-| `CHROMA_API_COLLECTION`, `CHROMA_DDL_COLLECTION` | Collection names |
+| `CHROMA_HOST`, `CHROMA_API_KEY`, `CHROMA_TENANT`, `CHROMA_DATABASE` | DDL narrative index (`search_schema_docs`) |
+| `CHROMA_DDL_COLLECTION` | DDL collection name |
 
 Also set if you use those features:
 
 | Variable | Purpose |
 | --- | --- |
-| `OLLAMA_URL`, `OLLAMA_EMBED_MODEL` | Embeddings for ingestion |
-| `CONFLUENCE_*` | Ingest API spec pages |
+| `MINTLIFY_AUTH` | Assistant API key (`mint_dsc_…`) for `search_docs` / `get_doc_page` |
+| `MINTLIFY_DOMAIN` | Deployment slug (default `aster-internal`) |
+| `MINTLIFY_GROUPS` | Optional groups for a password-gated / userAuth site |
+| `OLLAMA_URL`, `OLLAMA_EMBED_MODEL` | Embeddings for DDL ingestion |
+| `CONFLUENCE_*` | Optional leftover ingest of API spec pages into Chroma (not used by docs tools) |
 | `JIRA_*` | Ticket / user-story MCP (optional; see backend README) |
 | `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` | Traces |
 | `SUPABASE_*`, `VAULT_DEV_TOKEN` | Vault in the GUI |
@@ -71,11 +75,11 @@ Point your shell at the checkout (required for both plugin runtimes):
 export SA_AGENT_HOME="$HOME/agents/sa-agent"   # add to ~/.zshrc
 ```
 
-Index knowledge before `search_api_specs` / `search_schema_docs` are useful:
+Set `MINTLIFY_AUTH` so `search_docs` / `get_doc_page` can read live Aster docs.
+DDL narrative still needs a Chroma ingest:
 
 ```bash
 cd "$SA_AGENT_HOME/backend"
-bun run ingest:confluence
 bun run ingest:ddl path/to/schema.sql
 ```
 
@@ -244,7 +248,7 @@ Backend layout, tools, ingestion, and HTTP API:
 
 1. Live DB — `list_tables`, `describe_tables`, `inspect_relationships`, `run_sql`
 2. System model — `query_system_model`, `simulate_impact`, `search_decisions`
-3. Indexed knowledge — `search_api_specs`, `search_schema_docs`
+3. Documentation — `search_docs`, `get_doc_page`, `search_schema_docs`
 4. Jira — only if you explicitly ask for a ticket or user story
 
 The system model is a deterministic graph of the product repo: endpoints,

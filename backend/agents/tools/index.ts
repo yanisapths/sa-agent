@@ -1,6 +1,6 @@
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { getJiraTicket, readJiraUserStory } from "./jira";
-import { searchApiSpecs, searchSchemaDocs } from "./knowledge";
+import { getDocPage, searchDocs, searchSchemaDocs } from "./knowledge";
 import {
   describeTables,
   inspectRelationships,
@@ -39,7 +39,8 @@ export const TOOL_REGISTRY = {
   describe_tables: describeTables,
   inspect_relationships: inspectRelationships,
   run_sql: runSql,
-  search_api_specs: searchApiSpecs,
+  search_docs: searchDocs,
+  get_doc_page: getDocPage,
   search_schema_docs: searchSchemaDocs,
   build_system_model: buildSystemModel,
   query_system_model: querySystemModel,

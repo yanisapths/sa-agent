@@ -19,7 +19,7 @@ Design the system, justify the trade-offs, and make the result renderable.
 
 1. Ground the design in reality first — `inspect_relationships` shows which
    entities are coupled, which constrains where you can draw service boundaries.
-2. `search_api_specs` for the integration surface that already exists.
+2. `search_docs` then `get_doc_page` for the integration surface that already exists.
 3. State each significant decision with its alternatives and the reason one won.
 4. Deliver at least one diagram; prose alone is not an architecture.
 
