@@ -9,7 +9,7 @@ import { formatResetDate, formatTokens, formatUsd } from "./format-usage";
 function barColor(fraction: number): string {
   if (fraction >= 1) return "bg-rose-500";
   if (fraction >= 0.75) return "bg-amber-500";
-  return "bg-pink-400";
+  return "bg-light";
 }
 
 function Bar({ used, limit }: { used: number; limit: number | null }) {

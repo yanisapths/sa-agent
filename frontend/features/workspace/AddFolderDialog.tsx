@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/Button";
 import { Folder } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { workspaceService } from "./service";
 
 interface AddFolderDialogProps {
@@ -72,8 +73,6 @@ export function AddFolderDialog({
     void handlePick();
   }, [open]);
 
-  if (!open) return null;
-
   const handleClose = () => {
     if (pickingRef.current) return;
     reset();
@@ -98,14 +97,17 @@ export function AddFolderDialog({
     }
   };
 
-  return (
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="aster-overlay flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
       role="presentation"
       onClick={handleClose}
     >
       <div
         role="dialog"
+        aria-modal="true"
         aria-labelledby="add-folder-title"
         className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-lg"
         onClick={(event) => event.stopPropagation()}
@@ -132,7 +134,7 @@ export function AddFolderDialog({
           onChange={(e) => setName(e.target.value)}
           placeholder="admin-service"
           disabled={picking}
-          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-pink-300"
+          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-light"
         />
         <label className="mt-3 block text-xs font-medium">Path</label>
         <input
@@ -140,7 +142,7 @@ export function AddFolderDialog({
           onChange={(e) => setPath(e.target.value)}
           placeholder="/Users/you/src/admin-service"
           disabled={picking}
-          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-pink-300"
+          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-light"
         />
         {error && (
           <p className="mt-3 text-xs text-rose-600" role="alert">
@@ -167,6 +169,7 @@ export function AddFolderDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

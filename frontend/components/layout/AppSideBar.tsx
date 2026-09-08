@@ -1,12 +1,14 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Folder, FolderGit2, PanelLeft, Plus, SparklesIcon, Trash2 } from "lucide-react";
+import { Folder, FolderGit2, PanelLeft, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { useTheme } from "@/components/theme-provider";
 import { AddFolderDialog } from "@/features/workspace/AddFolderDialog";
 import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
+import { asterTheme } from "@/lib/theme";
 import { Button } from "../ui/Button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/Tooltip";
 
@@ -18,9 +20,12 @@ interface AppSidebarProps {
 export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { theme } = useTheme();
   const { workspaces, attached, attach, create, remove, status, error } =
     useWorkspace();
   const [addOpen, setAddOpen] = useState(false);
+  const wordmark =
+    theme === "dark" ? "/assets/aster-dark.svg" : "/assets/aster-light.svg";
 
   const selectProject = (id: string) => {
     attach(id);
@@ -30,7 +35,7 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
   return (
     <aside
       className={cn(
-        "bg-sidebar border-sidebar-border z-40 flex h-screen flex-col border-r transition-all duration-300",
+        "bg-sidebar/90 border-sidebar-border z-40 flex h-screen flex-col border-r backdrop-blur-md transition-all duration-300",
         isExpanded ? "w-56" : "w-16",
       )}
     >
@@ -42,9 +47,14 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
       >
         {isExpanded ? (
           <>
-            <div className="flex items-center gap-2">
-              <Link href="/" className="hover:shadow-xl">
-                <SparklesIcon />
+            <div className="flex min-w-0 items-center gap-2">
+              <Link href="/" className="flex min-w-0 items-center gap-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={wordmark}
+                  alt={asterTheme.name}
+                  className="h-6 w-auto"
+                />
               </Link>
             </div>
 
@@ -55,9 +65,19 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
             </div>
           </>
         ) : (
-          <Button variant="icon" onClick={onToggle}>
-            <PanelLeft className="h-4 w-4" />
-          </Button>
+          <div className="flex flex-col items-center gap-2">
+            <Link href="/" className="flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/assets/logo.svg"
+                alt={asterTheme.name}
+                className="h-5 w-5"
+              />
+            </Link>
+            <Button variant="icon" onClick={onToggle}>
+              <PanelLeft className="h-4 w-4" />
+            </Button>
+          </div>
         )}
       </div>
 

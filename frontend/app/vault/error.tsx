@@ -14,7 +14,7 @@ export default function VaultError({
       <button
         type="button"
         onClick={reset}
-        className="rounded-xl bg-pink-300 px-4 py-2 text-sm font-medium text-pink-950"
+        className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white"
       >
         Try again
       </button>

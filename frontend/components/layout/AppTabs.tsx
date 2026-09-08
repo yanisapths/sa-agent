@@ -26,7 +26,7 @@ export function AppTabs() {
   return (
     <nav
       aria-label="Workspace"
-      className="flex shrink-0 gap-1 border-b border-border px-4"
+      className="flex shrink-0 gap-1 border-b border-border bg-surface/40 px-5 backdrop-blur-md"
     >
       {tabs.map((tab) => {
         const isActive =
@@ -38,9 +38,9 @@ export function AppTabs() {
             href={tab.href}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",
+              "border-b-2 px-3 py-3 text-sm font-medium transition-colors",
               isActive
-                ? "border-pink-300 text-foreground"
+                ? "border-light text-foreground"
                 : "border-transparent text-foreground/60 hover:text-foreground",
             )}
           >

@@ -421,7 +421,7 @@ function DiagramDisplay({ part }: { part: DiagramPart }) {
     <div className="border border-border rounded-lg overflow-hidden text-sm w-full">
       <div className="flex items-center justify-between px-3 py-2 bg-muted/10 border-b border-border">
         <div className="flex items-center gap-2">
-          <GitBranch className="w-3.5 h-3.5 text-violet-500" />
+          <GitBranch className="w-3.5 h-3.5 text-primary dark:text-light" />
           <span className="text-xs font-medium text-muted uppercase tracking-wide">
             {part.title || part.diagramType || "Diagram"}
           </span>
@@ -940,13 +940,13 @@ export function ChatMessage({
           "flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5 border",
           isUser
             ? "bg-muted/15 border-border"
-            : "bg-violet-50 dark:bg-violet-500/15 border-violet-300 dark:border-violet-500/40",
+            : "bg-light/10 dark:bg-light/15 border-light/40",
         )}
       >
         {isUser ? (
           <User className="w-3.5 h-3.5 text-foreground" />
         ) : (
-          <Bot className="w-3.5 h-3.5 text-violet-500" />
+          <Bot className="w-3.5 h-3.5 text-primary dark:text-light" />
         )}
       </div>
       <div
@@ -989,8 +989,8 @@ export function ChatMessage({
 export function TypingIndicator() {
   return (
     <div className="flex gap-3 px-4 py-4">
-      <div className="w-7 h-7 rounded-full bg-violet-50 dark:bg-violet-500/15 border border-violet-300 dark:border-violet-500/40 flex items-center justify-center">
-        <Bot className="w-3.5 h-3.5 text-violet-500" />
+      <div className="w-7 h-7 rounded-full bg-light/10 dark:bg-light/15 border border-light/40 flex items-center justify-center">
+        <Bot className="w-3.5 h-3.5 text-primary dark:text-light" />
       </div>
       <div className="bg-surface border border-border rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1.5 h-10">
         {[0, 150, 300].map((d) => (

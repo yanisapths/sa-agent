@@ -7,10 +7,12 @@ import {
   useEffect,
   useState,
 } from "react";
+import { asterTheme } from "@/lib/theme";
 
 export type Theme = "light" | "dark";
 
 export const THEME_STORAGE_KEY = "sa-theme";
+export const DEFAULT_THEME: Theme = asterTheme.appearance.default;
 
 type ThemeContextValue = {
   theme: Theme;
@@ -22,9 +24,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 function readTheme(): Theme {
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
   if (stored === "dark" || stored === "light") return stored;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
+  return DEFAULT_THEME;
 }
 
 function applyTheme(theme: Theme) {
@@ -32,7 +32,7 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
 
   useEffect(() => {
     const next = readTheme();

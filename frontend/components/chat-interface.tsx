@@ -69,7 +69,7 @@ export function ChatInterface() {
   }, [messages]);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-transparent">
       <main className="flex-1 overflow-y-auto">
         {hasMessages ? (
           <div className="max-w-6xl mx-auto py-6">

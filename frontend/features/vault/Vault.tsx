@@ -201,7 +201,7 @@ export function Vault() {
               required
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="rounded-xl border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-pink-300"
+              className="rounded-xl border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-light"
             />
           </label>
           <label className="flex min-w-56 flex-1 flex-col gap-1 text-sm">
@@ -209,7 +209,7 @@ export function Vault() {
             <input
               value={description}
               onChange={(event) => setDescription(event.target.value)}
-              className="rounded-xl border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-pink-300"
+              className="rounded-xl border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-light"
             />
           </label>
           <Button type="submit">Add</Button>
@@ -237,7 +237,7 @@ export function Vault() {
                   onClick={() => setSelectedId(folder.id)}
                   className={`cursor-pointer min-w-0 flex-1 rounded-xl px-3 py-2.5 text-left ${
                     folder.id === selectedId
-                      ? "bg-[#6c854e]/10"
+                      ? "bg-sidebar-accent"
                       : "hover:bg-muted/10"
                   }`}
                 >

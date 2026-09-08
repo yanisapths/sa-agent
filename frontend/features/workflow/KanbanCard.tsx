@@ -45,7 +45,7 @@ export function KanbanCard({
   const waiting = !card.live && card.column !== "ready";
 
   return (
-    <article className="rounded-xl border border-border bg-surface p-3.5">
+    <article className="rounded-xl border border-border bg-surface/80 p-3.5 backdrop-blur-md">
       <button
         type="button"
         onClick={onOpen}

@@ -33,28 +33,28 @@ const base = [
 
 const variants: Record<ButtonVariant, string> = {
   primary: [
-    "bg-pink-300 text-pink-950",
-    "hover:bg-pink-400",
-    "focus-visible:ring-pink-400",
+    "bg-primary text-white",
+    "hover:bg-primary/90",
+    "focus-visible:ring-light",
     "shadow-sm hover:shadow-md",
   ].join(" "),
 
   secondary: [
-    "bg-transparent border-2 border-pink-300 text-pink-700",
-    "hover:bg-pink-50 dark:hover:bg-pink-300/10",
-    "focus-visible:ring-pink-300",
+    "bg-transparent border-2 border-primary text-primary",
+    "hover:bg-light/10",
+    "focus-visible:ring-light",
   ].join(" "),
 
   outline: [
     "shadow-none bg-transparent border border-border text-foreground",
     "hover:bg-muted/10",
-    "focus-visible:ring-muted/50",
+    "focus-visible:ring-light",
   ].join(" "),
 
   ghost: [
-    "bg-transparent text-pink-700 dark:text-pink-300",
-    "hover:bg-pink-100 dark:hover:bg-pink-300/10",
-    "focus-visible:ring-pink-300",
+    "bg-transparent text-primary dark:text-light",
+    "hover:bg-light/10",
+    "focus-visible:ring-light",
   ].join(" "),
 
   destructive: [
@@ -66,7 +66,7 @@ const variants: Record<ButtonVariant, string> = {
   icon: [
     "text-foreground",
     "hover:bg-muted/15",
-    "focus-visible:ring-muted/15",
+    "focus-visible:ring-light",
     "rounded-lg",
   ].join(" "),
 };

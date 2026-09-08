@@ -3,36 +3,42 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #fbfaf9;
-  --foreground: #171717;
-  --surface: #ffffff;
-  --muted: #716d65;
-  --border: color-mix(in srgb, #716d65 18%, transparent);
+  --primary: #177b77;
+  --light: #1ae5bc;
+  --dark: #165b9d;
 
-  /* Sidebar specific */
-  --sidebar-background: #f8f8f6;
-  --sidebar-foreground: #414958;
-  --sidebar-primary: #6c854e;
-  --sidebar-primary-foreground: 40 20% 98%;
-  --sidebar-accent: rgba(108, 133, 78, 0.1);
-  --sidebar-accent-foreground: 220 20% 12%;
-  --sidebar-border: #e2e4e9;
-  --sidebar-ring: 220 20% 12%;
-  --sidebar-muted: 220 10% 60%;
+  --background: #f3f8f8;
+  --foreground: #0a1333;
+  --surface: color-mix(in srgb, #ffffff 86%, transparent);
+  --muted: #4d6470;
+  --border: color-mix(in srgb, #177b77 16%, transparent);
+
+  --sidebar-background: color-mix(in srgb, #ffffff 72%, transparent);
+  --sidebar-foreground: #0a1333;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: #f4fffc;
+  --sidebar-accent: color-mix(in srgb, var(--light) 22%, transparent);
+  --sidebar-accent-foreground: #0a1333;
+  --sidebar-border: color-mix(in srgb, #177b77 14%, transparent);
+  --sidebar-ring: var(--light);
+  --sidebar-muted: #5b7280;
 }
 
 .dark {
-  --background: #161513;
-  --foreground: #f3f0ea;
-  --surface: #1e1c1a;
-  --muted: #a8a49c;
-  --border: color-mix(in srgb, #a8a49c 22%, transparent);
+  --background: #0b1014;
+  --foreground: #e6f4f7;
+  --surface: color-mix(in srgb, #121a22 78%, transparent);
+  --muted: #8aa0ab;
+  --border: color-mix(in srgb, #1ae5bc 16%, transparent);
 
-  --sidebar-background: #1c1b19;
-  --sidebar-foreground: #e6e3dc;
-  --sidebar-accent: rgba(108, 133, 78, 0.18);
-  --sidebar-accent-foreground: 40 20% 98%;
-  --sidebar-border: #2e2c29;
+  --sidebar-background: color-mix(in srgb, #101820 82%, transparent);
+  --sidebar-foreground: #e6f4f7;
+  --sidebar-primary: var(--light);
+  --sidebar-primary-foreground: #0a1333;
+  --sidebar-accent: color-mix(in srgb, var(--light) 16%, transparent);
+  --sidebar-accent-foreground: #e6f4f7;
+  --sidebar-border: color-mix(in srgb, #1ae5bc 12%, transparent);
+  --sidebar-muted: #7d93a0;
 }
 
 @theme inline {
@@ -41,10 +47,13 @@
   --color-surface: var(--surface);
   --color-muted: var(--muted);
   --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-light: var(--light);
+  --color-dark: var(--dark);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  --color-sidebar: var(--sidebar);
+  --color-sidebar: var(--sidebar-background);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
@@ -65,7 +74,50 @@ html.dark {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+html.theme-gradient body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 80% 55% at 92% -8%,
+      color-mix(in srgb, var(--light) 28%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      ellipse 70% 50% at 0% 108%,
+      color-mix(in srgb, var(--dark) 22%, transparent),
+      transparent 52%
+    );
+}
+
+html.dark.theme-gradient body::before {
+  background:
+    radial-gradient(
+      ellipse 80% 55% at 92% -8%,
+      color-mix(in srgb, var(--light) 18%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      ellipse 72% 48% at -4% 110%,
+      color-mix(in srgb, var(--dark) 42%, transparent),
+      transparent 52%
+    );
+}
+
+.aster-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+
+html:has(.aster-overlay) {
+  overflow: hidden;
 }
 
 label,

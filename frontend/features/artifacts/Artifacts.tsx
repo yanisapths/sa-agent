@@ -331,7 +331,7 @@ export function Artifacts() {
                         onClick={() => setSelectedId(file.id)}
                         className={`w-full cursor-pointer rounded-xl px-3 py-2 text-left ${
                           file.id === selectedId
-                            ? "bg-[#6c854e]/10"
+                            ? "bg-sidebar-accent"
                             : "hover:bg-muted/10"
                         }`}
                       >
@@ -435,7 +435,7 @@ export function Artifacts() {
                     <textarea
                       value={draft}
                       onChange={(event) => setDraft(event.target.value)}
-                      className="min-h-48 flex-1 resize-y rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-pink-300"
+                      className="min-h-48 flex-1 resize-y rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-light"
                       aria-label={`Edit ${selected.name}`}
                     />
                     <div className="flex gap-2">

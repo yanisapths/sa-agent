@@ -301,7 +301,7 @@ export function ChatInput({
             </button>
           </div>
         )}
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-surface shadow-[6px_2px_35px_rgba(0,0,0,0.05)]">
+        <div className="relative overflow-hidden rounded-2xl border border-border bg-surface/80 shadow-[6px_2px_35px_rgba(0,0,0,0.08)] backdrop-blur-md">
           <AnimatePresence>
             {hasPills && (
               <motion.div
@@ -487,7 +487,7 @@ export function ChatInput({
                     variant="icon"
                     size="sm"
                     aria-label="Send message"
-                    className="bg-pink-300 text-white hover:bg-pink-400 rounded-lg"
+                    className="bg-light text-[#0a1333] hover:bg-light/90 rounded-lg"
                   >
                     <ArrowUp size={18} />
                   </Button>
