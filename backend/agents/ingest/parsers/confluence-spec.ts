@@ -91,12 +91,33 @@ function stripColorSuffix(s: string): string {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function parseEndpoint(title?: string) {
-  const match = title?.match(/\[(GET|POST|PUT|DELETE|PATCH)\]\s*(.+)/i);
-  return {
-    method: match?.[1]?.toUpperCase() || "UNKNOWN",
-    endpoint: match?.[2]?.trim() || "",
-  };
+const HTTP_METHODS = "GET|POST|PUT|DELETE|PATCH";
+
+/**
+ * Older Aster specs use `[GET] /service/...`. Newer packages (Achievement,
+ * Voting) omit the brackets: `GET /service/...` or `GET service/...`.
+ */
+const API_PAGE_TITLE = new RegExp(
+  String.raw`^\s*(?:\[(${HTTP_METHODS})\]|(${HTTP_METHODS})\b)\s*(\S.*)$`,
+  "i",
+);
+
+function normalizeTitle(title: string): string {
+  return title.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
+}
+
+export function isApiSpecTitle(title?: string): boolean {
+  return API_PAGE_TITLE.test(normalizeTitle(title ?? ""));
+}
+
+export function parseEndpoint(title?: string) {
+  const normalized = normalizeTitle(title ?? "");
+  const match = normalized.match(API_PAGE_TITLE);
+  const method = (match?.[1] || match?.[2] || "UNKNOWN").toUpperCase();
+  let endpoint = (match?.[3] ?? "").trim().replace(/\/+$/, "");
+  if (endpoint && !endpoint.startsWith("/")) endpoint = `/${endpoint}`;
+  endpoint = endpoint.replace(/\/orch-admin-serice\b/g, "/orch-admin-service");
+  return { method, endpoint };
 }
 
 function isSectionMarker(line: string): boolean {

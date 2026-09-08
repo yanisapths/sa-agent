@@ -5,10 +5,14 @@ import {
   apiSpecStore,
   assertEmbeddingDimension,
 } from "../../database/chroma";
-import { parseConfluenceToDocuments } from "./parsers/confluence-spec";
+import {
+  isApiSpecTitle,
+  parseConfluenceToDocuments,
+} from "./parsers/confluence-spec";
 import { split, store } from "./store";
 
-const API_PAGE_TITLE = /^\[(GET|POST|PUT|DELETE|PATCH)\]/i;
+/** Confluence Cloud caps this at 200; larger values are silently truncated. */
+const PAGE_LIMIT = 200;
 
 function createLoader(): ConfluencePagesLoader {
   const baseUrl = process.env.CONFLUENCE_BASE_URL;
@@ -25,6 +29,7 @@ function createLoader(): ConfluencePagesLoader {
       spaceKey,
       username,
       accessToken,
+      limit: PAGE_LIMIT,
     });
   }
 
@@ -34,6 +39,7 @@ function createLoader(): ConfluencePagesLoader {
       baseUrl,
       spaceKey,
       personalAccessToken,
+      limit: PAGE_LIMIT,
     });
   }
 
@@ -48,15 +54,43 @@ async function main(): Promise<void> {
   const pages = await createLoader().load();
   console.log(`loaded ${pages.length} pages`);
 
-  const parsed: Document[] = pages
-    .filter((page) => API_PAGE_TITLE.test(page.metadata.title ?? ""))
-    .flatMap(parseConfluenceToDocuments);
+  const specPages = pages.filter((page) =>
+    isApiSpecTitle(page.metadata.title),
+  );
+  console.log(
+    `API spec pages: ${specPages.length} (skipped ${pages.length - specPages.length} non-spec)`,
+  );
+
+  const parsed: Document[] = specPages.flatMap(parseConfluenceToDocuments);
 
   if (parsed.length === 0) {
     console.warn("no API spec pages found — nothing to index");
     return;
   }
-  console.log(`parsed ${parsed.length} documents`);
+
+  const endpoints = [
+    ...new Set(
+      parsed
+        .map((doc) => `${doc.metadata.method ?? ""} ${doc.metadata.endpoint ?? ""}`.trim())
+        .filter(Boolean),
+    ),
+  ].sort();
+  const services = [
+    ...new Set(
+      parsed
+        .map((doc) => String(doc.metadata.service ?? ""))
+        .filter((service) => service && service !== "unknown"),
+    ),
+  ].sort();
+  console.log(`parsed ${parsed.length} documents from ${endpoints.length} endpoints`);
+  console.log(`services: ${services.join(", ") || "(none)"}`);
+  const newlyNamed = endpoints.filter((endpoint) =>
+    /\/orch-admin-service\/.*\/(achievement|voting)/i.test(endpoint),
+  );
+  console.log(
+    `orch-admin achievement/voting endpoints: ${newlyNamed.length}`,
+  );
+  for (const endpoint of newlyNamed) console.log(`  ${endpoint}`);
 
   const chunks = await split(parsed);
   console.log(`split into ${chunks.length} chunks`);
