@@ -1,5 +1,6 @@
 import type { FilesystemPermission, SubAgent } from "deepagents";
 import { config } from "../config";
+import { normalizeVirtualFsPaths } from "./middleware/normalize-virtual-fs-paths";
 import { resolveModel } from "./model";
 import { resolveTools, type ToolName } from "./tools";
 
@@ -293,15 +294,16 @@ function skillSources(paths: readonly string[]): string[] {
   return [...sources];
 }
 
-/** Phase artifacts only — discuss/plan/test must not write the product repo. */
+/** Phase artifacts and mentioned vault files — discuss/plan/test must not write the product repo. */
 const ARTIFACT_WRITES: FilesystemPermission[] = [
   { operations: ["write"], paths: ["/artifacts/**"], mode: "allow" },
   { operations: ["write"], paths: ["/large_tool_results/**"], mode: "allow" },
   { operations: ["write"], paths: ["/conversation_history/**"], mode: "allow" },
+  { operations: ["write"], paths: ["/vault/**"], mode: "allow" },
   { operations: ["write"], paths: ["/**"], mode: "deny" },
 ];
 
-/** Execute/review may write the attached repo; never skills/memory. */
+/** Execute/review may write the attached repo and vault mounts; never skills/memory. */
 const PRODUCT_WRITES: FilesystemPermission[] = [
   { operations: ["write"], paths: ["/resources/**"], mode: "deny" },
 ];
@@ -321,6 +323,7 @@ function specialist(
     tools: resolveTools(row.tools) as NonNullable<SubAgent["tools"]>,
     skills: skillSources(row.skills),
     permissions: canWriteProduct ? PRODUCT_WRITES : ARTIFACT_WRITES,
+    middleware: [normalizeVirtualFsPaths],
   };
 }
 
@@ -330,9 +333,10 @@ Never invent a table, column, or endpoint. Write your artifact to the
 path named in the task. Return a short report, not raw tool dumps.
 When a local project folder is attached, ls / read_file / glob / grep
 see that repo from / (e.g. /internal/handler/voting). /artifacts is
-phase scratch; /resources is skills. Do not pass a host path like
-/Users/…. workspace_ls / workspace_read / workspace_grep also work
-with paths relative to the folder root.`;
+phase scratch; /resources is skills; mentioned vault files are at
+/vault/folder/file (edit_file / write_file save back to the vault).
+Do not pass a host path like /Users/…. workspace_ls / workspace_read /
+workspace_grep also work with paths relative to the folder root.`;
 
 export function harnessSubagents(modelOverride?: string): SubAgent[] {
   return [

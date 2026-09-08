@@ -368,8 +368,11 @@ has already been billed (`total_cost / total_tokens` from the quota endpoint)
 rather than a published price. The gateway publishes real pricing for only some
 models — not including the default `BIFROST_MODEL` — so this is the common case.
 
-**Vault mentions.** `@folder/file.csv` in `message` is resolved to the file's
-bytes and inlined the same way an upload is. This needs an identity, so send
+**Vault mentions.** `@folder/file.sql` in `message` is resolved to the file's
+bytes. Text files are mounted on the agent's virtual filesystem at
+`/vault/folder/file` (and `/folder/file`) so `read_file` / `edit_file` /
+`write_file` can change them; those edits are written back to the vault.
+Images are inlined the same way an upload is. This needs an identity, so send
 the same `Authorization: Bearer <token>` the vault uses — chat itself does not
 require auth, and an unsigned request leaves the tokens as literal text with a
 note telling the agent it could not read them. Never resolve mentions against a

@@ -56,6 +56,8 @@ export type VaultMentionResponse = {
 /** A mention the chat route could turn into real bytes. */
 export type ResolvedMention = {
   token: string;
+  id: string;
+  folderName: string;
   name: string;
   mimeType: string;
   buffer: Buffer;

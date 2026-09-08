@@ -37,6 +37,12 @@ import {
   extractMentionTokens,
   resolveMentions as resolveVaultMentions,
 } from "../internal/vault/service";
+import type { ResolvedMention as VaultResolvedMention } from "../internal/vault/types";
+import {
+  parkVaultMentions,
+  persistVaultEdits,
+  withVaultMount,
+} from "../internal/vault/mount";
 import {
   getWorkspace,
   liveWorkspaceRoot,
@@ -56,6 +62,7 @@ interface ChatFile {
   name: string;
   mimetype: string;
   buffer: Buffer;
+  vaultFileId?: string;
 }
 
 /**
@@ -162,18 +169,25 @@ async function chatMentions(
   explicit: readonly string[],
   userId: string | undefined,
   threadId: string,
-): Promise<{ files: ChatFile[]; notes: string[] }> {
+): Promise<{
+  files: ChatFile[];
+  notes: string[];
+  vaultFiles: VaultResolvedMention[];
+}> {
   // An explicit `mentions[]` is authoritative — the client knows which
   // suggestion the human picked. Scanning the text is the fallback for
   // clients that only send the message.
   const tokens = [
     ...new Set([...explicit, ...extractMentionTokens(message)]),
   ];
-  if (tokens.length === 0) return { files: [], notes: [] };
+  if (tokens.length === 0) {
+    return { files: [], notes: [], vaultFiles: [] };
+  }
 
   if (!userId) {
     return {
       files: [],
+      vaultFiles: [],
       notes: [
         `[Mentions ${tokens.join(", ")} could not be read: this chat request is not signed in. Tell the human to attach the file directly instead.]`,
       ],
@@ -187,11 +201,20 @@ async function chatMentions(
   const projects = await resolveWorkspaceMentions(userId, workspace);
 
   return {
-    files: [...vault.files, ...stored.files, ...projects.files].map((file) => ({
-      name: file.name,
-      mimetype: file.mimeType,
-      buffer: file.buffer,
-    })),
+    files: [
+      ...vault.files.map((file) => ({
+        name: file.name,
+        mimetype: file.mimeType,
+        buffer: file.buffer,
+        vaultFileId: file.id,
+      })),
+      ...[...stored.files, ...projects.files].map((file) => ({
+        name: file.name,
+        mimetype: file.mimeType,
+        buffer: file.buffer,
+      })),
+    ],
+    vaultFiles: vault.files,
     notes: [
       ...vault.unresolved.map(
         (item) =>
@@ -276,8 +299,9 @@ function workspaceDirective(name: string, root: string): string {
     `ls, read_file, glob, and grep from / see this folder (e.g. ls /internal/handler/voting or glob **/*.go). ` +
     `Do not pass ${root}/… — use /path/from/repo/root. ` +
     `If a name is wrong, ls the parent; spelling and case may differ (e.g. Redme.md). ` +
-    `/artifacts/*.md is still virtual phase scratch (write_file). /resources is skills. ` +
-    `workspace_ls / workspace_read / workspace_grep also work with relative paths.`
+    `/artifacts/*.md is still virtual phase scratch (write_file). ` +
+    `Mentioned vault files are at /vault/folder/file and can be edited with edit_file / write_file. ` +
+    `/resources is skills. workspace_ls / workspace_read / workspace_grep also work with relative paths.`
   );
 }
 
@@ -334,7 +358,7 @@ async function chatHandler(
 
   try {
     const message: string = req.body.message ?? "";
-    const uploads = ((req.files ?? []) as Express.Multer.File[]).map(
+    const uploads: ChatFile[] = ((req.files ?? []) as Express.Multer.File[]).map(
       (file) => ({
         name: file.originalname,
         mimetype: file.mimetype,
@@ -359,12 +383,21 @@ async function chatHandler(
       req.userId,
       threadId,
     );
+    const vaultParked = req.userId
+      ? parkVaultMentions(req.userId, mentioned.vaultFiles)
+      : parkVaultMentions("", []);
     const incoming = [...uploads, ...mentioned.files];
     const csvs = incoming.filter(isCsvFile);
-    const otherFiles = incoming.filter((file) => !isCsvFile(file));
+    const otherFiles = incoming.filter(
+      (file) =>
+        !isCsvFile(file) &&
+        !(file.vaultFileId && vaultParked.fileIds.has(file.vaultFileId)),
+    );
     const parked = await parkPvtCases(csvs);
+    const seededFiles = { ...parked.files, ...vaultParked.files };
     const content = toContentBlocks(message, otherFiles, [
       ...mentioned.notes,
+      ...vaultParked.notes,
       ...parked.notes,
       ...(workspace
         ? [workspaceDirective(workspace.name, workspace.path)]
@@ -401,33 +434,35 @@ async function chatHandler(
     let result;
     try {
       result = await withWorkspaceRoot(workspace?.path, () =>
-        agentFor(model).invoke(
-          {
-            messages: [new HumanMessage({ content })],
-            ...(Object.keys(parked.files).length > 0
-              ? { files: parked.files }
-              : {}),
-          },
-          {
-            configurable: {
-              thread_id: threadId,
-              userId: req.userId,
-              ...(workspace
-                ? {
-                    workspaceId: workspace.id,
-                    workspaceRoot: workspace.path,
-                  }
+        withVaultMount(vaultParked.mount, () =>
+          agentFor(model).invoke(
+            {
+              messages: [new HumanMessage({ content })],
+              ...(Object.keys(seededFiles).length > 0
+                ? { files: seededFiles }
                 : {}),
             },
-            recursionLimit: config.agent.recursionLimit,
-            signal: abort.signal,
-            /**
-             * deepagents' `task` tool spreads this config into the subagent
-             * invoke, so the collector sees the specialists' completions too —
-             * which is where nearly all of the tokens are spent.
-             */
-            callbacks: [usage.handler],
-          },
+            {
+              configurable: {
+                thread_id: threadId,
+                userId: req.userId,
+                ...(workspace
+                  ? {
+                      workspaceId: workspace.id,
+                      workspaceRoot: workspace.path,
+                    }
+                  : {}),
+              },
+              recursionLimit: config.agent.recursionLimit,
+              signal: abort.signal,
+              /**
+               * deepagents' `task` tool spreads this config into the subagent
+               * invoke, so the collector sees the specialists' completions too —
+               * which is where nearly all of the tokens are spent.
+               */
+              callbacks: [usage.handler],
+            },
+          ),
         ),
       );
     } catch (err) {
@@ -481,6 +516,11 @@ async function chatHandler(
          * process; the next signed-in turn can retry.
          */
         console.error("Failed to persist artifacts:", err);
+      }
+      try {
+        await persistVaultEdits(vaultParked.mount, result);
+      } catch (err) {
+        console.error("Failed to persist vault edits:", err);
       }
     }
 

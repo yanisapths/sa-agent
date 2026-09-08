@@ -54,11 +54,12 @@ function createBackend(): CompositeBackend {
   });
 }
 
-/** Orchestrator may write phase artifacts only — never the product repo. */
+/** Orchestrator may write phase artifacts and mentioned vault files — never the product repo. */
 const ORCHESTRATOR_FS_PERMISSIONS: FilesystemPermission[] = [
   { operations: ["write"], paths: ["/artifacts/**"], mode: "allow" },
   { operations: ["write"], paths: ["/large_tool_results/**"], mode: "allow" },
   { operations: ["write"], paths: ["/conversation_history/**"], mode: "allow" },
+  { operations: ["write"], paths: ["/vault/**"], mode: "allow" },
   { operations: ["write"], paths: ["/**"], mode: "deny" },
 ];
 

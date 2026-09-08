@@ -1,9 +1,14 @@
 import { createMiddleware } from "langchain";
+import { resolveVaultBackendPath } from "../../internal/vault/mount";
 
 /**
  * Deep Agents filesystem tools require virtual absolute paths (`/src/foo`).
  * Models often reuse relative hits from workspace_grep (`src/foo`), which
  * then fail in permission `validatePath` before the backend runs.
+ *
+ * Mentioned vault files also live at `/vault/folder/file`. Rewrite
+ * `/voting/schema.sql` and `@voting/schema.sql` onto that mount so write
+ * permissions see an allowed path instead of denying the product tree.
  */
 const FS_TOOLS = new Set([
   "ls",
@@ -25,6 +30,13 @@ export function toAbsoluteVirtualPath(raw: string): string {
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
+function normalizeFsPath(raw: string): string {
+  const vault = resolveVaultBackendPath(raw);
+  if (vault) return vault;
+  const stripped = raw.trim().replace(/^@/, "");
+  return toAbsoluteVirtualPath(stripped);
+}
+
 function normalizeArgs(
   args: Record<string, unknown>,
 ): Record<string, unknown> | null {
@@ -33,7 +45,7 @@ function normalizeArgs(
   for (const key of PATH_KEYS) {
     const value = next[key];
     if (typeof value !== "string" || value.length === 0) continue;
-    const normalized = toAbsoluteVirtualPath(value);
+    const normalized = normalizeFsPath(value);
     if (normalized === value) continue;
     next[key] = normalized;
     changed = true;

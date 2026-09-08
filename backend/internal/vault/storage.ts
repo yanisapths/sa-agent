@@ -35,10 +35,11 @@ export async function uploadVaultObject(
   objectKey: string,
   body: Buffer,
   contentType: string,
+  options: { upsert?: boolean } = {},
 ): Promise<void> {
   const { error } = await vaultBucket().upload(objectKey, body, {
     contentType,
-    upsert: false,
+    upsert: options.upsert ?? false,
   });
   throwIfError(error);
 }

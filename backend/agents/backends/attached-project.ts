@@ -13,6 +13,11 @@ import {
   resolveInsideRoot,
   WorkspacePathError,
 } from "../../internal/workspace/paths";
+import {
+  currentVaultMount,
+  resolveVaultBackendPath,
+  VAULT_MOUNT,
+} from "../../internal/vault/mount";
 import { currentWorkspaceRoot } from "../../internal/workspace/runtime";
 
 /**
@@ -23,6 +28,7 @@ const STATE_PREFIXES = [
   "/artifacts",
   "/large_tool_results",
   "/conversation_history",
+  VAULT_MOUNT,
 ] as const;
 
 const disks = new Map<string, FilesystemBackend>();
@@ -101,6 +107,10 @@ export class AttachedProjectBackend {
     if (isStatePath(filePath)) {
       return { backend: this.state, path: filePath };
     }
+    const vaultPath = resolveVaultBackendPath(filePath);
+    if (vaultPath) {
+      return { backend: this.state, path: vaultPath };
+    }
     const root = attachedRoot();
     if (!root) {
       return { backend: this.state, path: filePath };
@@ -117,12 +127,16 @@ export class AttachedProjectBackend {
     const result = await Promise.resolve(target.backend.ls(target.path));
     if (result.error || !result.files) return result;
     const files = result.files.filter((file) => !ignoredPath(file.path));
-    if (
-      (path === "/" || path === "") &&
-      target.root &&
-      !files.some((file) => file.path === "/artifacts/")
-    ) {
-      files.unshift({ path: "/artifacts/", is_dir: true });
+    if (path === "/" || path === "") {
+      if (target.root && !files.some((file) => file.path === "/artifacts/")) {
+        files.unshift({ path: "/artifacts/", is_dir: true });
+      }
+      if (
+        currentVaultMount()?.files.length &&
+        !files.some((file) => file.path === `${VAULT_MOUNT}/`)
+      ) {
+        files.unshift({ path: `${VAULT_MOUNT}/`, is_dir: true });
+      }
     }
     return { files };
   }

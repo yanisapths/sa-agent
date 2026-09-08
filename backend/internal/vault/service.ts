@@ -337,6 +337,53 @@ export async function deleteFile(
   return { id: fileId };
 }
 
+/** Overwrite an existing vault object's bytes. Used when the agent edits a mention. */
+export async function updateFile(
+  userId: string,
+  fileId: string,
+  content: Buffer,
+): Promise<VaultFileResponse> {
+  if (content.length > config.vault.maxFileBytes) {
+    throw new HttpError(413, "File exceeds 20MB limit");
+  }
+
+  const supabase = getSupabase();
+  const { data: file, error } = await supabase
+    .from(FILES)
+    .select("*")
+    .eq("id", fileId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  throwIfError(error);
+  if (!file) throw new HttpError(404, "File not found");
+
+  const row = file as VaultFileRow;
+  try {
+    await uploadVaultObject(row.storage_path, content, row.mime_type, {
+      upsert: true,
+    });
+  } catch {
+    await removeVaultObjects([row.storage_path]).catch(() => undefined);
+    await uploadVaultObject(row.storage_path, content, row.mime_type, {
+      upsert: true,
+    });
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from(FILES)
+    .update({ size: content.length })
+    .eq("id", fileId)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+  throwIfError(updateError);
+
+  return toFileResponse(
+    (updated ?? { ...row, size: content.length }) as VaultFileRow,
+  );
+}
+
 /**
  * Mention resolution for the chat route.
  *
@@ -387,10 +434,13 @@ export async function resolveMentions(
 
   const folders = await listFoldersWithRows(userId);
   const byFile = new Map<string, { folder: string; row: VaultFileRow }>();
-  const byFolder = new Map<string, VaultFileRow[]>();
+  const byFolder = new Map<string, { name: string; rows: VaultFileRow[] }>();
 
   for (const { folder, rows } of folders) {
-    byFolder.set(toMentionToken(folder.name).toLowerCase(), rows);
+    byFolder.set(toMentionToken(folder.name).toLowerCase(), {
+      name: folder.name,
+      rows,
+    });
     for (const row of rows) {
       byFile.set(toMentionToken(folder.name, row.name).toLowerCase(), {
         folder: folder.name,
@@ -400,39 +450,39 @@ export async function resolveMentions(
   }
 
   /** Carries the token the human typed, so a refusal names what they wrote. */
-  const queued: { token: string; row: VaultFileRow }[] = [];
+  const queued: { token: string; folderName: string; row: VaultFileRow }[] = [];
   const seen = new Set<string>();
 
-  const enqueue = (token: string, row: VaultFileRow) => {
+  const enqueue = (token: string, folderName: string, row: VaultFileRow) => {
     if (seen.has(row.id)) return;
     seen.add(row.id);
-    queued.push({ token, row });
+    queued.push({ token, folderName, row });
   };
 
   for (const token of tokens) {
     const key = token.toLowerCase();
     const file = byFile.get(key);
     if (file) {
-      enqueue(token, file.row);
+      enqueue(token, file.folder, file.row);
       continue;
     }
 
-    const folderFiles = byFolder.get(key);
-    if (!folderFiles) {
+    const folderHit = byFolder.get(key);
+    if (!folderHit) {
       unresolved.push({ token, reason: "no such file or folder in the vault" });
       continue;
     }
-    if (folderFiles.length === 0) {
+    if (folderHit.rows.length === 0) {
       unresolved.push({ token, reason: "folder is empty" });
       continue;
     }
-    for (const row of folderFiles) {
-      enqueue(`${token}/${row.name}`, row);
+    for (const row of folderHit.rows) {
+      enqueue(`${token}/${row.name}`, folderHit.name, row);
     }
   }
 
   let total = 0;
-  for (const { token, row } of queued) {
+  for (const { token, folderName, row } of queued) {
     if (files.length >= MAX_MENTION_FILES) {
       unresolved.push({
         token,
@@ -454,6 +504,8 @@ export async function resolveMentions(
 
     files.push({
       token,
+      id: row.id,
+      folderName,
       name: row.name,
       mimeType: row.mime_type,
       buffer: await downloadVaultObject(row.storage_path),
