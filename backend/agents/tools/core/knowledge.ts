@@ -31,7 +31,7 @@ export async function getDocPage(paths: string[]): Promise<string> {
     if (unique.length === 0) {
       return "get_doc_page requires at least one documentation path from search_docs.";
     }
-    const selected = unique.slice(0, 3);
+    const selected = unique.slice(0, 8);
     const pages = await Promise.all(selected.map((path) => mintlifyPage(path)));
     return pages.map(formatPage).join("\n\n---\n\n");
   });

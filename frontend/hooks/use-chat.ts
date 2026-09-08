@@ -1,13 +1,22 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { UIMessage, UIPart } from "@/components/chat-message";
 import { Attachment } from "@/components/chat-input";
 import { useChatSession } from "@/features/chat-session/ChatSessionProvider";
 import { type ChatUsage } from "@/features/gateway/types";
+import { type ChatArtifact as StoredArtifact } from "@/features/artifacts/types";
 import { AGENT_API, VAULT_TOKEN } from "@/lib/api";
 import { type ChatArtifact } from "@/lib/chat-response";
-
-type Status = "idle" | "submitted" | "streaming" | "error";
-const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+import {
+  asUsage,
+  isBusyStatus,
+  mergeStep,
+  readSse,
+  type ChatLiveStatus,
+  type HitlDecision,
+  type InterruptPayload,
+  type ThoughtStep,
+  type ValuesPayload,
+} from "@/lib/chat-stream";
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
@@ -295,20 +304,103 @@ function phaseFromTurn(
   return fromFile ?? null;
 }
 
+function artifactToPart(
+  type: string,
+  payload: ChatArtifact & Record<string, string | undefined>,
+): UIPart {
+  if (type === "sql") {
+    return {
+      type: "sql",
+      text: payload.sql ?? "",
+      query: payload.sql ?? "",
+      reasoning: payload.reasoning ?? "",
+    } as UIPart;
+  }
+  if (type === "code") {
+    return {
+      type: "code",
+      text: payload.code ?? "",
+      language: payload.language ?? "text",
+      filename: payload.filename ?? "",
+      title: payload.title ?? "",
+      description: payload.description ?? "",
+      code: payload.code ?? payload.content ?? "",
+    } as UIPart;
+  }
+  if (type === "api_spec") {
+    return {
+      type: "api_spec",
+      text: "",
+      title: payload.title ?? "",
+      version: payload.version ?? "",
+      method: (payload.method ?? "GET").toUpperCase(),
+      endpoint: payload.endpoint ?? "",
+      description: payload.description ?? "",
+      auth: payload.auth ?? "",
+      parameters: payload.parameters ?? [],
+      responses: payload.responses ?? {},
+      componentSchemas: payload.componentSchemas ?? {},
+      notes: payload.notes ?? [],
+    } as UIPart;
+  }
+  if (type === "diagram") {
+    return {
+      type: "diagram",
+      text: "",
+      diagramType: payload.diagramType ?? "sequenceDiagram",
+      title: payload.title ?? "",
+      content: payload.content ?? "",
+    } as UIPart;
+  }
+
+  let rawText: string =
+    typeof payload.text === "string"
+      ? payload.text
+      : typeof payload.outputs_preview === "string"
+        ? payload.outputs_preview.replace(/^ai:\s*/i, "")
+        : JSON.stringify(payload, null, 2);
+  rawText = rawText.replace(/^ai:\s*/i, "").trim();
+  return parseMarkdownApiSpec(rawText) ?? ({ type: "text", text: rawText } as UIPart);
+}
+
+function authHeaders(): Headers {
+  const headers = new Headers();
+  if (VAULT_TOKEN) headers.set("Authorization", `Bearer ${VAULT_TOKEN}`);
+  headers.set("Accept", "text/event-stream");
+  return headers;
+}
+
+function patchAssistant(
+  setMessages: Dispatch<SetStateAction<UIMessage[]>>,
+  assistantId: string,
+  patch: Partial<UIMessage> | ((current: UIMessage) => UIMessage),
+): void {
+  setMessages((prev) => {
+    const next = [...prev];
+    const at = next.findIndex((item) => item.id === assistantId);
+    if (at === -1) return prev;
+    const current = next[at];
+    next[at] =
+      typeof patch === "function"
+        ? patch(current)
+        : { ...current, ...patch };
+    return next;
+  });
+}
+
 export const useChat = () => {
   const [messages, setMessages] = useState<UIMessage[]>([]);
-  const [status, setStatus] = useState<Status>("idle");
+  const [status, setStatus] = useState<ChatLiveStatus>("idle");
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [pinnedPhase, setPinnedPhase] = useState<string | undefined>();
   const { setLive, settleTurn } = useChatSession();
 
-  /** In-flight request, so Stop can cancel it. */
   const abortRef = useRef<AbortController | null>(null);
-  /**
-   * The typewriter below runs after the response has fully arrived, so aborting
-   * the fetch cannot stop it. Each turn takes a ticket and checks it every
-   * frame; Stop and the next send both invalidate the ticket.
-   */
   const turnRef = useRef(0);
+  const assistantIdRef = useRef<string | null>(null);
+  const threadRef = useRef<string | null>(null);
+  const phaseRef = useRef<string | undefined>(undefined);
+  const onSettledRef = useRef<(() => void) | undefined>(undefined);
 
   const stop = useCallback(() => {
     turnRef.current += 1;
@@ -317,6 +409,187 @@ export const useChat = () => {
     setStatus("idle");
     setLive({ status: "idle" });
   }, [setLive]);
+
+  const consumeStream = useCallback(
+      async (
+      res: Response,
+      assistantId: string,
+      turn: number,
+      requestedPhase?: string,
+    ): Promise<"waiting" | "done" | "error"> => {
+      if (turn !== turnRef.current) return "done";
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("text/event-stream")) {
+        const json = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          threadId?: string;
+          type?: string;
+          data?: ChatArtifact;
+          artifacts?: StoredArtifact[];
+          usage?: ChatUsage;
+        };
+        if (!res.ok || json?.ok === false) {
+          const detail =
+            typeof json?.error === "string" && json.error
+              ? json.error
+              : `Request failed (${res.status})`;
+          patchAssistant(setMessages, assistantId, {
+            parts: [{ type: "text", text: detail }],
+            usage: json.usage,
+          });
+          setStatus("error");
+          setLive({
+            status: "error",
+            phase: json.usage?.phase ?? requestedPhase ?? null,
+          });
+          return "error";
+        }
+        if (typeof json.threadId === "string" && json.threadId) {
+          setThreadId(json.threadId);
+          threadRef.current = json.threadId;
+        }
+        const payload = (json.data ?? {}) as ChatArtifact &
+          Record<string, string | undefined>;
+        const part = artifactToPart(json.type ?? payload.type ?? "text", payload);
+        patchAssistant(setMessages, assistantId, {
+          parts: [part],
+          usage: json.usage,
+          artifacts: json.artifacts,
+        });
+        const nextPhase = phaseFromTurn(
+          json.usage,
+          (json.artifacts ?? []) as { phase?: string | null }[],
+          requestedPhase,
+        );
+        setStatus("idle");
+        settleTurn({
+          ok: true,
+          threadId: threadRef.current,
+          phase: nextPhase,
+        });
+        return "done";
+      }
+
+      let outcome: "waiting" | "done" | "error" = "done";
+      await readSse(res, (event, data) => {
+        if (turn !== turnRef.current) return;
+        if (event === "thread") {
+          const id = (data as { threadId?: string }).threadId;
+          if (id) {
+            setThreadId(id);
+            threadRef.current = id;
+            setLive({
+              status: "streaming",
+              threadId: id,
+              phase: requestedPhase ?? null,
+            });
+          }
+          return;
+        }
+        if (event === "messages") {
+          const text = (data as { text?: string }).text ?? "";
+          setStatus("streaming");
+          patchAssistant(setMessages, assistantId, (current) => ({
+            ...current,
+            parts: [{ type: "text", text }],
+          }));
+          return;
+        }
+        if (event === "step") {
+          const step = data as ThoughtStep;
+          setStatus((prev) => (prev === "waiting" ? prev : "streaming"));
+          patchAssistant(setMessages, assistantId, (current) => ({
+            ...current,
+            steps: mergeStep(current.steps ?? [], step),
+          }));
+          return;
+        }
+        if (event === "interrupt") {
+          const interrupt = data as InterruptPayload;
+          setStatus("waiting");
+          setLive({
+            status: "waiting",
+            threadId: threadRef.current,
+            phase: requestedPhase ?? null,
+          });
+          patchAssistant(setMessages, assistantId, (current) => ({
+            ...current,
+            interrupt,
+            steps: (interrupt.actionRequests ?? []).reduce(
+              (steps, action, index) =>
+                mergeStep(steps, {
+                  id: `plan:${index}:${action.name}`,
+                  name: action.name,
+                  args: action.args,
+                  status: "waiting",
+                  ns: [],
+                  permission: "interrupt",
+                  costHint: action.costHint,
+                }),
+              current.steps ?? [],
+            ),
+          }));
+          return;
+        }
+        if (event === "values") {
+          const payload = data as ValuesPayload;
+          const part = artifactToPart(
+            payload.type,
+            payload.data as ChatArtifact & Record<string, string | undefined>,
+          );
+          patchAssistant(setMessages, assistantId, {
+            parts: [part],
+            artifacts: payload.artifacts,
+            interrupt: undefined,
+          });
+          return;
+        }
+        if (event === "usage") {
+          const usage = asUsage(data);
+          if (usage) {
+            patchAssistant(setMessages, assistantId, { usage });
+          }
+          return;
+        }
+        if (event === "error") {
+          const message =
+            typeof (data as { error?: string }).error === "string"
+              ? (data as { error: string }).error
+              : "Agent failed.";
+          patchAssistant(setMessages, assistantId, {
+            parts: [{ type: "text", text: message }],
+          });
+          setStatus("error");
+          setLive({ status: "error", phase: requestedPhase ?? null });
+          outcome = "error";
+          return;
+        }
+        if (event === "done") {
+          const done = data as { status?: string };
+          if (done.status === "waiting") {
+            setStatus("waiting");
+            setLive({
+              status: "waiting",
+              threadId: threadRef.current,
+              phase: requestedPhase ?? null,
+            });
+            outcome = "waiting";
+            return;
+          }
+          setStatus("idle");
+          settleTurn({
+            ok: true,
+            threadId: threadRef.current,
+            phase: phaseFromTurn(undefined, [], requestedPhase),
+          });
+          outcome = "done";
+        }
+      });
+      return outcome;
+    },
+    [setLive, settleTurn],
+  );
 
   const sendMessage = async ({
     text,
@@ -330,19 +603,13 @@ export const useChat = () => {
     text: string;
     attachments?: Attachment[];
     mentions?: string[];
-    /** Gateway model id; omit to use the server's configured default. */
     model?: string | null;
-    /** Phase specialist to pin; omit to let the router choose. */
     phase?: string;
-    /** Registered local project folder for this turn. */
     workspaceId?: string;
-    /** Runs when the turn finishes, however it finishes. */
     onSettled?: () => void;
   }) => {
     const parts: UIPart[] = [];
-
     if (text) parts.push({ type: "text", text });
-
     attachments.forEach((att) => {
       if (att.isImage && att.preview) {
         parts.push({
@@ -361,11 +628,25 @@ export const useChat = () => {
       role: "user",
       parts,
     };
+    const assistantId = crypto.randomUUID();
+    assistantIdRef.current = assistantId;
+    onSettledRef.current = onSettled;
+    phaseRef.current = phase;
+    setPinnedPhase(phase);
 
     turnRef.current += 1;
     const turn = turnRef.current;
 
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+      {
+        id: assistantId,
+        role: "assistant",
+        parts: [],
+        steps: [],
+      },
+    ]);
     setStatus("submitted");
     setLive({ status: "submitted", phase: phase ?? null, threadId });
 
@@ -382,207 +663,97 @@ export const useChat = () => {
       if (phase) formData.append("phase", phase);
       if (workspaceId) formData.append("workspaceId", workspaceId);
 
-      // Same bearer the vault uses. Chat itself does not require auth; this is
-      // what lets the backend resolve `@folder/file` mentions to real bytes.
-      const headers = new Headers();
-      if (VAULT_TOKEN) headers.set("Authorization", `Bearer ${VAULT_TOKEN}`);
-
       const res = await fetch(`${AGENT_API}/chat`, {
         method: "POST",
-        headers,
+        headers: authHeaders(),
         body: formData,
         signal: abort.signal,
       });
 
-      const json = await res.json();
-
-      /**
-       * The backend answers errors as `{ ok: false, error }` — a timeout, a
-       * recursion cap, a rejected model. Surfacing them is what makes Stop and
-       * the 180s cap legible instead of a reply that never arrives.
-       */
-      if (!res.ok || json?.ok === false) {
-        const detail =
-          typeof json?.error === "string" && json.error
-            ? json.error
-            : `Request failed (${res.status})`;
-        if (turn === turnRef.current) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: crypto.randomUUID(),
-              role: "assistant",
-              parts: [{ type: "text", text: detail } as UIPart],
-              /** A timed-out or capped turn still spent tokens; show them. */
-              usage: json?.usage,
-            },
-          ]);
-          setStatus("error");
-          setLive({
-            status: "error",
-            phase: json?.usage?.phase ?? phase ?? null,
-          });
-        }
-        return;
-      }
-
-      if (typeof json.threadId === "string" && json.threadId) {
-        setThreadId(json.threadId);
-      }
-      const nextThreadId =
-        typeof json.threadId === "string" && json.threadId
-          ? json.threadId
-          : threadId;
-      const assistantId = crypto.randomUUID();
-      const usage: ChatUsage | undefined = json.usage;
-      const artifacts = Array.isArray(json.artifacts) ? json.artifacts : [];
-      const nextPhase = phaseFromTurn(usage, artifacts, phase);
-
-      const payload = (json.data ?? json) as ChatArtifact & Record<string, string | undefined>;
-      const type: string = json.type ?? payload.type ?? "text";
-
-      let part: UIPart;
-
-      if (type === "sql") {
-        part = {
-          type: "sql",
-          text: payload.sql ?? "",
-          query: payload.sql ?? "",
-          reasoning: payload.reasoning ?? "",
-        } as UIPart;
-      } else if (type === "code") {
-        part = {
-          type: "code",
-          text: payload.code ?? "",
-          language: payload.language ?? "text",
-          filename: payload.filename ?? "",
-          title: payload.title ?? "",
-          description: payload.description ?? "",
-          code: payload.code ?? payload.content ?? "",
-        } as UIPart;
-      } else if (type === "api_spec") {
-        part = {
-          type: "api_spec",
-          text: "",
-          title: payload.title ?? "",
-          version: payload.version ?? "",
-          method: (payload.method ?? "GET").toUpperCase(),
-          endpoint: payload.endpoint ?? "",
-          description: payload.description ?? "",
-          auth: payload.auth ?? "",
-          parameters: payload.parameters ?? [],
-          responses: payload.responses ?? {},
-          componentSchemas: payload.componentSchemas ?? {},
-          notes: payload.notes ?? [],
-        } as UIPart;
-      } else if (type === "diagram") {
-        part = {
-          type: "diagram",
-          text: "",
-          diagramType: payload.diagramType ?? "sequenceDiagram",
-          title: payload.title ?? "",
-          content: payload.content ?? "",
-        } as UIPart;
-      } else {
-        // First, extract the raw text from the response.
-        // Handle `outputs_preview` shape: "ai: # API Specification:..."
-        let rawText: string =
-          typeof payload.text === "string"
-            ? payload.text
-            : typeof payload.outputs_preview === "string"
-              ? payload.outputs_preview.replace(/^ai:\s*/i, "")
-              : JSON.stringify(payload, null, 2);
-
-        // Strip a leading "ai: " prefix that some backends include
-        rawText = rawText.replace(/^ai:\s*/i, "").trim();
-
-        // Try to parse as an API spec markdown document first
-        const specPart = parseMarkdownApiSpec(rawText);
-        if (specPart) {
-          part = specPart;
-        } else {
-          part = { type: "text", text: rawText } as UIPart;
-        }
-      }
-
-      /** A turn superseded while the response was in flight must not render. */
-      if (turn !== turnRef.current) return;
-
-      setStatus("streaming");
-      setLive({
-        status: "streaming",
-        threadId: nextThreadId,
-        phase: nextPhase,
-      });
-
-      const show = (rendered: UIPart) =>
-        setMessages((prev) => {
-          const next = [...prev];
-          const at = next.findIndex((item) => item.id === assistantId);
-          const message: UIMessage = {
-            id: assistantId,
-            role: "assistant",
-            parts: [rendered],
-            usage,
-            artifacts,
-          };
-          if (at === -1) next.push(message);
-          else next[at] = message;
-          return next;
-        });
-
-      if (part.type === "text" && part.text) {
-        const words = part.text.split(" ");
-        for (let i = 0; i < words.length; i++) {
-          if (turn !== turnRef.current) return;
-          show({ ...part, text: words.slice(0, i + 1).join(" ") });
-          await sleep(20);
-        }
-      } else {
-        show(part);
-      }
-
-      if (turn !== turnRef.current) return;
-      setStatus("idle");
-      settleTurn({
-        ok: true,
-        threadId: nextThreadId,
-        phase: nextPhase,
-      });
+      const outcome = await consumeStream(res, assistantId, turn, phase);
+      if (outcome !== "waiting") onSettled?.();
     } catch (err) {
-      /** A deliberate Stop is not a failure — `stop()` already reset status. */
       if (isAbortError(err)) return;
       console.error(err);
       if (turn === turnRef.current) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            parts: [
-              {
-                type: "text",
-                text:
-                  err instanceof Error
-                    ? `Could not reach the agent: ${err.message}`
-                    : "Could not reach the agent.",
-              } as UIPart,
-            ],
-          },
-        ]);
+        patchAssistant(setMessages, assistantId, {
+          parts: [
+            {
+              type: "text",
+              text:
+                err instanceof Error
+                  ? `Could not reach the agent: ${err.message}`
+                  : "Could not reach the agent.",
+            },
+          ],
+        });
         setStatus("error");
         setLive({ status: "error", phase: phase ?? null });
       }
+      onSettled?.();
     } finally {
       if (abortRef.current === abort) abortRef.current = null;
-      /**
-       * Unconditional: a turn the human stopped still spent tokens, and its
-       * ticket is already invalidated, so gating this on the ticket would skip
-       * the one refresh that matters most.
-       */
-      onSettled?.();
     }
   };
 
-  return { messages, sendMessage, status, stop };
+  const approvePlan = async (decisions: HitlDecision[]) => {
+    const assistantId = assistantIdRef.current;
+    const currentThread = threadRef.current ?? threadId;
+    if (!assistantId || !currentThread) return;
+
+    turnRef.current += 1;
+    const turn = turnRef.current;
+    setStatus("streaming");
+    setLive({
+      status: "streaming",
+      threadId: currentThread,
+      phase: phaseRef.current ?? null,
+    });
+    patchAssistant(setMessages, assistantId, { interrupt: undefined });
+
+    const abort = new AbortController();
+    abortRef.current = abort;
+    try {
+      const headers = authHeaders();
+      headers.set("Content-Type", "application/json");
+      const res = await fetch(`${AGENT_API}/chat/resume`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ threadId: currentThread, decisions }),
+        signal: abort.signal,
+      });
+      const outcome = await consumeStream(res, assistantId, turn, phaseRef.current);
+      if (outcome !== "waiting") onSettledRef.current?.();
+    } catch (err) {
+      if (isAbortError(err)) return;
+      console.error(err);
+      patchAssistant(setMessages, assistantId, {
+        parts: [
+          {
+            type: "text",
+            text:
+              err instanceof Error
+                ? `Could not resume: ${err.message}`
+                : "Could not resume.",
+          },
+        ],
+      });
+      setStatus("error");
+      setLive({ status: "error", phase: phaseRef.current ?? null });
+      onSettledRef.current?.();
+    } finally {
+      if (abortRef.current === abort) abortRef.current = null;
+    }
+  };
+
+  return {
+    messages,
+    sendMessage,
+    status,
+    stop,
+    approvePlan,
+    pinnedPhase,
+    busy: isBusyStatus(status),
+  };
 };
+

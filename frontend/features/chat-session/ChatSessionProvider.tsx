@@ -10,7 +10,6 @@ import {
   type ReactNode,
 } from "react";
 
-import { soundKindForPhase } from "@/features/workflow/columns";
 import {
   type ChatSessionSnapshot,
   type LiveTurnPatch,
@@ -88,26 +87,32 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setLive = useCallback((patch: LiveTurnPatch) => {
-    setSession((prev) => ({
-      ...prev,
-      threadId: patch.threadId !== undefined ? patch.threadId : prev.threadId,
-      status: patch.status,
-      phase: patch.phase !== undefined ? patch.phase : prev.phase,
-      updatedAt: Date.now(),
-    }));
+    setSession((prev) => {
+      const awaitingApproval =
+        patch.status === "waiting" && prev.status !== "waiting";
+      return {
+        ...prev,
+        threadId: patch.threadId !== undefined ? patch.threadId : prev.threadId,
+        status: patch.status,
+        phase: patch.phase !== undefined ? patch.phase : prev.phase,
+        updatedAt: Date.now(),
+        ...(awaitingApproval
+          ? { settledAt: Date.now(), soundKind: "pending" as const }
+          : {}),
+      };
+    });
   }, []);
 
   const settleTurn = useCallback((input: SettleTurnInput) => {
     setSession((prev) => {
       const phase = input.phase !== undefined ? input.phase : prev.phase;
       return {
-        threadId:
-          input.threadId !== undefined ? input.threadId : prev.threadId,
+        threadId: input.threadId !== undefined ? input.threadId : prev.threadId,
         status: input.ok ? "idle" : "error",
         phase,
         updatedAt: Date.now(),
         settledAt: Date.now(),
-        soundKind: input.ok ? soundKindForPhase(phase) : null,
+        soundKind: input.ok ? "ready" : null,
       };
     });
   }, []);

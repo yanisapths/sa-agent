@@ -10,6 +10,12 @@ import {
 } from "@/features/artifacts/service";
 import { type ChatArtifact } from "@/features/artifacts/types";
 import { UsageBadge } from "./usage-badge";
+import { ThoughtPanel } from "./thought-panel";
+import {
+  type HitlDecision,
+  type InterruptPayload,
+  type ThoughtStep,
+} from "@/lib/chat-stream";
 
 
 export type Role = "user" | "assistant";
@@ -26,6 +32,10 @@ export interface UIMessage {
   usage?: ChatUsage;
   /** Files persisted this turn for download. */
   artifacts?: ChatArtifact[];
+  /** Live tool / specialist steps for this turn. */
+  steps?: ThoughtStep[];
+  /** Pending HITL tool batch, if the graph is paused. */
+  interrupt?: InterruptPayload;
 }
 
 export interface ApiSpecPart extends UIMessagePart {
@@ -915,9 +925,15 @@ function MessagePart({ part }: { part: UIPart }) {
 export function ChatMessage({
   message,
   isStreaming = false,
+  thoughtOpen = false,
+  waiting = false,
+  onDecide,
 }: {
   message: UIMessage;
   isStreaming?: boolean;
+  thoughtOpen?: boolean;
+  waiting?: boolean;
+  onDecide?: (decisions: HitlDecision[]) => void;
 }) {
   const isUser = message.role === "user";
   return (
@@ -956,6 +972,17 @@ export function ChatMessage({
           )}
         >
           <div className="space-y-2">
+            {!isUser &&
+              ((message.steps?.length ?? 0) > 0 ||
+                (message.interrupt?.actionRequests.length ?? 0) > 0) && (
+                <ThoughtPanel
+                  steps={message.steps ?? []}
+                  interrupt={message.interrupt}
+                  open={thoughtOpen || waiting}
+                  waiting={waiting}
+                  onDecide={onDecide}
+                />
+              )}
             {message.parts?.map((part, i) => (
               <MessagePart key={i} part={part as UIPart} />
             ))}
@@ -964,34 +991,16 @@ export function ChatMessage({
             )}
             {!isUser &&
               !isStreaming &&
+              !waiting &&
               (message.artifacts?.length ?? 0) > 0 && (
                 <ArtifactChips artifacts={message.artifacts ?? []} />
               )}
           </div>
         </div>
         {/* Only once the answer is complete — a cost that ticks up mid-render reads as noise. */}
-        {!isUser && !isStreaming && message.usage && (
+        {!isUser && !isStreaming && !waiting && message.usage && (
           <UsageBadge usage={message.usage} />
         )}
-      </div>
-    </div>
-  );
-}
-
-export function TypingIndicator() {
-  return (
-    <div className="flex gap-3 px-4 py-4">
-      <div className="w-7 h-7 rounded-full bg-light/10 dark:bg-light/15 border border-light/40 flex items-center justify-center">
-        <Bot className="w-3.5 h-3.5 text-primary dark:text-light" />
-      </div>
-      <div className="bg-surface border border-border rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1.5 h-10">
-        {[0, 150, 300].map((d) => (
-          <span
-            key={d}
-            className="w-1.5 h-1.5 rounded-full bg-muted animate-bounce"
-            style={{ animationDelay: `${d}ms`, animationDuration: "1.1s" }}
-          />
-        ))}
       </div>
     </div>
   );

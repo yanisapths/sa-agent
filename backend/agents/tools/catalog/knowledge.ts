@@ -19,7 +19,8 @@ export const knowledgeTools = [
     description:
       "Scan Aster documentation (Mintlify) for API contracts, endpoints, auth, " +
       "and conventions. Returns titles, paths, and short snippets only — never answer " +
-      "from snippets. Follow up with get_doc_page on the 1–3 paths that match. " +
+      "from snippets. Follow up with get_doc_page on the matching paths " +
+      "(prefer the 1–3 best hits; the tool accepts up to 8). " +
       "If results are ambiguous, search again with a narrower term (budget 4–6 docs calls).",
     schema: searchSchema,
     surfaces: KNOWLEDGE,
@@ -30,14 +31,14 @@ export const knowledgeTools = [
     description:
       "Read full Mintlify documentation pages by the `path` field from search_docs. " +
       "Pass the slug exactly (e.g. aster-admin/orch-admin-service/voting/overview) — " +
-      "no leading slash. Do not request mintlify.site URLs. Max 3 paths per call.",
+      "no leading slash. Do not request mintlify.site URLs. Up to 8 paths per call.",
     schema: z.object({
       paths: z
         .array(z.string())
         .min(1)
-        .max(3)
+        .max(8)
         .describe(
-          "Exact search_docs path slugs, e.g. aster-admin/orch-admin-service/voting/overview",
+          "Exact search_docs path slugs, e.g. aster-admin/orch-admin-service/voting/overview. Up to 8.",
         ),
     }),
     surfaces: KNOWLEDGE,

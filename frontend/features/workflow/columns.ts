@@ -1,5 +1,3 @@
-import type { SoundKind } from "@/features/chat-session/types";
-
 export type WorkflowColumnId = "building" | "validating" | "review" | "ready";
 export type WorkflowTrack = "sa" | "pvt";
 
@@ -18,15 +16,6 @@ export type WorkflowColumn = (typeof WORKFLOW_COLUMNS)[number];
 
 const SA_PHASES = new Set(["discuss", "plan", "execute", "test", "review", "ship"]);
 const PVT_PHASES = new Set(["pvt-discuss", "pvt-plan", "pvt-execute"]);
-const PENDING_PHASES = new Set([
-  "discuss",
-  "plan",
-  "execute",
-  "test",
-  "pvt-discuss",
-  "pvt-plan",
-  "pvt-execute",
-]);
 
 export const PHASE_FROM_NAME: Record<string, string> = {
   "discuss.md": "discuss",
@@ -81,11 +70,4 @@ export function columnForPhase(
   if (phase === "test") return "validating";
   if (phase === "pvt-execute") return live ? "validating" : "ready";
   return "building";
-}
-
-export function soundKindForPhase(phase: string | null): SoundKind | null {
-  if (!phase) return null;
-  if (phase === "review" || phase === "ship") return "ready";
-  if (PENDING_PHASES.has(phase)) return "pending";
-  return null;
 }

@@ -110,7 +110,9 @@ export function Workflow() {
       if (!cardTrack) continue;
       const live =
         session.threadId === file.threadId &&
-        (session.status === "submitted" || session.status === "streaming");
+        (session.status === "submitted" ||
+          session.status === "streaming" ||
+          session.status === "waiting");
       const livePhase = live ? session.phase ?? phase : phase;
       byThread.set(file.threadId, {
         threadId: file.threadId,
@@ -129,7 +131,9 @@ export function Workflow() {
 
     const live =
       Boolean(session.threadId) &&
-      (session.status === "submitted" || session.status === "streaming");
+      (session.status === "submitted" ||
+        session.status === "streaming" ||
+        session.status === "waiting");
     if (session.threadId && !byThread.has(session.threadId) && session.phase) {
       const phase = session.phase;
       const cardTrack = trackOf(phase) ?? "sa";

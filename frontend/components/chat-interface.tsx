@@ -13,7 +13,8 @@ import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
 import { Button } from "./ui/Button";
 import { Code, FileText } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChatMessage, TypingIndicator } from "./chat-message";
+import { ChatMessage } from "./chat-message";
+import { isBusyStatus } from "@/lib/chat-stream";
 
 const onboardingTags = [
   {
@@ -30,8 +31,9 @@ const onboardingTags = [
 
 export function ChatInterface() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { messages, sendMessage, status, stop } = useChat();
-  const isLoading = status === "streaming" || status === "submitted";
+  const { messages, sendMessage, status, stop, approvePlan, pinnedPhase } =
+    useChat();
+  const isLoading = isBusyStatus(status);
   const hasMessages = messages.length > 0;
   const models = useGatewayModels();
   const { refresh: refreshQuota } = useQuota();
@@ -47,7 +49,6 @@ export function ChatInterface() {
     phase?: string,
   ) => {
     if ((!text.trim() && attachments.length === 0) || isLoading) return;
-    /** Re-read the budget once the turn settles — it just moved. */
     void sendMessage({
       text,
       attachments,
@@ -73,20 +74,28 @@ export function ChatInterface() {
       <main className="flex-1 overflow-y-auto">
         {hasMessages ? (
           <div className="max-w-6xl mx-auto py-6">
-            {messages.map((message, i) => (
-              <div key={message.id} className="msg-enter">
-                <ChatMessage
-                  message={message}
-                  isStreaming={
-                    status === "streaming" &&
-                    i === messages.length - 1 &&
-                    message.role === "assistant"
-                  }
-                />
-              </div>
-            ))}
-
-            {status === "submitted" && <TypingIndicator />}
+            {messages.map((message, i) => {
+              const lastAssistant =
+                i === messages.length - 1 && message.role === "assistant";
+              return (
+                <div key={message.id} className="msg-enter">
+                  <ChatMessage
+                    message={message}
+                    isStreaming={
+                      lastAssistant &&
+                      (status === "streaming" || status === "submitted")
+                    }
+                    thoughtOpen={Boolean(pinnedPhase) || status === "waiting"}
+                    waiting={status === "waiting" && lastAssistant}
+                    onDecide={
+                      status === "waiting" && lastAssistant
+                        ? approvePlan
+                        : undefined
+                    }
+                  />
+                </div>
+              );
+            })}
 
             <div ref={messagesEndRef} />
           </div>

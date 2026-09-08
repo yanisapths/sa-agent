@@ -340,10 +340,22 @@ bun run model:build                 # graph the repo containing cwd
 
 - `POST /chat` — multipart or JSON: `message`, optional `files[]`, optional
   `threadId`, optional `model`, optional `phase`.
+- `POST /chat/resume` — JSON: `threadId`, `decisions[]` (`approve` / `edit` /
+  `reject`) after a HITL interrupt.
 
 Pass the `threadId` returned by the previous response to continue a session.
-Responses are `{ ok, threadId, type, data, usage }` where `type` is one of
-`text`, `api_spec`, `sql`, `diagram`, or `code`.
+
+**JSON** (`Accept: application/json`, the default): `{ ok, threadId, type,
+data, artifacts, usage }` where `type` is one of `text`, `api_spec`, `sql`,
+`diagram`, or `code`. Interrupts are auto-approved so non-GUI clients still
+get a finished turn.
+
+**SSE** (`Accept: text/event-stream`): events `thread`, `messages`, `step`,
+`interrupt`, `values`, `usage`, `done`, `error`. `done.status` is `complete`
+or `waiting`. A waiting turn is resumed with `POST /chat/resume` using the
+same `Accept`. Execution timeout does not include time spent waiting for
+approval. Vault and workspace mounts for the paused thread are held in
+memory for 30 minutes.
 
 **`model`.** A gateway id from `GET /v1/gateway/models`, e.g.
 `dashscope/qwen3.8-max`. Anything else is a `400` — an unknown id would

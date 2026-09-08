@@ -1,4 +1,9 @@
-export type ChatSessionStatus = "idle" | "submitted" | "streaming" | "error";
+export type ChatSessionStatus =
+  | "idle"
+  | "submitted"
+  | "streaming"
+  | "waiting"
+  | "error";
 
 export type SoundKind = "pending" | "ready";
 
