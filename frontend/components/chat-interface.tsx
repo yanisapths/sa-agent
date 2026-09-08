@@ -13,6 +13,7 @@ import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
 import { Button } from "./ui/Button";
 import { Code, FileText } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { CardStarField } from "./card-star-field/CardStarField";
 import { ChatMessage } from "./chat-message";
 import { isBusyStatus } from "@/lib/chat-stream";
 
@@ -70,8 +71,9 @@ export function ChatInterface() {
   }, [messages]);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-transparent">
-      <main className="flex-1 overflow-y-auto">
+    <div className="relative flex-1 flex flex-col h-full overflow-hidden bg-transparent">
+      <CardStarField />
+      <main className="relative z-1 flex-1 overflow-y-auto">
         {hasMessages ? (
           <div className="max-w-6xl mx-auto py-6">
             {messages.map((message, i) => {
@@ -138,7 +140,7 @@ export function ChatInterface() {
       </main>
 
       {hasMessages && (
-        <div className="bg-background/50 backdrop-blur-sm p-4 msg-enter">
+        <div className="relative z-1 bg-background/50 backdrop-blur-sm p-4 msg-enter">
           <ChatInput
             onSend={handleSend}
             isLoading={isLoading}
