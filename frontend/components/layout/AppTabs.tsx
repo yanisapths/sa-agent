@@ -11,7 +11,7 @@ const tabs = [
   { href: "/vault", label: "Vault" },
   { href: "/artifacts", label: "Artifacts" },
   { href: "/workflow", label: "Workflow" },
-  { href: "/", label: "Chat Agent" },
+  { href: "/", label: "Assistant" },
 ] as const;
 
 export function AppTabs() {

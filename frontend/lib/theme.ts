@@ -1,6 +1,6 @@
 export const asterTheme = {
   theme: "mint",
-  name: "Aster",
+  name: "Aster Assistant",
   colors: {
     primary: "#177B77",
     light: "#1AE5BC",
