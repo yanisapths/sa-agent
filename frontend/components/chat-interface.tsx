@@ -1,37 +1,41 @@
 "use client";
 
 import { useRef, useEffect, useState } from "react";
-import {
-  Attachment,
-  ChatInput,
-  sendButtonVariants,
-} from "@/components/chat-input";
+import { Attachment, ChatInput } from "@/components/chat-input";
 import { useChat } from "@/hooks/use-chat";
 import { useGatewayModels } from "@/hooks/use-gateway-models";
 import { useQuota } from "@/hooks/use-quota";
 import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
 import { Button } from "./ui/Button";
-import { Code, FileText } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
-import { ChatMessage, TypingIndicator } from "./chat-message";
+import { Code, FileText, Search } from "lucide-react";
+import { motion } from "framer-motion";
+import { CardStarField } from "./card-star-field/CardStarField";
+import { ChatMessage } from "./chat-message";
+import { isBusyStatus } from "@/lib/chat-stream";
 
 const onboardingTags = [
   {
     icon: <Code size={14} />,
     message: "SQL query",
-    textInput: "Give me SQL query for",
+    textInput: "Write a SQL query against the live schema for ",
   },
   {
     icon: <FileText size={14} />,
-    message: "API Spec",
-    textInput: "Give me API specs for",
+    message: "API spec",
+    textInput: "Give me the API specs for ",
+  },
+  {
+    icon: <Search size={14} />,
+    message: "Search docs",
+    textInput: "Search the documentation for ",
   },
 ];
 
 export function ChatInterface() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { messages, sendMessage, status, stop } = useChat();
-  const isLoading = status === "streaming" || status === "submitted";
+  const { messages, sendMessage, status, stop, approvePlan, pinnedPhase } =
+    useChat();
+  const isLoading = isBusyStatus(status);
   const hasMessages = messages.length > 0;
   const models = useGatewayModels();
   const { refresh: refreshQuota } = useQuota();
@@ -47,7 +51,6 @@ export function ChatInterface() {
     phase?: string,
   ) => {
     if ((!text.trim() && attachments.length === 0) || isLoading) return;
-    /** Re-read the budget once the turn settles — it just moved. */
     void sendMessage({
       text,
       attachments,
@@ -69,30 +72,51 @@ export function ChatInterface() {
   }, [messages]);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-transparent">
-      <main className="flex-1 overflow-y-auto">
+    <div className="relative flex-1 flex flex-col h-full overflow-hidden bg-transparent">
+      <CardStarField />
+      <main className="relative z-1 flex-1 overflow-y-auto">
         {hasMessages ? (
           <div className="max-w-6xl mx-auto py-6">
-            {messages.map((message, i) => (
-              <div key={message.id} className="msg-enter">
-                <ChatMessage
-                  message={message}
-                  isStreaming={
-                    status === "streaming" &&
-                    i === messages.length - 1 &&
-                    message.role === "assistant"
-                  }
-                />
-              </div>
-            ))}
-
-            {status === "submitted" && <TypingIndicator />}
+            {messages.map((message, i) => {
+              const lastAssistant =
+                i === messages.length - 1 && message.role === "assistant";
+              return (
+                <div key={message.id} className="msg-enter">
+                  <ChatMessage
+                    message={message}
+                    isStreaming={
+                      lastAssistant &&
+                      (status === "streaming" || status === "submitted")
+                    }
+                    thoughtOpen={Boolean(pinnedPhase) || status === "waiting"}
+                    waiting={status === "waiting" && lastAssistant}
+                    onDecide={
+                      status === "waiting" && lastAssistant
+                        ? approvePlan
+                        : undefined
+                    }
+                  />
+                </div>
+              );
+            })}
 
             <div ref={messagesEndRef} />
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full px-6 py-12 msg-enter">
-            <div className="w-full max-w-3xl mb-12">
+            <div className="mb-8 max-w-xl text-center">
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Start with a question
+              </h1>
+              <p className="mt-2 text-sm text-muted">
+                Answers are grounded in the live schema and Mintlify docs.{" "}
+                <br />
+                Pick a starter, type{" "}
+                <span className="font-medium text-foreground">/</span> for a
+                specialist, or ask in your own words.
+              </p>
+            </div>
+            <div className="w-full max-w-3xl mb-8">
               <ChatInput
                 onSend={handleSend}
                 isLoading={isLoading}
@@ -106,22 +130,22 @@ export function ChatInterface() {
               />
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap justify-center gap-2">
               {onboardingTags.map((tag, i) => (
-                <AnimatePresence key={i}>
-                  <motion.div
-                    variants={sendButtonVariants}
-                    style={{ animationDelay: `${i * 0.08}s` }}
+                <motion.div
+                  key={tag.message}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.08 }}
+                >
+                  <Button
+                    variant="outline"
+                    onClick={() => handlePromptHelpers(tag.textInput)}
                   >
-                    <Button
-                      variant="outline"
-                      onClick={() => handlePromptHelpers(tag.textInput)}
-                    >
-                      {tag.icon}
-                      {tag.message}
-                    </Button>
-                  </motion.div>
-                </AnimatePresence>
+                    {tag.icon}
+                    {tag.message}
+                  </Button>
+                </motion.div>
               ))}
             </div>
           </div>
@@ -129,7 +153,7 @@ export function ChatInterface() {
       </main>
 
       {hasMessages && (
-        <div className="bg-background/50 backdrop-blur-sm p-4 msg-enter">
+        <div className="relative z-1 bg-background/50 backdrop-blur-sm p-4 msg-enter">
           <ChatInput
             onSend={handleSend}
             isLoading={isLoading}

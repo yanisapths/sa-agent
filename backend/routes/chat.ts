@@ -8,15 +8,8 @@ import {
 } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
-import { GraphRecursionError } from "@langchain/langgraph";
-import { PHASE_OWNERS, agentFor } from "../agents";
+import { PHASE_OWNERS } from "../agents";
 import { config } from "../config";
-import {
-  lastAssistantContent,
-  normalizeArtifact,
-  stripThinking,
-  tryParseJsonObject,
-} from "../internal/artifacts";
 import { isChatModelId } from "../internal/gateway/models";
 import {
   createUsageCollector,
@@ -25,12 +18,7 @@ import {
 import { HttpError } from "../internal/httpError";
 import { isCsvFile, parkPvtCases } from "../internal/pvtCases";
 import {
-  persistPhaseArtifacts,
-  uniqueArtifacts,
-} from "../internal/artifactStore/persist";
-import {
   artifactMentionTokens,
-  listFiles as listArtifactFiles,
   resolveMentions as resolveArtifactMentions,
 } from "../internal/artifactStore/service";
 import {
@@ -38,19 +26,30 @@ import {
   resolveMentions as resolveVaultMentions,
 } from "../internal/vault/service";
 import type { ResolvedMention as VaultResolvedMention } from "../internal/vault/types";
-import {
-  parkVaultMentions,
-  persistVaultEdits,
-  withVaultMount,
-} from "../internal/vault/mount";
+import { parkVaultMentions } from "../internal/vault/mount";
 import {
   getWorkspace,
   liveWorkspaceRoot,
   resolveMentions as resolveWorkspaceMentions,
   workspaceMentionTokens,
 } from "../internal/workspace/service";
-import { withWorkspaceRoot } from "../internal/workspace/runtime";
 import { optionalAuth } from "../middleware/requireAuth";
+import {
+  finishTurn,
+  invokeAgentTurn,
+  parseDecisions,
+  resumeCommand,
+  startExecutionTimer,
+  streamAgentTurn,
+} from "../internal/chat/execute";
+import { openSse, wantsEventStream, writeSse } from "../internal/chat/events";
+import { isAbortError } from "../internal/chat/stream";
+import {
+  dropChatRun,
+  getChatRun,
+  putChatRun,
+  type ChatRunContext,
+} from "../internal/chat/run-context";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -332,14 +331,85 @@ async function usagePayload(
   collector: UsageCollector,
   model: string | undefined,
   phase: string | undefined,
-  startedAt: number,
+  durationMs: number,
 ): Promise<Record<string, unknown>> {
   return {
     model: model ?? config.model.orchestrator,
     phase: phase ?? null,
-    durationMs: Date.now() - startedAt,
+    durationMs,
     ...(await collector.totals()),
   };
+}
+
+function abortError(clientGone: boolean): HttpError {
+  return new HttpError(
+    504,
+    clientGone
+      ? "Chat cancelled."
+      : `Agent timed out after ${config.agent.invokeTimeoutMs}ms.`,
+  );
+}
+
+async function runStreamSegment(opts: {
+  req: Request;
+  res: Response;
+  input: unknown;
+  run: ChatRunContext;
+  streaming: boolean;
+}): Promise<void> {
+  const abort = new AbortController();
+  const timer = startExecutionTimer(abort);
+  const segmentStarted = Date.now();
+  let clientGone = false;
+  const onClose = () => {
+    if (opts.res.writableEnded) return;
+    clientGone = true;
+    abort.abort();
+  };
+  opts.req.on("close", onClose);
+
+  const emit = (event: Parameters<typeof writeSse>[1]) => {
+    if (opts.streaming) writeSse(opts.res, event);
+  };
+
+  try {
+    const result = await streamAgentTurn({
+      input: opts.input,
+      run: opts.run,
+      signal: abort.signal,
+      emit,
+    });
+    opts.run.executionMs += Date.now() - segmentStarted;
+    if (result.interrupted) {
+      putChatRun(opts.run);
+      const usage = await usagePayload(
+        opts.run.collector,
+        opts.run.model,
+        opts.run.phase,
+        opts.run.executionMs,
+      );
+      emit({ event: "usage", data: usage });
+      emit({ event: "done", data: { status: "waiting" } });
+      return;
+    }
+    dropChatRun(opts.run.threadId);
+    await finishTurn({ run: opts.run, values: result.values, emit });
+    const usage = await usagePayload(
+      opts.run.collector,
+      opts.run.model,
+      opts.run.phase,
+      opts.run.executionMs,
+    );
+    emit({ event: "usage", data: usage });
+    emit({ event: "done", data: { status: "complete" } });
+  } catch (err) {
+    opts.run.executionMs += Date.now() - segmentStarted;
+    if (abort.signal.aborted || isAbortError(err)) throw abortError(clientGone);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    opts.req.off("close", onClose);
+  }
 }
 
 async function chatHandler(
@@ -355,6 +425,8 @@ async function chatHandler(
   let collector: UsageCollector | undefined;
   let model: string | undefined;
   let phase: string | undefined;
+  let executionMs = 0;
+  const streaming = wantsEventStream(req.headers.accept);
 
   try {
     const message: string = req.body.message ?? "";
@@ -410,19 +482,129 @@ async function chatHandler(
     }
 
     collector = createUsageCollector(model ?? config.model.orchestrator);
-    const usage = collector;
+    const input = {
+      messages: [new HumanMessage({ content })],
+      ...(Object.keys(seededFiles).length > 0 ? { files: seededFiles } : {}),
+    };
+    const run: ChatRunContext = {
+      threadId,
+      userId: req.userId,
+      model,
+      phase,
+      workspaceRoot: workspace?.path,
+      workspaceId: workspace?.id,
+      vaultMount: vaultParked.mount,
+      startedAt,
+      executionMs: 0,
+      collector,
+      expiresAt: Date.now() + 30 * 60 * 1000,
+    };
 
-    const abort = new AbortController();
-    const timer = setTimeout(
-      () => abort.abort(),
-      config.agent.invokeTimeoutMs,
-    );
+    if (!streaming) {
+      const abort = new AbortController();
+      const timer = startExecutionTimer(abort);
+      let clientGone = false;
+      const onClose = () => {
+        if (res.writableEnded) return;
+        clientGone = true;
+        abort.abort();
+      };
+      req.on("close", onClose);
+      try {
+        const result = await invokeAgentTurn({
+          input,
+          run,
+          signal: abort.signal,
+        });
+        executionMs = Date.now() - startedAt;
+        res.json({
+          ok: true,
+          threadId,
+          type: result.type,
+          data: result.data,
+          artifacts: result.artifacts,
+          usage: await usagePayload(collector, model, phase, executionMs),
+        });
+      } catch (err) {
+        if (abort.signal.aborted || isAbortError(err)) throw abortError(clientGone);
+        throw err;
+      } finally {
+        clearTimeout(timer);
+        req.off("close", onClose);
+      }
+      return;
+    }
+
+    openSse(res);
+    writeSse(res, { event: "thread", data: { threadId } });
+    await runStreamSegment({ req, res, input, run, streaming: true });
+    if (!res.writableEnded) res.end();
+  } catch (err) {
     /**
-     * `req.destroyed` is not the signal it looks like: multer has already
-     * consumed the body by this point, so the readable side is destroyed on
-     * every request and it reads as "client gone" even when nobody left. Record
-     * the disconnect where it actually happens instead.
+     * A timeout or a step-cap stop has already been paid for, so it carries its
+     * usage rather than going to the generic error handler empty. A cancelled
+     * request has nowhere to send it — the socket is gone.
      */
+    if (err instanceof HttpError && collector) {
+      const usage = await usagePayload(
+        collector,
+        model,
+        phase,
+        executionMs || Date.now() - startedAt,
+      );
+      if (streaming && res.headersSent && !res.writableEnded) {
+        writeSse(res, { event: "error", data: { error: err.message } });
+        writeSse(res, { event: "usage", data: usage });
+        res.end();
+        return;
+      }
+      if (!res.writableEnded) {
+        res.status(err.status).json({
+          ok: false,
+          error: err.message,
+          usage,
+        });
+        return;
+      }
+      return;
+    }
+    if (streaming && res.headersSent && !res.writableEnded) {
+      const message = err instanceof Error ? err.message : "Agent failed.";
+      writeSse(res, { event: "error", data: { error: message } });
+      res.end();
+      return;
+    }
+    next(err);
+  }
+}
+
+async function resumeHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const streaming = wantsEventStream(req.headers.accept);
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const threadId = typeof body.threadId === "string" ? body.threadId.trim() : "";
+  let run: ChatRunContext | undefined;
+
+  try {
+    if (!threadId) throw new HttpError(400, "threadId is required.");
+    run = getChatRun(threadId);
+    if (!run) {
+      throw new HttpError(
+        409,
+        "No paused turn for this thread. Send a new message.",
+      );
+    }
+    const decisions = parseDecisions(body.decisions);
+    if (streaming) {
+      openSse(res);
+      writeSse(res, { event: "thread", data: { threadId } });
+    }
+    const abort = new AbortController();
+    const timer = startExecutionTimer(abort);
+    const segmentStarted = Date.now();
     let clientGone = false;
     const onClose = () => {
       if (res.writableEnded) return;
@@ -430,119 +612,100 @@ async function chatHandler(
       abort.abort();
     };
     req.on("close", onClose);
-
-    let result;
     try {
-      result = await withWorkspaceRoot(workspace?.path, () =>
-        withVaultMount(vaultParked.mount, () =>
-          agentFor(model).invoke(
-            {
-              messages: [new HumanMessage({ content })],
-              ...(Object.keys(seededFiles).length > 0
-                ? { files: seededFiles }
-                : {}),
-            },
-            {
-              configurable: {
-                thread_id: threadId,
-                userId: req.userId,
-                ...(workspace
-                  ? {
-                      workspaceId: workspace.id,
-                      workspaceRoot: workspace.path,
-                    }
-                  : {}),
-              },
-              recursionLimit: config.agent.recursionLimit,
-              signal: abort.signal,
-              /**
-               * deepagents' `task` tool spreads this config into the subagent
-               * invoke, so the collector sees the specialists' completions too —
-               * which is where nearly all of the tokens are spent.
-               */
-              callbacks: [usage.handler],
-            },
-          ),
+      if (streaming) {
+        const result = await streamAgentTurn({
+          input: resumeCommand(decisions),
+          run,
+          signal: abort.signal,
+          emit: (event) => writeSse(res, event),
+        });
+        run.executionMs += Date.now() - segmentStarted;
+        if (result.interrupted) {
+          putChatRun(run);
+          const usage = await usagePayload(
+            run.collector,
+            run.model,
+            run.phase,
+            run.executionMs,
+          );
+          writeSse(res, { event: "usage", data: usage });
+          writeSse(res, { event: "done", data: { status: "waiting" } });
+        } else {
+          dropChatRun(threadId);
+          await finishTurn({
+            run,
+            values: result.values,
+            emit: (event) => writeSse(res, event),
+          });
+          const usage = await usagePayload(
+            run.collector,
+            run.model,
+            run.phase,
+            run.executionMs,
+          );
+          writeSse(res, { event: "usage", data: usage });
+          writeSse(res, { event: "done", data: { status: "complete" } });
+        }
+        if (!res.writableEnded) res.end();
+        return;
+      }
+
+      const finished = await invokeAgentTurn({
+        input: resumeCommand(decisions),
+        run,
+        signal: abort.signal,
+      });
+      dropChatRun(threadId);
+      res.json({
+        ok: true,
+        threadId,
+        type: finished.type,
+        data: finished.data,
+        artifacts: finished.artifacts,
+        usage: await usagePayload(
+          run.collector,
+          run.model,
+          run.phase,
+          run.executionMs + (Date.now() - segmentStarted),
         ),
-      );
+      });
     } catch (err) {
-      if (abort.signal.aborted || isAbortError(err)) {
-        throw new HttpError(
-          504,
-          clientGone
-            ? "Chat cancelled."
-            : `Agent timed out after ${config.agent.invokeTimeoutMs}ms.`,
-        );
-      }
-      if (
-        err instanceof GraphRecursionError ||
-        (err instanceof Error && /recursion limit/i.test(err.message))
-      ) {
-        throw new HttpError(
-          504,
-          `Agent stopped after ${config.agent.recursionLimit} steps to prevent a retry loop.`,
-        );
-      }
+      run.executionMs += Date.now() - segmentStarted;
+      if (abort.signal.aborted || isAbortError(err)) throw abortError(clientGone);
       throw err;
     } finally {
       clearTimeout(timer);
       req.off("close", onClose);
     }
-
-    const raw = stripThinking(lastAssistantContent(result));
-    const parsed = tryParseJsonObject(raw);
-    const data = parsed?.type
-      ? normalizeArtifact(parsed)
-      : { type: "text", text: raw };
-
-    let artifacts: unknown[] = [];
-    if (req.userId) {
-      try {
-        const persisted = await persistPhaseArtifacts(
-          req.userId,
-          threadId,
-          phase,
-          result,
-          startedAt,
-        );
-        const recent = (await listArtifactFiles(req.userId, threadId)).filter(
-          (file) => Date.parse(file.updatedAt) >= startedAt - 1000,
-        );
-        artifacts = uniqueArtifacts(persisted, recent);
-      } catch (err) {
-        /**
-         * A failed persist must not swallow the turn the human already paid
-         * for. The files still exist in the agent's virtual FS for this
-         * process; the next signed-in turn can retry.
-         */
-        console.error("Failed to persist artifacts:", err);
-      }
-      try {
-        await persistVaultEdits(vaultParked.mount, result);
-      } catch (err) {
-        console.error("Failed to persist vault edits:", err);
-      }
-    }
-
-    res.json({
-      ok: true,
-      threadId,
-      type: data.type,
-      data,
-      artifacts,
-      usage: await usagePayload(collector, model, phase, startedAt),
-    });
   } catch (err) {
-    /**
-     * A timeout or a step-cap stop has already been paid for, so it carries its
-     * usage rather than going to the generic error handler empty. A cancelled
-     * request has nowhere to send it — the socket is gone.
-     */
-    if (err instanceof HttpError && collector && !res.writableEnded) {
+    const message = err instanceof Error ? err.message : "Agent failed.";
+    if (streaming && res.headersSent && !res.writableEnded) {
+      writeSse(res, { event: "error", data: { error: message } });
+      if (run) {
+        writeSse(res, {
+          event: "usage",
+          data: await usagePayload(
+            run.collector,
+            run.model,
+            run.phase,
+            run.executionMs,
+          ),
+        });
+      }
+      res.end();
+      return;
+    }
+    if (err instanceof HttpError && run && !res.writableEnded) {
       res.status(err.status).json({
         ok: false,
         error: err.message,
-        usage: await usagePayload(collector, model, phase, startedAt),
+        usage: await usagePayload(
+          run.collector,
+          run.model,
+          run.phase,
+          run.executionMs,
+        ),
       });
       return;
     }
@@ -552,11 +715,6 @@ async function chatHandler(
 
 const chat = Router();
 chat.post("/", optionalAuth, upload.array("files"), chatHandler);
-
-function isAbortError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const name = "name" in err ? String(err.name) : "";
-  return name === "AbortError" || name === "TimeoutError";
-}
+chat.post("/resume", optionalAuth, resumeHandler);
 
 export { chat };

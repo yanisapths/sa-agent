@@ -1,0 +1,144 @@
+.scene {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #030508;
+}
+
+.depth {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(
+      ellipse 48% 95% at 50% 50%,
+      #000 0%,
+      #000 42%,
+      transparent 78%
+    ),
+    radial-gradient(
+      ellipse 90% 34% at 50% -2%,
+      rgba(110, 190, 230, 0.1),
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse 90% 34% at 50% 106%,
+      rgba(70, 140, 210, 0.16),
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse 36% 90% at 8% 105%,
+      rgba(90, 160, 220, 0.05),
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 36% 90% at 104% 100%,
+      rgba(90, 160, 220, 0.05),
+      transparent 72%
+    );
+  /* radial-gradient(ellipse 18% 22% at 8% 62%, rgba(180, 90, 50, 0.08), transparent 70%); */
+}
+
+.space {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  perspective: 900px;
+  perspective-origin: 50% 46%;
+  transform-style: preserve-3d;
+  mask-image: linear-gradient(
+    90deg,
+    #000 0%,
+    #000 18%,
+    rgba(0, 0, 0, 0.35) 32%,
+    rgba(0, 0, 0, 0.08) 46%,
+    rgba(0, 0, 0, 0.04) 50%,
+    rgba(0, 0, 0, 0.08) 54%,
+    rgba(0, 0, 0, 0.35) 68%,
+    #000 82%,
+    #000 100%
+  );
+}
+
+.field {
+  position: absolute;
+  inset: -8%;
+  transform-style: preserve-3d;
+  transform-origin: 50% 50%;
+}
+
+.star {
+  position: absolute;
+  color: var(--star-color, #fff);
+  line-height: 1;
+  font-size: var(--star-size);
+  width: var(--star-size);
+  height: var(--star-size);
+  border-radius: 50%;
+  background: var(--star-color, #fff);
+  box-shadow: 0 0 calc(var(--star-size) * 1.1)
+    color-mix(in srgb, var(--star-color, #fff) 28%, transparent);
+  opacity: var(--star-opacity);
+  transform: translate(-50%, -50%) translateZ(var(--star-z));
+  animation:
+    twinkle var(--twinkle-duration) ease-in-out infinite,
+    float var(--star-duration) ease-in-out infinite;
+  animation-delay: var(--twinkle-delay), var(--star-delay);
+}
+
+.sparkle {
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  text-shadow: 0 0 6px
+    color-mix(in srgb, var(--star-color, #fff) 55%, transparent);
+}
+
+.scene.still .star {
+  animation-play-state: paused;
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: var(--star-opacity);
+    filter: brightness(1);
+  }
+
+  50% {
+    opacity: calc(var(--star-opacity) * 0.55);
+    filter: brightness(0.92);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) translate3d(0, 0, var(--star-z));
+  }
+
+  35% {
+    transform: translate(-50%, -50%)
+      translate3d(
+        var(--float-x),
+        calc(var(--float-y) * -0.6),
+        calc(var(--star-z) + var(--float-z))
+      );
+  }
+
+  68% {
+    transform: translate(-50%, -50%)
+      translate3d(
+        calc(var(--float-x) * -0.7),
+        var(--float-y),
+        calc(var(--star-z) - var(--float-z))
+      );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star {
+    animation: none;
+  }
+}

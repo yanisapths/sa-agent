@@ -93,9 +93,10 @@ No phase in this track writes to a database. `run_sql` stays read-only and
 proves the verification queries; the scripts are artifacts, and a human runs
 them. The convention lives in `skills/pvt-prep/SKILL.md`.
 
-The chat GUI is still `POST /chat`. The orchestrator returns JSON
-(`text` / `api_spec` / `sql` / `diagram` / `code`) and waits. It does not
-write the product repo. Claude Code writes `docs/sa/<phase>.md` in the
+The chat GUI sends `POST /chat` with `Accept: text/event-stream` and renders
+tokens and tool steps as they stream. `Accept: application/json` still returns
+one artifact (`text` / `api_spec` / `sql` / `diagram` / `code`). The orchestrator
+does not write the product repo. Claude Code writes `docs/sa/<phase>.md` in the
 product repo.
 
 ## The system model
@@ -272,10 +273,22 @@ live schema" list is empty or explainable. Then require every `plan.md` to
 carry an **Impact and risk** section produced by `simulate_impact`, and record
 the first decision the next time someone asks "why is it like this".
 
-### M8 — Hard HITL (optional)
+### M8 — Hard HITL + stream of thought
 
-Wire Deep Agents `interruptOn` on `task` and an Approve button on
-`POST /chat`. Until then, the prompt gate (stop and wait) is the core.
+The chat GUI sends `Accept: text/event-stream` on `POST /chat`. The agent
+**streams** (`messages`, `updates`, `values`, subgraphs) so tokens and tool
+steps appear as they run. Sensitive tools pause via Deep Agents `interruptOn`
+(`task`, writes, `record_decision`, `build_system_model`). The GUI shows the
+pending actions (args, scope, cost hint) and resumes with
+`POST /chat/resume` `{ threadId, decisions }` (`approve` / `edit` / `reject`).
+
+Read-only grounding tools auto-run. `Accept: application/json` still returns
+one `{ ok, threadId, type, data, artifacts, usage }` blob and auto-approves
+interrupts so scripts do not hang.
+
+The prompt gate (stop and wait between phases) remains the loop. HITL on
+`task` is the in-turn gate so a specialist does not start until the human
+says so.
 
 ## Adding capabilities
 

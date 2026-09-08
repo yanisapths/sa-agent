@@ -235,7 +235,7 @@ export const config = {
    */
   agent: {
     /** Graph supersteps for the orchestrator and every `task()` specialist. */
-    recursionLimit: envPositiveInt("AGENT_RECURSION_LIMIT", 24),
+    recursionLimit: envPositiveInt("AGENT_RECURSION_LIMIT", 50),
     /** Wall clock for one `/chat` invoke, including nested specialists. */
     invokeTimeoutMs: envPositiveInt("AGENT_INVOKE_TIMEOUT_MS", 180_000),
   },

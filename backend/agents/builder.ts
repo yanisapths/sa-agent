@@ -11,6 +11,7 @@ import {
 } from "deepagents";
 import { config } from "../config";
 import { AttachedProjectBackend } from "./backends/attached-project";
+import { AGENT_INTERRUPT_ON } from "./interrupt-on";
 import { normalizeVirtualFsPaths } from "./middleware/normalize-virtual-fs-paths";
 import { resolveModel } from "./model";
 import { registerGatewayHarness } from "./profile";
@@ -110,6 +111,7 @@ export function defineAgent(spec: AgentSpec) {
     subagents: spec.subagents ?? [],
     checkpointer: spec.session === false ? undefined : SESSION,
     permissions: ORCHESTRATOR_FS_PERMISSIONS,
+    interruptOn: AGENT_INTERRUPT_ON,
     // After filesystem middleware so relative read_file paths are fixed before
     // deepagents permission validatePath runs.
     middleware: [normalizeVirtualFsPaths],

@@ -1,5 +1,6 @@
 import type { FilesystemPermission, SubAgent } from "deepagents";
 import { config } from "../config";
+import { AGENT_INTERRUPT_ON } from "./interrupt-on";
 import { normalizeVirtualFsPaths } from "./middleware/normalize-virtual-fs-paths";
 import { resolveModel } from "./model";
 import { ARTIFACT } from "./paths";
@@ -308,6 +309,7 @@ function specialist(
     tools: resolveTools(row.tools) as NonNullable<SubAgent["tools"]>,
     skills: skillSources(row.skills),
     permissions: canWriteProduct ? PRODUCT_WRITES : ARTIFACT_WRITES,
+    interruptOn: AGENT_INTERRUPT_ON,
     middleware: [normalizeVirtualFsPaths],
   };
 }

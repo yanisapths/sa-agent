@@ -1,7 +1,15 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Folder, FolderGit2, PanelLeft, Plus, Trash2 } from "lucide-react";
+import {
+  BookOpen,
+  ExternalLink,
+  Folder,
+  FolderGit2,
+  PanelLeft,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -99,6 +107,40 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
               </Link>
             </TooltipTrigger>
             <TooltipContent side="right">New Chat</TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+
+      <div className={cn("px-3 pb-3", !isExpanded && "flex justify-center")}>
+        {isExpanded ? (
+          <a
+            href="https://aster-internal.mintlify.site"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sidebar-foreground hover:bg-sidebar-accent/70 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm"
+          >
+            <BookOpen className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">
+              Interactive Aster API references
+            </span>
+            <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+          </a>
+        ) : (
+          <Tooltip delayDuration={0}>
+            <TooltipTrigger asChild>
+              <a
+                href="https://aster-internal.mintlify.site"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sidebar-foreground hover:bg-sidebar-accent/70 flex h-8 w-8 items-center justify-center rounded-lg"
+                aria-label="Interactive Aster API references"
+              >
+                <BookOpen className="h-4 w-4" />
+              </a>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              Interactive Aster API references
+            </TooltipContent>
           </Tooltip>
         )}
       </div>

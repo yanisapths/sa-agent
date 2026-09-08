@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   useCallback,
+  useEffect,
   type FormEvent,
   type KeyboardEvent,
 } from "react";
@@ -66,6 +67,29 @@ export const sendButtonVariants: Variants = {
   visible: { opacity: 1, scale: 1, rotate: 0 },
   exit: { opacity: 0, scale: 0.4, rotate: -15 },
 };
+
+const ONBOARDING_HINTS = [
+  "Ask how a table or service actually works…",
+  "Search the live docs for an endpoint or flow…",
+  "Describe the SQL you need against the live schema…",
+  "Ask for API specs for a feature or service…",
+  "Type /jira plus a ticket key to load a user story…",
+  "Type / to pin Discuss, Plan, Execute, or PVT…",
+];
+
+function useRotatingHint(enabled: boolean, intervalMs = 3800) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const id = window.setInterval(() => {
+      setIndex((current) => (current + 1) % ONBOARDING_HINTS.length);
+    }, intervalMs);
+    return () => window.clearInterval(id);
+  }, [enabled, intervalMs]);
+
+  return ONBOARDING_HINTS[index];
+}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -211,13 +235,17 @@ export function ChatInput({
   const hasPills =
     attachments.length > 0 || slashCommands.length > 0 || Boolean(attached);
   const activePhase = slashCommands.find((command) => command.kind === "phase");
-  const inputPlaceholder = slashCommands.some(
-    (command) => command.token === "/jira",
-  )
+  const hasJira = slashCommands.some((command) => command.token === "/jira");
+  const rotateOnboarding =
+    !hasMessages && !placeholder && !activePhase && !hasJira;
+  const rotatingHint = useRotatingHint(rotateOnboarding);
+  const inputPlaceholder = hasJira
     ? "Ticket key, e.g. PROJ-123"
     : activePhase
       ? `What should ${activePhase.chipLabel} work on?`
-      : (placeholder ?? "How can I help you today?");
+      : (placeholder ?? rotatingHint);
+  const showRotatingHint =
+    rotateOnboarding && value.length === 0 && !isLoading;
 
   return (
     <div className="w-full">
@@ -403,15 +431,33 @@ export function ChatInput({
             )}
           </AnimatePresence>
 
-          <textarea
-            placeholder={inputPlaceholder}
-            value={value}
-            onChange={(e) => handleInputChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isLoading}
-            className="w-full min-h-[120px] resize-none border-0 bg-transparent outline-none ring-0 p-4 pb-14 text-foreground placeholder:text-muted block"
-            style={{ boxShadow: "none" }}
-          />
+          <div className="relative">
+            {showRotatingHint && (
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={inputPlaceholder}
+                  aria-hidden
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.28, ease: "easeOut" }}
+                  className="pointer-events-none absolute inset-x-4 top-4 text-muted"
+                >
+                  {inputPlaceholder}
+                </motion.span>
+              </AnimatePresence>
+            )}
+            <textarea
+              placeholder={showRotatingHint ? "" : inputPlaceholder}
+              aria-label={showRotatingHint ? inputPlaceholder : undefined}
+              value={value}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isLoading}
+              className="w-full min-h-[120px] resize-none border-0 bg-transparent outline-none ring-0 p-4 pb-14 text-foreground placeholder:text-muted block"
+              style={{ boxShadow: "none" }}
+            />
+          </div>
 
           <div className="absolute left-3 bottom-3 flex items-center gap-1">
             <Button
