@@ -9,8 +9,8 @@ skills, and (Claude Code only) subagents.
 | ------------------------------ | ------------------------------------------------------------- |
 | `.claude-plugin/plugin.json`   | Claude Code                                                   |
 | `.codex-plugin/plugin.json`    | Codex                                                         |
-| `.mcp.json`                    | Claude Code — spawns `bun` at `${SA_AGENT_HOME}`              |
-| `.mcp.codex.json`              | Codex — resolves the checkout, then runs `backend/mcp/sa-mcp` |
+| `.mcp.json`                    | Claude Code / Cursor — `sa-mcp` via `$SA_AGENT_HOME` or `~/.sa-agent/home` |
+| `.mcp.codex.json`              | Codex — same launcher, `SA_AGENT_RUNTIME=codex`               |
 | `skills/`, `hooks/`, `memory/` | both (symlinks into `../resources`)                           |
 | `agents/`                      | Claude Code only                                              |
 
@@ -45,6 +45,15 @@ Then in a Claude Code session:
 
 `SA_AGENT_HOME` must be set in the shell that launches Claude Code, or the MCP
 servers will fail to start. Confirm with `/mcp` and `claude --debug`.
+
+Cursor (and other hosts that pass MCP args verbatim) do not expand
+`${SA_AGENT_HOME}` in `.mcp.json`. Record the checkout once so `sa-mcp` can
+find it when the GUI has no zshrc env:
+
+```bash
+mkdir -p ~/.sa-agent
+echo "$SA_AGENT_HOME" > ~/.sa-agent/home
+```
 
 ## Codex
 
