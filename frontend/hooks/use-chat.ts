@@ -4,6 +4,7 @@ import { Attachment } from "@/components/chat-input";
 import { useChatSession } from "@/features/chat-session/ChatSessionProvider";
 import { type ChatUsage } from "@/features/gateway/types";
 import { AGENT_API, VAULT_TOKEN } from "@/lib/api";
+import { type ChatArtifact } from "@/lib/chat-response";
 
 type Status = "idle" | "submitted" | "streaming" | "error";
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
@@ -11,26 +12,6 @@ const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
-
-// ─── Markdown API Spec Parser ─────────────────────────────────────────────────
-//
-// Converts markdown like:
-//   # API Specification: GET Achievement List
-//   ## Endpoint
-//   ```
-//   GET /some/path
-//   ```
-//   ## Description
-//   Some text.
-//   ## Query Parameters
-//   | Parameter | Type | ... |
-//   ## Response
-//   ### Success Response (200 OK)
-//   ```json
-//   { ... }
-//   ```
-//
-// into a structured ApiSpecPart object.
 
 function parseMarkdownApiSpec(markdown: string): UIPart | null {
   // Must look like an API spec document
@@ -40,12 +21,10 @@ function parseMarkdownApiSpec(markdown: string): UIPart | null {
 
   const lines = markdown.split("\n");
 
-  // ── Title ──────────────────────────────────────────────────────────────────
   let title = "";
   const titleLine = lines.find((l) => l.startsWith("# "));
   if (titleLine) title = titleLine.replace(/^# /, "").trim();
 
-  // ── Endpoint (method + path) ───────────────────────────────────────────────
   let method = "GET";
   let endpoint = "";
 
@@ -93,7 +72,6 @@ function parseMarkdownApiSpec(markdown: string): UIPart | null {
     }
   }
 
-  // ── Description ───────────────────────────────────────────────────────────
   let description = "";
   const descSectionIdx = lines.findIndex((l) =>
     /^## description/i.test(l.trim()),
@@ -107,7 +85,6 @@ function parseMarkdownApiSpec(markdown: string): UIPart | null {
     description = descLines.join(" ");
   }
 
-  // ── Auth ───────────────────────────────────────────────────────────────────
   let auth = "";
   const authSectionIdx = lines.findIndex((l) =>
     /^## (authentication|auth|authorization)/i.test(l.trim()),
@@ -123,7 +100,6 @@ function parseMarkdownApiSpec(markdown: string): UIPart | null {
     }
   }
 
-  // ── Parameters (markdown table) ───────────────────────────────────────────
   const parameters: Record<string, unknown>[] = [];
   const paramSectionIdx = lines.findIndex((l) =>
     /^## (query parameters|parameters|request parameters)/i.test(l.trim()),
@@ -178,7 +154,6 @@ function parseMarkdownApiSpec(markdown: string): UIPart | null {
     }
   }
 
-  // ── Responses (### headings + code blocks) ────────────────────────────────
   const responses: Record<string, unknown> = {};
 
   const responseSectionIdx = lines.findIndex((l) =>
@@ -257,7 +232,6 @@ function parseMarkdownApiSpec(markdown: string): UIPart | null {
     flushCode();
   }
 
-  // ── Notes ─────────────────────────────────────────────────────────────────
   const notes: string[] = [];
   const notesSectionIdx = lines.findIndex((l) =>
     /^## (notes|note|important)/i.test(l.trim()),
@@ -291,7 +265,6 @@ function parseMarkdownApiSpec(markdown: string): UIPart | null {
   } as UIPart;
 }
 
-// ── Schema inference from a JSON example ──────────────────────────────────────
 function inferSchema(value: unknown): Record<string, unknown> {
   if (value === null) return { type: "null" };
   if (Array.isArray(value)) {
@@ -310,7 +283,6 @@ function inferSchema(value: unknown): Record<string, unknown> {
   return { type: typeof value };
 }
 
-// ─── useChat ──────────────────────────────────────────────────────────────────
 
 function phaseFromTurn(
   usage: ChatUsage | undefined,
@@ -466,7 +438,7 @@ export const useChat = () => {
       const artifacts = Array.isArray(json.artifacts) ? json.artifacts : [];
       const nextPhase = phaseFromTurn(usage, artifacts, phase);
 
-      const payload = json.data ?? json;
+      const payload = (json.data ?? json) as ChatArtifact & Record<string, string | undefined>;
       const type: string = json.type ?? payload.type ?? "text";
 
       let part: UIPart;
@@ -512,7 +484,6 @@ export const useChat = () => {
           content: payload.content ?? "",
         } as UIPart;
       } else {
-        // ── Text / markdown fallback ──────────────────────────────────────────
         // First, extract the raw text from the response.
         // Handle `outputs_preview` shape: "ai: # API Specification:..."
         let rawText: string =

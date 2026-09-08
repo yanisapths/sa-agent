@@ -14,11 +14,12 @@ agents/
   builder.ts            defineAgent() — assembles a Deep Agent from a resource spec
   harness.ts            phase loop, cheap models, specialist specs
   sa-agent.ts           cheap orchestrator; delegates via task()
-  prompt.ts             orchestrator contract (JSON for the GUI)
+  prompt.ts             orchestrator contract (generated from contract/chat-response.ts)
+  specialists/          one spec per phase; plugin agent markdown is generated
   index.ts              public exports
   resources/            what the harness mounts read-only at /resources
     AGENTS.md           memory: always loaded into the system prompt
-    mcp/                Jira MCP client + stdio server (ticket / user story)
+    mcp/                Jira REST client + remote MCP fallback
     skills/             progressive-disclosure skills, loaded on demand
       backend/          API and endpoint design
       system-analyst/   requirements, data models, SQL
@@ -36,14 +37,9 @@ agents/
     impact.ts           change simulation and the risk rubric
     decisions.ts        engineering decisions as markdown, indexed into the graph
   tools/
-    index.ts            TOOL_REGISTRY, TOOL_DEFINITIONS, resolveTools()
+    catalog/            names, descriptions, Zod schemas, surfaces, invoke
+    index.ts            LangChain TOOL_REGISTRY derived from the catalog
     core/               shared implementations used by LangChain and MCP
-    postgres.ts         LangChain wrappers for live schema tools
-    knowledge.ts        LangChain wrappers for Mintlify docs + DDL search
-    system-model.ts     LangChain wrappers for the graph and decision tools
-    jira.ts             explicit Jira MCP wrappers (ticket + user story)
-    write-files.ts      persist generated files to the Artifacts library
-    workspace.ts        LangChain wrappers for the attached local project folder
   ingest/               one-off pipelines that populate the vector store
     confluence.ts       Confluence API spec pages
     ddl.ts              a .sql DDL dump
@@ -52,7 +48,16 @@ agents/
   templates/            copy-paste starting points for new agents and skills
 
 mcp/
-  server.ts             sa-knowledge stdio MCP (Postgres + Mintlify + DDL)
+  server.ts             sa-knowledge stdio MCP (catalog surface mcp-knowledge)
+  jira.ts               jira stdio MCP (catalog surface mcp-jira)
+  runtime.ts            ListTools / CallTool from the catalog
+  sa-mcp                launcher for product-repo plugin hosts
+
+contract/
+  chat-response.ts      Zod union for POST /chat artifacts
+
+scripts/
+  surfaces.ts           generates plugin agents, MCP JSON, frontend contract
 
 database/
   postgres.ts           read-only pooled client
@@ -257,25 +262,26 @@ session state. The filesystem, planning (`write_todos`), and subagent delegation
 
 ## Adding a tool
 
-Define the implementation in `agents/tools/core/`, wrap it for LangChain in
-`agents/tools/`, register it in `TOOL_REGISTRY`, and add it to `mcp/server.ts`
-so both runtimes get it. The name is then type-checked in every `defineAgent`
-spec and in `harness.ts`.
+Implement it in `agents/tools/core/` and register one catalog row in
+`agents/tools/catalog/` (`name`, `description`, Zod `schema`, `surfaces`,
+`invoke`). LangChain and MCP are derived from that row. Grant the name on a
+phase in `harness.ts` when a specialist should call it. The name is then
+type-checked in every `defineAgent` spec.
 
 ## Adding a skill
 
 Copy `agents/templates/SKILL.template.md` to
-`agents/resources/skills/<name>/SKILL.md`. The agent reads only the frontmatter
+`agents/resources/skills/<name>/SKILL.md`. The plugin `claude/skills/` path is
+a symlink — do not copy the file. The agent reads only the frontmatter
 at startup and loads the body when a task matches the description, so write the
 description as a trigger.
 
 ## Jira MCP
 
-`get_jira_ticket` and `read_jira_user_story` talk to Jira through MCP. They are
-registered on the agent but must only be called when the user explicitly asks
-for a ticket or user story. The `jira` skill is the trigger for that path.
-
-The local stdio server lives at `agents/resources/mcp/mcp-server.ts`:
+`get_jira_ticket` and `read_jira_user_story` call Jira REST (`jira-api.ts`)
+from the same catalog used by the stdio MCP server. They must only be called
+when the user explicitly asks for a ticket or user story. The `jira` skill is
+the trigger for that path.
 
 ```bash
 bun run mcp:jira

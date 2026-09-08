@@ -1,6 +1,6 @@
 ---
 name: pvt-planner
-description: PVT test planning. Group approved PVT cases into scenarios that share one data setup and lay out the numbered script set. Use after pvt-discuss is approved. Do not write the scripts.
+description: Group approved PVT cases into scenarios that share one data setup and lay out the numbered script set. Use after pvt-discuss is approved. Do not write the scripts.
 model: haiku
 disallowedTools: Bash
 ---

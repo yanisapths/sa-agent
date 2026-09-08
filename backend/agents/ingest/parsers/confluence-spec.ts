@@ -1,6 +1,5 @@
 import { Document } from "@langchain/core/documents";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Field = {
   name: string;
@@ -35,7 +34,6 @@ type ParsedAPI = {
   responseSample: string;
 };
 
-// ─── Constants ────────────────────────────────────────────────────────────────
 
 type Section =
   | "none"
@@ -89,7 +87,6 @@ function stripColorSuffix(s: string): string {
   return s.replace(/(Green|Red|Yellow|Blue|Orange)$/i, "").trim();
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const HTTP_METHODS = "GET|POST|PUT|DELETE|PATCH";
 
@@ -124,7 +121,6 @@ function isSectionMarker(line: string): boolean {
   return SECTION_MARKERS.some((m) => m.pattern.test(line));
 }
 
-// ─── Row consumers ────────────────────────────────────────────────────────────
 
 /**
  * Request schema rows: index, name, location, type, mandatory, ?description, ?remark
@@ -312,7 +308,6 @@ function parseDatabaseSection(
   return { tables, consumed: i - startIndex };
 }
 
-// ─── Main plain-text parser ───────────────────────────────────────────────────
 
 function parsePlainText(
   content: string,
@@ -334,7 +329,6 @@ function parsePlainText(
   while (i < rawLines.length) {
     const line = rawLines[i];
 
-    // ── Section detection ──────────────────────────────────────────────────
     const sectionMatch = SECTION_MARKERS.find((m) => m.pattern.test(line));
     if (sectionMatch) {
       section = sectionMatch.section;
@@ -357,7 +351,6 @@ function parsePlainText(
       continue;
     }
 
-    // ── Per-section consumption ────────────────────────────────────────────
 
     if (section === "objective") {
       // Collect numbered objective lines: "1. Create user..." or bare text
@@ -422,7 +415,6 @@ function parsePlainText(
   };
 }
 
-// ─── Main export ──────────────────────────────────────────────────────────────
 
 export function parseConfluenceToDocuments(
   doc: Document<Record<string, any>>,
@@ -433,7 +425,6 @@ export function parseConfluenceToDocuments(
   return buildDocuments(parsed, doc.metadata);
 }
 
-// ─── Build final Documents ────────────────────────────────────────────────────
 function buildDocuments(
   parsed: ParsedAPI,
   originalMetadata: Record<string, any>,

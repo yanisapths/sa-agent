@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Review. Check the change against the plan and tests, list required refactors. Use after test is accepted. Do not ship.
+description: Review and list required refactors before ship. Use after test is accepted. Do not ship.
 model: haiku
 disallowedTools: Bash
 ---

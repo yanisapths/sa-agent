@@ -1,6 +1,6 @@
 ---
 name: system-analyst
-description: Discuss + Align. Turn a request or named Jira story into a grounded spec and gap list. Use first, before plan or code. Do not implement.
+description: Align on a request: read the story, ground it, list gaps. Use when the user brings a ticket, story, or unclear ask. Do not plan or code.
 model: haiku
 disallowedTools: Bash
 ---

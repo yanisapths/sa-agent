@@ -8,7 +8,7 @@ The core is a six-phase loop. Each phase receives declared inputs only
 (index hits, live schema, previous artifact), produces one file, and stops
 at a human gate. Distillation at phase N is what makes phase N+1 cheap.
 
-Read [`harness.ts`](../harness.ts) first. That file is the contract.
+Read [`harness.ts`](../backend/agents/harness.ts) first. That file is the contract.
 
 ## Why a harness (not one model)
 
@@ -58,7 +58,7 @@ There is no `/start` command. The artifact file **is** the interface.
 Preparing a Production Verification Test is a **second track**, not more phases
 on the first. It ends in SQL scripts another team runs against production, so
 it never reaches execute-the-code or review-the-diff. `PVT_PHASES` /
-`PVT_PHASE` in [`harness.ts`](../harness.ts).
+`PVT_PHASE` in [`harness.ts`](../backend/agents/harness.ts).
 
 ```
 [pvt-discuss] ── pvt-discuss.md ──► [pvt-plan] ── pvt-plan.md ──► [pvt-execute]
@@ -120,7 +120,7 @@ simulate_impact("orders.user_id")
                                      tests, docs, decisions
 ```
 
-It lives in [`model/`](../model) and stores to `.sa/system-model.db` in the
+It lives in [`model/`](../backend/agents/model) and stores to `.sa/system-model.db` in the
 **product** repo, next to `.sa/decisions/*.md`. The graph is derived, so it is
 gitignored; the decisions are not, so they are committed and reviewed.
 
@@ -164,11 +164,11 @@ Jira is Discuss only, and only when a ticket or story is named.
 
 ```
                     ┌──────────────────────────────────────────┐
-                    │  agents/tools/core                       │
-                    │  postgres.ts knowledge.ts system-model.ts│
+                    │  agents/tools/catalog (Zod + invoke)     │
+                    │  core/ postgres knowledge system-model   │
                     └──────────────┬──────────┬────────────────┘
                                    │          │
-              LangChain wrappers   │          │  MCP stdio
+              LangChain adapter    │          │  MCP stdio
                                    ▼          ▼
                     ┌──────────────────┐  ┌──────────────────────────┐
                     │ Deep Agent       │  │ Claude Code / Codex      │
@@ -180,7 +180,7 @@ Jira is Discuss only, and only when a ticket or story is named.
 
 ## Deep Agent (GUI / `/chat`)
 
-[`harness.ts`](../harness.ts) + [`sa-agent.ts`](../sa-agent.ts):
+[`harness.ts`](../backend/agents/harness.ts) + [`sa-agent.ts`](../backend/agents/sa-agent.ts):
 
 1. **Orchestrator model** — haiku. Tools: index + schema orientation
    (`list_tables`, `describe_tables`, `inspect_relationships`). No `run_sql`.
@@ -188,11 +188,11 @@ Jira is Discuss only, and only when a ticket or story is named.
 3. **`task`** — Deep Agents delegation. One specialist per gate.
 4. **Scratch files** — `/artifacts/*.md` on the per-thread StateBackend. When a project folder is attached, `ls` / `read_file` / `glob` / `grep` from `/` see that repo; `/artifacts` stays in state.
 5. **Memory** — `/resources/AGENTS.md` every turn.
-6. **JSON contract** — [`prompt.ts`](../prompt.ts) so the GUI still parses.
+6. **JSON contract** — [`contract/chat-response.ts`](../backend/contract/chat-response.ts); the orchestrator prompt is generated from it.
 
 ## Plugin runtimes (product repo)
 
-Plugin under [`claude/`](../claude/), installed from a marketplace manifest at
+Plugin under [`claude/`](../backend/agents/claude/), installed from a marketplace manifest at
 the repo root: `.claude-plugin/marketplace.json` for Claude Code,
 `.agents/plugins/marketplace.json` for Codex.
 
@@ -201,7 +201,7 @@ the repo root: `.claude-plugin/marketplace.json` for Claude Code,
 | `.claude-plugin/plugin.json` | plugin identity | Claude Code |
 | `.codex-plugin/plugin.json` | plugin identity + install metadata | Codex |
 | `.mcp.json` | sa-knowledge + jira, spawned at `${SA_AGENT_HOME}` | Claude Code |
-| `.mcp.codex.json` | same servers via [`mcp/sa-mcp`](../../mcp/sa-mcp) | Codex |
+| `.mcp.codex.json` | same servers via [`mcp/sa-mcp`](../backend/mcp/sa-mcp) | Codex |
 | `agents/*.md` | discuss / plan / execute / test / review, plus the three `pvt-*` | Claude Code |
 | `memory/AGENTS.md` | loop + grounding at SessionStart | both |
 | `skills/*/SKILL.md` | how each specialist works | both |
@@ -279,16 +279,27 @@ Wire Deep Agents `interruptOn` on `task` and an Approve button on
 
 ## Adding capabilities
 
-Keep both surfaces in sync:
+One edit. Generated plugin files and the frontend contract are refreshed with
+`bun run surfaces` in `backend/` (`bun run check:surfaces` fails if they drift).
 
-| Change | LangChain path | Plugin path |
-| --- | --- | --- |
-| New schema/knowledge/model tool | `tools/core` + wrappers + `TOOL_REGISTRY` + `harness.ts` | `mcp/server.ts` |
-| New node or edge kind | `model/types.ts` + the pass in `model/scan.ts` or `model/schema.ts` | same, shared core |
-| New Jira tool | `tools/jira.ts` + registry | `resources/mcp/mcp-server.ts` |
-| New skill | `resources/skills/<name>/SKILL.md` | `claude/skills/<name>/SKILL.md` |
-| Memory / loop | `resources/AGENTS.md` | `claude/memory/AGENTS.md` |
-| Phase / model | `harness.ts` + `config.ts` | `claude/agents/<name>.md` (Claude Code) |
-| New MCP server | `resources/mcp/mcp-client.ts` | `claude/.mcp.json` **and** `claude/.mcp.codex.json` |
+- **New tool** — implement in `agents/tools/core/`, add one row to
+  `agents/tools/catalog/` with `surfaces` (`langchain`, `mcp-knowledge`,
+  `mcp-jira`). LangChain and MCP pick it up from the catalog. Grant it on a
+  phase in `harness.ts` if specialists should call it.
+- **New node or edge kind** — `agents/model/types.ts` plus the pass in
+  `model/scan.ts` or `model/schema.ts`. Shared core; both runtimes call it.
+- **New Jira tool** — catalog row with `surfaces: ["langchain", "mcp-jira"]`
+  and an invoke that uses `resources/mcp/jira-api.ts`.
+- **New skill** — `agents/resources/skills/<name>/SKILL.md` only. The plugin
+  path is a symlink into that directory.
+- **Memory / loop** — `agents/resources/AGENTS.md` only (`claude/memory/` is a
+  symlink).
+- **New phase** — a specialist in `agents/specialists/` plus a `PHASE` /
+  `PVT_PHASE` row in `harness.ts`. `claude/agents/*.md` is generated.
+- **New chat artifact kind** — add a variant to
+  `backend/contract/chat-response.ts`. Prompt text and
+  `frontend/lib/chat-response.ts` follow from `bun run surfaces`.
+- **New MCP server** — add it to the template in `backend/scripts/surfaces.ts`
+  (writes `.mcp.json` and `.mcp.codex.json`).
 
-Copy-paste starters: [`templates/`](../templates/).
+Copy-paste starters: [`templates/`](../backend/agents/templates/).

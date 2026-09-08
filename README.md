@@ -14,7 +14,7 @@ You can run it in three ways:
 | **Chat GUI** | LangChain Deep Agent behind `POST /chat` | Browser chat + vault + artifacts + local project folders (same machine) |
 
 Same tools and memory. Different runtimes. See
-[`backend/agents/(docs)/ARCHITECTURE.md`](backend/agents/(docs)/ARCHITECTURE.md)
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 for how they are wired.
 
 ## Prerequisites
@@ -257,7 +257,7 @@ recorded reasoning behind past choices. It answers *what connects to what* and
 *why is this like this*, which the schema and the index cannot. It never
 invents: a table found in code but not in the live schema is reported, not
 added. See
-[`backend/agents/(docs)/ARCHITECTURE.md`](backend/agents/(docs)/ARCHITECTURE.md#the-system-model).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#the-system-model).
 
 Ask it directly in either runtime:
 

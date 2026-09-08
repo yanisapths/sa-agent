@@ -1,4 +1,3 @@
-import { tool } from "@langchain/core/tools";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { z } from "zod";
 import {
@@ -6,12 +5,21 @@ import {
   listWorkspace,
   readWorkspace,
   writeWorkspace,
-} from "./core/workspace";
+} from "../core/workspace";
+import { defineTool, type ToolContext } from "./types";
 
-export const workspaceLs = tool(
-  async ({ path, depth }, config: RunnableConfig) =>
-    listWorkspace(path, depth, config),
-  {
+function asConfig(ctx: ToolContext): RunnableConfig {
+  return {
+    configurable: {
+      workspaceRoot: ctx.workspaceRoot,
+      userId: ctx.userId,
+      thread_id: ctx.threadId,
+    },
+  };
+}
+
+export const workspaceTools = [
+  defineTool({
     name: "workspace_ls",
     description:
       "List files on the attached local disk project (the human's repo). " +
@@ -21,7 +29,9 @@ export const workspaceLs = tool(
       path: z
         .string()
         .default(".")
-        .describe("Directory relative to the project root, e.g. src/ or internal/handler/voting"),
+        .describe(
+          "Directory relative to the project root, e.g. src/ or internal/handler/voting",
+        ),
       depth: z
         .number()
         .int()
@@ -30,12 +40,11 @@ export const workspaceLs = tool(
         .default(2)
         .describe("How many directory levels to include"),
     }),
-  },
-);
-
-export const workspaceRead = tool(
-  async ({ path }, config: RunnableConfig) => readWorkspace(path, config),
-  {
+    surfaces: ["langchain"],
+    invoke: ({ path, depth }, ctx) =>
+      listWorkspace(path, depth, asConfig(ctx)),
+  }),
+  defineTool({
     name: "workspace_read",
     description:
       "Read a text file from the attached local disk project. " +
@@ -45,15 +54,14 @@ export const workspaceRead = tool(
       path: z
         .string()
         .min(1)
-        .describe("Relative file path, e.g. README.md or internal/handler/voting/handler.go"),
+        .describe(
+          "Relative file path, e.g. README.md or internal/handler/voting/handler.go",
+        ),
     }),
-  },
-);
-
-export const workspaceGrep = tool(
-  async ({ pattern, path }, config: RunnableConfig) =>
-    grepInWorkspace(pattern, path, config),
-  {
+    surfaces: ["langchain"],
+    invoke: ({ path }, ctx) => readWorkspace(path, asConfig(ctx)),
+  }),
+  defineTool({
     name: "workspace_grep",
     description:
       "Search file names and text contents in the attached local disk project. " +
@@ -65,13 +73,11 @@ export const workspaceGrep = tool(
         .default(".")
         .describe("Relative directory to search under"),
     }),
-  },
-);
-
-export const workspaceWrite = tool(
-  async ({ path, content }, config: RunnableConfig) =>
-    writeWorkspace(path, content, config),
-  {
+    surfaces: ["langchain"],
+    invoke: ({ pattern, path }, ctx) =>
+      grepInWorkspace(pattern, path, asConfig(ctx)),
+  }),
+  defineTool({
     name: "workspace_write",
     description:
       "Create or overwrite a file inside the attached local project folder. " +
@@ -85,5 +91,8 @@ export const workspaceWrite = tool(
         .describe("Relative file path to write, e.g. src/orders/service.ts"),
       content: z.string().describe("Full file contents"),
     }),
-  },
-);
+    surfaces: ["langchain"],
+    invoke: ({ path, content }, ctx) =>
+      writeWorkspace(path, content, asConfig(ctx)),
+  }),
+] as const;

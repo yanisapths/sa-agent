@@ -15,8 +15,10 @@
     "ingest:url": "bun run agents/ingest/url.ts",
     "ingest:clear": "bun run agents/ingest/clear.ts",
     "model:build": "bun run agents/model/build.ts",
-    "mcp:jira": "bun run agents/resources/mcp/mcp-server.ts",
-    "mcp:knowledge": "bun run mcp/server.ts"
+    "mcp:jira": "bun run mcp/jira.ts",
+    "mcp:knowledge": "bun run mcp/server.ts",
+    "surfaces": "bun run scripts/surfaces.ts write",
+    "check:surfaces": "bun run scripts/surfaces.ts check"
   },
   "devDependencies": {
     "@types/bun": "latest",

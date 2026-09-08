@@ -3,7 +3,7 @@ import { serveCatalog } from "./runtime";
 
 void backendEnvLoaded;
 
-serveCatalog({ name: "sa-knowledge", surface: "mcp-knowledge" }).catch((err) => {
+serveCatalog({ name: "jira-server", surface: "mcp-jira" }).catch((err) => {
   console.error(err);
   process.exit(1);
 });

@@ -15,7 +15,7 @@ export const exampleAgent = defineAgent({
 
 <what this agent is responsible for>
 
-Reply with a single JSON object: { "type": "text", "text": "<answer>" }`,
+Reply with JSON matching the chat contract in backend/contract/chat-response.ts.`,
 
   // Narrow the tool surface to what this role actually needs.
   tools: ["list_tables", "describe_tables", "inspect_relationships"],
