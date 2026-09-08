@@ -3,8 +3,10 @@ import {
   FilesystemBackend,
   StateBackend,
   type FileOperationError,
+  type WriteResult,
 } from "deepagents";
 import { config } from "../../config";
+import { writeWorkspaceFile } from "../../internal/workspace/fs";
 import {
   IGNORE_DIR_NAMES,
   isGitPath,
@@ -139,7 +141,17 @@ export class AttachedProjectBackend {
     const target = this.target(filePath);
     const blocked = this.blockDiskWrite(target.root, target.path);
     if (blocked) return { error: blocked };
-    return Promise.resolve(target.backend.write(target.path, content));
+    if (target.root) {
+      try {
+        const rel = target.path.replace(/^\/+/, "") || ".";
+        writeWorkspaceFile(target.root, rel, content);
+        return { path: target.path, filesUpdate: null };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { error: message };
+      }
+    }
+    return this.writeState(target.backend, target.path, content);
   }
 
   async edit(
@@ -262,6 +274,33 @@ export class AttachedProjectBackend {
       });
     }
     return results;
+  }
+
+  /**
+   * Deep Agents `write` only creates. Re-writing a phase artifact (or any
+   * state file) would otherwise fail with "already exists"; upload overwrites.
+   */
+  private async writeState(
+    backend: AnyBackend,
+    filePath: string,
+    content: string,
+  ): Promise<WriteResult> {
+    const created = await Promise.resolve(backend.write(filePath, content));
+    if (!created.error) return created;
+    if (!/already exists/i.test(created.error) || !backend.uploadFiles) {
+      return created;
+    }
+    const batch = await Promise.resolve(
+      backend.uploadFiles([[filePath, new TextEncoder().encode(content)]]),
+    );
+    const uploadError = batch[0]?.error;
+    if (uploadError) {
+      return { error: `Failed to write to ${filePath}: ${uploadError}` };
+    }
+    const filesUpdate = (
+      batch as { filesUpdate?: WriteResult["filesUpdate"] }
+    ).filesUpdate;
+    return { path: filePath, filesUpdate: filesUpdate ?? null };
   }
 
   private blockDiskWrite(root: string | undefined, virtualPath: string) {

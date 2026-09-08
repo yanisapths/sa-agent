@@ -230,7 +230,14 @@ export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
     gate: "human",
     receives: `${ARTIFACT.pvtPlan} (approved)`,
     produces: `${ARTIFACT.pvtExecute} — the numbered script set, run order, owners`,
-    tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE, ...WORKSPACE_READ],
+    tools: [
+      ...SCHEMA,
+      ...INDEX,
+      ...MODEL_READ,
+      ...WRITE,
+      ...WORKSPACE_READ,
+      ...WORKSPACE_WRITE,
+    ],
     skills: [
       "/resources/skills/pvt-prep/",
       "/resources/skills/backend/",
@@ -479,6 +486,10 @@ so use literals collected at the top of the file, not $1.
 Confirm every column with describe_tables and prove each verification query
 with run_sql. run_sql is read-only — never attempt a write. Write each
 rollback in the same pass as the script it undoes.
+
+If a local project folder is attached, write each SQL script with write_file
+or workspace_write (create or overwrite). Phase notes still go to
+${ARTIFACT.pvtExecute} with write_file. Human downloads still use write_files.
 
 Write ${ARTIFACT.pvtExecute}: the scripts produced, run order with owners,
 what each assumes about prior state, and anything the plan asked for that you
