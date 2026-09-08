@@ -1,16 +1,9 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   MultiServerMCPClient,
   type Connection,
 } from "@langchain/mcp-adapters";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { config } from "../../../config";
-
-const LOCAL_SERVER = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "mcp-server.ts",
-);
 
 function envRecord(): Record<string, string> {
   const env: Record<string, string> = {};
@@ -33,17 +26,9 @@ function parseArgs(raw: string): string[] {
   return trimmed.split(/\s+/);
 }
 
-function hasJiraRestAuth(): boolean {
+export function isJiraRemoteMcpConfigured(): boolean {
   const jira = config.jira;
-  return Boolean(
-    jira.url &&
-      (jira.personalToken || (jira.username && jira.apiToken)),
-  );
-}
-
-export function isJiraMcpConfigured(): boolean {
-  const jira = config.jira;
-  return Boolean(jira.mcpUrl || jira.mcpCommand || hasJiraRestAuth());
+  return Boolean(jira.mcpUrl || jira.mcpCommand);
 }
 
 function jiraConnection(): Connection | undefined {
@@ -65,17 +50,6 @@ function jiraConnection(): Connection | undefined {
       command: jira.mcpCommand,
       args: parseArgs(jira.mcpArgs),
       env: envRecord(),
-      restart: { enabled: true, maxAttempts: 3, delayMs: 1000 },
-    };
-  }
-
-  if (hasJiraRestAuth()) {
-    return {
-      transport: "stdio",
-      command: process.execPath,
-      args: [LOCAL_SERVER],
-      env: envRecord(),
-      stderr: "inherit",
       restart: { enabled: true, maxAttempts: 3, delayMs: 1000 },
     };
   }

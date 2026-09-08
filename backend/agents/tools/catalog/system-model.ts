@@ -1,22 +1,22 @@
-import { tool } from "@langchain/core/tools";
-import type { RunnableConfig } from "@langchain/core/runnables";
 import { z } from "zod";
-import { workspaceRootOf } from "./core/workspace";
+import { NODE_KINDS } from "../../model/types";
 import {
   buildModel,
   queryModel,
-  recordDecision as recordDecisionCore,
-  searchDecisions as searchDecisionsCore,
+  recordDecision,
+  searchDecisions,
   simulate,
-} from "./core/system-model";
+} from "../core/system-model";
+import { defineTool } from "./types";
 
-function rootOf(config: RunnableConfig): string | undefined {
-  return workspaceRootOf(config);
-}
+const KNOWLEDGE = ["langchain", "mcp-knowledge"] as const;
 
-export const buildSystemModel = tool(
-  async (_input, config: RunnableConfig) => buildModel(rootOf(config)),
-  {
+const nodeKind = z.enum(
+  NODE_KINDS as unknown as [string, ...string[]],
+);
+
+export const systemModelTools = [
+  defineTool({
     name: "build_system_model",
     description:
       "Scan this repository and rebuild the system model: files, imports, HTTP endpoints, " +
@@ -24,13 +24,10 @@ export const buildSystemModel = tool(
       "Run it once before the other system-model tools, and again after code changes. " +
       "When a local project folder is attached, scans that folder. Deterministic and free — it calls no model.",
     schema: z.object({}),
-  },
-);
-
-export const querySystemModel = tool(
-  async ({ query, kind, limit }, config: RunnableConfig) =>
-    queryModel(query, kind, limit, rootOf(config)),
-  {
+    surfaces: KNOWLEDGE,
+    invoke: (_args, ctx) => buildModel(ctx.workspaceRoot),
+  }),
+  defineTool({
     name: "query_system_model",
     description:
       "Look up a component in the system model and get what it depends on, what depends on it, " +
@@ -41,31 +38,14 @@ export const querySystemModel = tool(
       query: z
         .string()
         .describe("Component to look up, or `*` for an overview of the model"),
-      kind: z
-        .enum([
-          "endpoint",
-          "service",
-          "repository",
-          "component",
-          "module",
-          "test",
-          "doc",
-          "table",
-          "column",
-          "decision",
-          "feature",
-        ])
-        .optional()
-        .describe("Restrict matches to one node kind"),
+      kind: nodeKind.optional().describe("Restrict matches to one node kind"),
       limit: z.number().int().min(1).max(15).default(5),
     }),
-  },
-);
-
-export const simulateImpact = tool(
-  async ({ target, depth }, config: RunnableConfig) =>
-    simulate(target, depth, rootOf(config)),
-  {
+    surfaces: KNOWLEDGE,
+    invoke: ({ query, kind, limit }, ctx) =>
+      queryModel(query, kind, limit, ctx.workspaceRoot),
+  }),
+  defineTool({
     name: "simulate_impact",
     description:
       "Answer 'what breaks if I change this?'. Walks the dependency graph backwards from a table, " +
@@ -75,7 +55,9 @@ export const simulateImpact = tool(
     schema: z.object({
       target: z
         .string()
-        .describe("What is changing: `orders.user_id`, `OrderService`, `GET /orders`, or a file path"),
+        .describe(
+          "What is changing: `orders.user_id`, `OrderService`, `GET /orders`, or a file path",
+        ),
       depth: z
         .number()
         .int()
@@ -84,13 +66,11 @@ export const simulateImpact = tool(
         .default(4)
         .describe("How many dependency hops to follow"),
     }),
-  },
-);
-
-export const recordDecision = tool(
-  async (input, config: RunnableConfig) =>
-    recordDecisionCore({ ...input, root: rootOf(config) }),
-  {
+    surfaces: KNOWLEDGE,
+    invoke: ({ target, depth }, ctx) =>
+      simulate(target, depth, ctx.workspaceRoot),
+  }),
+  defineTool({
     name: "record_decision",
     description:
       "Write down why an engineering choice was made, as a reviewable markdown record in " +
@@ -113,23 +93,27 @@ export const recordDecision = tool(
       related: z
         .array(z.string())
         .default([])
-        .describe("Nodes this constrains: table names, `table.column`, class names, `GET /path`"),
+        .describe(
+          "Nodes this constrains: table names, `table.column`, class names, `GET /path`",
+        ),
     }),
-  },
-);
-
-export const searchDecisions = tool(
-  async ({ query, limit }, config: RunnableConfig) =>
-    searchDecisionsCore(query, limit, rootOf(config)),
-  {
+    surfaces: KNOWLEDGE,
+    invoke: (input, ctx) => recordDecision({ ...input, root: ctx.workspaceRoot }),
+  }),
+  defineTool({
     name: "search_decisions",
     description:
       "Search recorded engineering decisions for the reasoning behind an existing implementation. " +
       "Answers 'why is this like this?' where the graph and the schema only answer 'what' and 'where'. " +
       "Check this before proposing a change that contradicts a past choice.",
     schema: z.object({
-      query: z.string().describe("Topic, table, component, or the question being asked"),
+      query: z
+        .string()
+        .describe("Topic, table, component, or the question being asked"),
       limit: z.number().int().min(1).max(10).default(5),
     }),
-  },
-);
+    surfaces: KNOWLEDGE,
+    invoke: ({ query, limit }, ctx) =>
+      searchDecisions(query, limit, ctx.workspaceRoot),
+  }),
+] as const;

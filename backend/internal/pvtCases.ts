@@ -7,7 +7,7 @@ import { ARTIFACT } from "../agents/harness";
 
 const EXTRACTOR = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../agents/scripts/testcase-extractor.py",
+  "../scripts/testcase-extractor.py",
 );
 
 export interface ParkedFile {

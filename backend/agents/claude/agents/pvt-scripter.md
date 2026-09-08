@@ -1,6 +1,6 @@
 ---
 name: pvt-scripter
-description: PVT execute. Generate the numbered, owner-tagged SQL script set from an approved PVT plan. Use only after pvt-plan is approved.
+description: Generate the numbered, owner-tagged PVT SQL script set from an approved PVT plan. Use only after pvt-plan is approved.
 model: haiku
 ---
 

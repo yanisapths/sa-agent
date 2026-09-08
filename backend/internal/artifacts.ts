@@ -1,7 +1,7 @@
-/**
- * Parsing and normalisation of the JSON artifacts the agent returns
- * (`text`, `api_spec`, `sql`, `diagram`).
- */
+import {
+  chatArtifactSchema,
+  type ChatArtifact,
+} from "../contract/chat-response";
 
 export function lastAssistantContent(result: unknown): string {
   const messages = (result as { messages?: Array<{ content?: unknown }> })
@@ -13,14 +13,15 @@ export function lastAssistantContent(result: unknown): string {
 
   if (Array.isArray(content)) {
     return content
-      .map((block) => (typeof block === "string" ? block : (block?.text ?? "")))
+      .map((block) =>
+        typeof block === "string" ? block : String((block as { text?: unknown })?.text ?? ""),
+      )
       .join("");
   }
 
   return JSON.stringify(content);
 }
 
-/** Reasoning models emit `<think>` blocks that must not reach the client. */
 export function stripThinking(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 }
@@ -40,40 +41,26 @@ export function tryParseJsonObject(
         return value;
       }
     } catch {
-      // Try the next candidate.
+      continue;
     }
   }
 
   return null;
 }
 
-/** Models drift from the prompt contract; fold common variants back in. */
-function normalizeApiSpec(raw: any): any {
-  const rawResponses =
-    raw.responses ??
-    raw.response?.status_codes ??
-    raw.response?.responses ??
-    {};
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
 
-  const responses = Object.fromEntries(
-    Object.entries(rawResponses).map(([code, value]) => {
-      const v = value as any;
-      return [
-        code,
-        {
-          description: v.description ?? "",
-          schema: v.schema ?? {},
-          example: v.example ?? v.example_json_response ?? null,
-        },
-      ];
-    }),
-  );
-
+function foldParameters(raw: Record<string, unknown>): unknown[] {
   const parameters: unknown[] = Array.isArray(raw.parameters)
     ? [...raw.parameters]
     : [];
 
-  for (const [name, schema] of Object.entries(raw.path_parameters ?? {})) {
+  for (const [name, schema] of Object.entries(asRecord(raw.path_parameters))) {
     parameters.push({
       name,
       in: "path",
@@ -81,7 +68,7 @@ function normalizeApiSpec(raw: any): any {
       ...(schema as object),
     });
   }
-  for (const [name, schema] of Object.entries(raw.query_parameters ?? {})) {
+  for (const [name, schema] of Object.entries(asRecord(raw.query_parameters))) {
     parameters.push({
       name,
       in: "query",
@@ -89,7 +76,7 @@ function normalizeApiSpec(raw: any): any {
       ...(schema as object),
     });
   }
-  for (const name of Object.keys(raw.request?.headers ?? {})) {
+  for (const name of Object.keys(asRecord(asRecord(raw.request).headers))) {
     if (name.toLowerCase() === "authorization") {
       parameters.push({
         name,
@@ -100,13 +87,44 @@ function normalizeApiSpec(raw: any): any {
     }
   }
 
-  // Tolerate "GET /path" leaking into the endpoint field.
-  const [firstToken, ...pathParts] = (raw.endpoint ?? "").split(" ");
-  const method = (
+  return parameters.map((item) => {
+    const p = asRecord(item);
+    const schema = asRecord(p.schema);
+    return {
+      name: String(p.name ?? ""),
+      in: String(p.in ?? "query"),
+      required: Boolean(p.required),
+      description: String(p.description ?? ""),
+      schema: { type: String(schema.type ?? "string"), ...schema },
+    };
+  });
+}
+
+function foldResponses(raw: Record<string, unknown>): Record<string, unknown> {
+  const nested = asRecord(raw.response);
+  const rawResponses = raw.responses ?? nested.status_codes ?? nested.responses ?? {};
+  return Object.fromEntries(
+    Object.entries(asRecord(rawResponses)).map(([code, value]) => {
+      const v = asRecord(value);
+      return [
+        code,
+        {
+          description: String(v.description ?? ""),
+          schema: asRecord(v.schema),
+          example: v.example ?? v.example_json_response ?? null,
+        },
+      ];
+    }),
+  );
+}
+
+function foldApiSpec(raw: Record<string, unknown>): Record<string, unknown> {
+  const [firstToken, ...pathParts] = String(raw.endpoint ?? "").split(" ");
+  const method = String(
     raw.method ??
-    raw.http_method ??
-    (pathParts.length > 0 ? firstToken : undefined) ??
-    "GET"
+      raw.http_method ??
+      (pathParts.length > 0 ? firstToken : undefined) ??
+      "GET",
   ).toUpperCase();
 
   return {
@@ -114,45 +132,60 @@ function normalizeApiSpec(raw: any): any {
     method,
     endpoint:
       raw.path ?? (pathParts.length > 0 ? pathParts.join(" ") : firstToken),
-    description: raw.description ?? "",
-    auth: raw.auth ?? raw.security?.[0]?.name ?? "",
-    parameters,
-    responses,
-    componentSchemas: raw.componentSchemas ?? raw.components?.schemas ?? {},
+    description: String(raw.description ?? ""),
+    auth: String(raw.auth ?? asRecord(Array.isArray(raw.security) ? raw.security[0] : raw.security).name ?? ""),
+    parameters: foldParameters(raw),
+    responses: foldResponses(raw),
+    componentSchemas:
+      raw.componentSchemas ?? asRecord(raw.components).schemas ?? {},
     notes: Array.isArray(raw.notes) ? raw.notes : [],
   };
 }
 
-export function normalizeArtifact(parsed: Record<string, unknown>): any {
-  const raw = parsed as any;
-
-  switch (raw.type) {
+function foldArtifact(parsed: Record<string, unknown>): Record<string, unknown> {
+  switch (parsed.type) {
     case "api_spec":
-      return normalizeApiSpec(raw);
+      return foldApiSpec(parsed);
     case "code":
       return {
         type: "code",
-        language: raw.language ?? "text",
-        filename: raw.filename ?? "",
-        title: raw.title ?? "",
-        description: raw.description ?? "",
-        code: raw.code ?? raw.content ?? "",
+        language: parsed.language ?? "text",
+        filename: parsed.filename ?? "",
+        title: parsed.title ?? "",
+        description: parsed.description ?? "",
+        code: parsed.code ?? parsed.content ?? "",
       };
     case "sql":
       return {
         type: "sql",
-        dialect: raw.dialect ?? "postgresql",
-        sql: raw.sql ?? raw.query ?? "",
-        reasoning: raw.reasoning ?? raw.explanation ?? "",
+        dialect: parsed.dialect ?? "postgresql",
+        sql: parsed.sql ?? parsed.query ?? "",
+        reasoning: parsed.reasoning ?? parsed.explanation ?? "",
       };
     case "diagram":
       return {
         type: "diagram",
-        diagramType: raw.diagramType ?? raw.diagram_type ?? "sequenceDiagram",
-        title: raw.title ?? "",
-        content: raw.content ?? raw.diagram ?? "",
+        diagramType: parsed.diagramType ?? parsed.diagram_type ?? "sequenceDiagram",
+        title: parsed.title ?? "",
+        content: parsed.content ?? parsed.diagram ?? "",
+      };
+    case "text":
+      return {
+        type: "text",
+        text: typeof parsed.text === "string" ? parsed.text : JSON.stringify(parsed),
       };
     default:
-      return raw;
+      return parsed;
   }
+}
+
+export function normalizeArtifact(
+  parsed: Record<string, unknown>,
+): ChatArtifact {
+  const folded = foldArtifact(parsed);
+  const result = chatArtifactSchema.safeParse(folded);
+  if (result.success) return result.data;
+  const text =
+    typeof parsed.text === "string" ? parsed.text : JSON.stringify(parsed);
+  return { type: "text", text };
 }

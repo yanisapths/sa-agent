@@ -1,6 +1,6 @@
 ---
 name: solution-architect
-description: Plan. Design spec, Mermaid flow, and an execute checklist from an approved discuss artifact. Use after discuss is approved. Do not implement.
+description: Turn an approved discuss artifact into a spec, diagram, and execute plan. Use after discuss is approved. Do not code.
 model: haiku
 disallowedTools: Bash
 ---

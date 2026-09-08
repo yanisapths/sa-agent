@@ -1,6 +1,6 @@
 ---
 name: coder
-description: Execute. Implement an approved plan in this product repo. Use only after plan is approved.
+description: Implement the approved plan in the product repo. Use only after plan is approved.
 model: haiku
 ---
 

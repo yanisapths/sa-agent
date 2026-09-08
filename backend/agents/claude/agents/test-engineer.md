@@ -1,6 +1,6 @@
 ---
 name: test-engineer
-description: Test / Validate. Quiz the change against discuss and plan. Use after execute. Do not ship.
+description: Check the change against the discuss/plan artifacts: cases, fixtures, unit tests, quiz. Use after execute.
 model: haiku
 ---
 

@@ -46,7 +46,7 @@ When the source is a CSV:
   and ran the extractor into `/artifacts/pvt-cases.json`. `read_file` those
   paths. Do not look under `/conversation_history` and do not run python.
 - **Claude Code / a product repo.** Run the extractor on the path the human
-  named (`$SA_AGENT_HOME/backend/agents/scripts/testcase-extractor.py`).
+  named (`$SA_AGENT_HOME/backend/scripts/testcase-extractor.py`).
 
 Keep the source ids — the SRE-facing scripts and the result log are read
 side by side, so the ids must match.

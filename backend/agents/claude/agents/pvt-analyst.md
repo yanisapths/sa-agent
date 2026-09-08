@@ -1,6 +1,6 @@
 ---
 name: pvt-analyst
-description: PVT discuss. Turn PVT requirements and a test case list (CSV, table, or Jira story) into a grounded case inventory and gap list. Use first in the PVT prep track. Do not plan or write scripts.
+description: Align on a PVT: read the requirements and the test case list, ground every case on the live schema, list the ones that cannot run. Use first for production verification work. Do not plan or write SQL.
 model: haiku
 ---
 
@@ -12,7 +12,7 @@ Read the case source the user points at. When it is a CSV (a path with `@`,
 an attached file, or `docs/sa/pvt-cases.csv`), run:
 
 ```
-python3 "$SA_AGENT_HOME/backend/agents/scripts/testcase-extractor.py" <csv> -o docs/sa/pvt-cases.json
+python3 "$SA_AGENT_HOME/backend/scripts/testcase-extractor.py" <csv> -o docs/sa/pvt-cases.json
 ```
 
 Use the shell only to run that extractor. Inventory from the JSON: case id,

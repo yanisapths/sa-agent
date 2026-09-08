@@ -9,8 +9,8 @@ skills, and (Claude Code only) subagents.
 | ------------------------------ | ------------------------------------------------------------- |
 | `.claude-plugin/plugin.json`   | Claude Code                                                   |
 | `.codex-plugin/plugin.json`    | Codex                                                         |
-| `.mcp.json`                    | Claude Code / Cursor — `sa-mcp` via `$SA_AGENT_HOME` or `~/.sa-agent/home` |
-| `.mcp.codex.json`              | Codex — same launcher, `SA_AGENT_RUNTIME=codex`               |
+| `.mcp.json`                    | Claude Code / Cursor — generated; `sa-mcp <server> claude-code` |
+| `.mcp.codex.json`              | Codex — same template with runtime `codex`                    |
 | `skills/`, `hooks/`, `memory/` | both (symlinks into `../resources`)                           |
 | `agents/`                      | Claude Code only                                              |
 
@@ -72,12 +72,13 @@ codex plugin marketplace add "$SA_AGENT_HOME"
 codex plugin add sa-agent --marketplace sa-agent
 ```
 
-`.mcp.codex.json` resolves `$SA_AGENT_HOME`, then `~/.sa-agent/home`, and hands
-the result to [`backend/mcp/sa-mcp`](../../mcp/sa-mcp), which locates `bun` and
-execs the requested server. Run it by hand to debug:
+`.mcp.codex.json` is generated from the same template as `.mcp.json`. It
+resolves `$SA_AGENT_HOME`, then `~/.sa-agent/home`, and hands the result to
+[`backend/mcp/sa-mcp`](../../mcp/sa-mcp) with runtime `codex`. Run it by hand
+to debug:
 
 ```bash
-"$SA_AGENT_HOME/backend/mcp/sa-mcp" knowledge   # expects a stdio banner
+"$SA_AGENT_HOME/backend/mcp/sa-mcp" knowledge claude-code   # expects a stdio banner
 ```
 
 Codex has no plugin equivalent of Claude Code subagents, so `agents/*.md` is

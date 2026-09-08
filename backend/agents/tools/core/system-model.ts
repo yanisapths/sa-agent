@@ -186,8 +186,6 @@ export async function searchDecisions(
   });
 }
 
-// --- helpers -------------------------------------------------------------
-
 function describeCounts(store: ModelStore): string {
   const byKind = countByKind(store);
   const total = Object.values(byKind).reduce((a, b) => a + b, 0);

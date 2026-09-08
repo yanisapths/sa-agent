@@ -1,66 +1,43 @@
-import type { StructuredToolInterface } from "@langchain/core/tools";
-import { getJiraTicket, readJiraUserStory } from "./jira";
-import { getDocPage, searchDocs, searchSchemaDocs } from "./knowledge";
+import { tool, type StructuredToolInterface } from "@langchain/core/tools";
+import type { RunnableConfig } from "@langchain/core/runnables";
 import {
-  describeTables,
-  inspectRelationships,
-  listTables,
-  runSql,
-} from "./postgres";
-import {
-  buildSystemModel,
-  querySystemModel,
-  recordDecision,
-  searchDecisions,
-  simulateImpact,
-} from "./system-model";
-import {
-  workspaceGrep,
-  workspaceLs,
-  workspaceRead,
-  workspaceWrite,
-} from "./workspace";
-import { writeFiles } from "./write-files";
+  catalogFor,
+  type AnyCatalogTool,
+  type CatalogToolName,
+  type ToolContext,
+} from "./catalog";
 
-/**
- * Single source of truth for every tool an agent may be granted.
- * Agents opt in by name via `defineAgent({ tools: [...] })`.
- *
- * Jira MCP tools are registered for the discuss specialist. Call them only
- * when a ticket or user story is named.
- *
- * System-model tools read the graph in the product repo's `.sa/`. They are the
- * "what is connected to what" and "why is it like this" layer, on top of the
- * live schema's "what exists". Workspace tools operate on a folder the human
- * attached in the Chat GUI; they stay inside that root.
- */
-export const TOOL_REGISTRY = {
-  list_tables: listTables,
-  describe_tables: describeTables,
-  inspect_relationships: inspectRelationships,
-  run_sql: runSql,
-  search_docs: searchDocs,
-  get_doc_page: getDocPage,
-  search_schema_docs: searchSchemaDocs,
-  build_system_model: buildSystemModel,
-  query_system_model: querySystemModel,
-  simulate_impact: simulateImpact,
-  record_decision: recordDecision,
-  search_decisions: searchDecisions,
-  get_jira_ticket: getJiraTicket,
-  read_jira_user_story: readJiraUserStory,
-  write_files: writeFiles,
-  workspace_ls: workspaceLs,
-  workspace_read: workspaceRead,
-  workspace_grep: workspaceGrep,
-  workspace_write: workspaceWrite,
-} satisfies Record<string, StructuredToolInterface>;
+function ctxOf(config: RunnableConfig): ToolContext {
+  const cfg = config.configurable ?? {};
+  return {
+    workspaceRoot:
+      typeof cfg.workspaceRoot === "string" ? cfg.workspaceRoot : undefined,
+    userId: typeof cfg.userId === "string" ? cfg.userId : undefined,
+    threadId: typeof cfg.thread_id === "string" ? cfg.thread_id : undefined,
+  };
+}
 
-export type ToolName = keyof typeof TOOL_REGISTRY;
+function toLangChain(entry: AnyCatalogTool): StructuredToolInterface {
+  return tool(
+    async (args, config: RunnableConfig) => entry.invoke(args, ctxOf(config)),
+    {
+      name: entry.name,
+      description: entry.description,
+      schema: entry.schema,
+    },
+  );
+}
 
-export const TOOL_NAMES = Object.keys(TOOL_REGISTRY) as ToolName[];
+export type ToolName = CatalogToolName;
 
-/** Name + description pairs, useful for docs and prompt surfaces. */
+const langchainTools = catalogFor("langchain");
+
+export const TOOL_REGISTRY = Object.fromEntries(
+  langchainTools.map((entry) => [entry.name, toLangChain(entry)]),
+) as Record<ToolName, StructuredToolInterface>;
+
+export const TOOL_NAMES = langchainTools.map((entry) => entry.name) as ToolName[];
+
 export const TOOL_DEFINITIONS = TOOL_NAMES.map((name) => ({
   name,
   description: TOOL_REGISTRY[name].description,

@@ -1,17 +1,16 @@
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
-import { tool } from "@langchain/core/tools";
-import type { RunnableConfig } from "@langchain/core/runnables";
 import { z } from "zod";
-import { saveArtifact, safeFileName } from "../../internal/artifactStore/service";
-import { orToolError } from "./errors";
+import { saveArtifact, safeFileName } from "../../../internal/artifactStore/service";
+import { orToolError } from "../errors";
+import { defineTool, type ToolContext } from "./types";
 
 const SCRIPT = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../scripts/write_files.py",
+  "../../../scripts/write_files.py",
 );
 
 const fileSchema = z.object({
@@ -60,15 +59,12 @@ function runWriter(dir: string, payload: unknown): Promise<WrittenManifest> {
 
 async function writeFilesCore(
   files: z.infer<typeof fileSchema>[],
-  config: RunnableConfig,
+  ctx: ToolContext,
 ): Promise<string> {
-  const userId = config.configurable?.userId as string | undefined;
-  const threadId = config.configurable?.thread_id as string | undefined;
-
-  if (!userId) {
+  if (!ctx.userId) {
     return "write_files failed: sign in to save files for download.";
   }
-  if (!threadId) {
+  if (!ctx.threadId) {
     return "write_files failed: missing chat thread.";
   }
   if (files.length === 0) {
@@ -88,8 +84,8 @@ async function writeFilesCore(
     const saved = [];
     for (const written of manifest.files) {
       const buffer = await readFile(written.path);
-      const record = await saveArtifact(userId, {
-        threadId,
+      const record = await saveArtifact(ctx.userId, {
+        threadId: ctx.threadId,
         name: written.name,
         mimeType: written.mimeType || undefined,
         buffer,
@@ -109,10 +105,8 @@ async function writeFilesCore(
   }
 }
 
-export const writeFiles = tool(
-  async ({ files }, config: RunnableConfig) =>
-    orToolError("write_files", () => writeFilesCore(files, config)),
-  {
+export const writeFilesTools = [
+  defineTool({
     name: "write_files",
     description:
       "Save generated files so the human can download them from the Artifacts library. " +
@@ -125,5 +119,8 @@ export const writeFiles = tool(
         .min(1)
         .describe("Files to write and persist for download"),
     }),
-  },
-);
+    surfaces: ["langchain"],
+    invoke: ({ files }, ctx) =>
+      orToolError("write_files", () => writeFilesCore(files, ctx)),
+  }),
+] as const;

@@ -12,17 +12,21 @@
 set -u
 
 usage() {
-  echo "usage: sa-mcp <knowledge|jira>" >&2
+  echo "usage: sa-mcp <knowledge|jira> [runtime]" >&2
   exit 64
 }
 
-[ $# -eq 1 ] || usage
+[ $# -ge 1 ] && [ $# -le 2 ] || usage
 
 case "$1" in
 knowledge) server="backend/mcp/server.ts" ;;
-jira) server="backend/agents/resources/mcp/mcp-server.ts" ;;
+jira) server="backend/mcp/jira.ts" ;;
 *) usage ;;
 esac
+
+if [ $# -eq 2 ]; then
+  export SA_AGENT_RUNTIME="$2"
+fi
 
 home="${SA_AGENT_HOME:-}"
 

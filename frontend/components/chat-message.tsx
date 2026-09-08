@@ -11,7 +11,6 @@ import {
 import { type ChatArtifact } from "@/features/artifacts/types";
 import { UsageBadge } from "./usage-badge";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type Role = "user" | "assistant";
 
@@ -81,7 +80,6 @@ export type UIPart =
   | DiagramPart
   | CodePart;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const cn = (...c: (string | false | undefined | null)[]) =>
   c.filter(Boolean).join(" ");
@@ -118,7 +116,6 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-// ─── Markdown Renderer ────────────────────────────────────────────────────────
 // Lightweight parser — no external deps. Handles:
 //   headings (# ## ###), bold (**), inline code (`), fenced code blocks,
 //   markdown tables, unordered/ordered lists, horizontal rules, blank lines.
@@ -414,7 +411,6 @@ function MarkdownContent({ text }: { text: string }) {
   return <div className="space-y-0.5">{nodes}</div>;
 }
 
-// ─── Diagram ──────────────────────────────────────────────────────────────────
 
 function DiagramDisplay({ part }: { part: DiagramPart }) {
   return (
@@ -435,7 +431,6 @@ function DiagramDisplay({ part }: { part: DiagramPart }) {
   );
 }
 
-// ─── API Spec ─────────────────────────────────────────────────────────────────
 
 function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
   const [openCode, setOpenCode] = useState<string | null>(null);
@@ -761,7 +756,6 @@ function ApiSpecDisplay({ part }: { part: ApiSpecPart }) {
   );
 }
 
-// ─── SQL ──────────────────────────────────────────────────────────────────────
 
 function SqlDisplay({ part }: { part: SqlPart }) {
   return (
@@ -860,7 +854,6 @@ function ArtifactChips({ artifacts }: { artifacts: ChatArtifact[] }) {
   );
 }
 
-// ─── Message Part ─────────────────────────────────────────────────────────────
 
 function MessagePart({ part }: { part: UIPart }) {
   if (part.type === "diagram")
@@ -918,7 +911,6 @@ function MessagePart({ part }: { part: UIPart }) {
   );
 }
 
-// ─── Chat Message ─────────────────────────────────────────────────────────────
 
 export function ChatMessage({
   message,
