@@ -4,9 +4,19 @@ import { type CSSProperties } from 'react'
 import styles from './cardStarField.module.css'
 import { CARD_STAR_SEEDS } from './constants'
 
+function cssNumber(value: number) {
+	return value.toFixed(4)
+}
+
+function cssUnit(value: number, unit: string) {
+	return `${cssNumber(value)}${unit}`
+}
+
 type StarStyle = CSSProperties & {
+	'--star-x': string
+	'--star-y': string
 	'--star-size': string
-	'--star-opacity': number
+	'--star-opacity': string
 	'--star-z': string
 	'--star-delay': string
 	'--star-duration': string
@@ -31,19 +41,19 @@ export function CardStarField({ still = false }: CardStarFieldProps) {
 				<div className={styles.field}>
 					{CARD_STAR_SEEDS.map((star, index) => {
 						const style: StarStyle = {
-							left: `${star.cx}%`,
-							top: `${star.cy}%`,
-							'--star-size': `${star.r * 12}px`,
-							'--star-opacity': star.opacity,
-							'--star-z': `${star.z}px`,
-							'--star-delay': `${star.delay}s`,
-							'--star-duration': `${star.duration}s`,
-							'--twinkle-delay': `${star.twinkleDelay}s`,
-							'--twinkle-duration': `${star.twinkleDuration}s`,
+							'--star-x': cssNumber(star.cx),
+							'--star-y': cssNumber(star.cy),
+							'--star-size': cssUnit(star.r * 12, 'px'),
+							'--star-opacity': cssNumber(star.opacity),
+							'--star-z': cssUnit(star.z, 'px'),
+							'--star-delay': cssUnit(star.delay, 's'),
+							'--star-duration': cssUnit(star.duration, 's'),
+							'--twinkle-delay': cssUnit(star.twinkleDelay, 's'),
+							'--twinkle-duration': cssUnit(star.twinkleDuration, 's'),
 							'--star-color': star.tint ?? '#fff',
-							'--float-x': star.floatX,
-							'--float-y': star.floatY,
-							'--float-z': star.floatZ,
+							'--float-x': cssUnit(star.floatX, 'px'),
+							'--float-y': cssUnit(star.floatY, 'px'),
+							'--float-z': cssUnit(star.floatZ, 'px'),
 						}
 
 						return (
