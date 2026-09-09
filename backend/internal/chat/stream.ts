@@ -377,5 +377,11 @@ export function isGraphRecursion(err: unknown): boolean {
 export function isAbortError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const name = "name" in err ? String(err.name) : "";
-  return name === "AbortError" || name === "TimeoutError";
+  if (name === "AbortError" || name === "TimeoutError") return true;
+  /**
+   * LangGraph rejects with `new Error("Abort")` when the invoke signal
+   * fires. That is not a DOMException and its `name` is still `"Error"`.
+   */
+  const message = "message" in err ? String(err.message) : "";
+  return message === "Abort";
 }

@@ -54,3 +54,7 @@ export function touchChatRun(threadId: string): void {
 export function executionTimeoutMs(): number {
   return config.agent.invokeTimeoutMs;
 }
+
+export function executionMaxMs(): number {
+  return Math.max(config.agent.invokeMaxMs, config.agent.invokeTimeoutMs);
+}

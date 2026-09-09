@@ -1,7 +1,7 @@
 # sa-agent backend
 
 A Deep Agent harness for system analysis and solution architecture, plus the
-vault, artifacts, and local-workspace storage APIs.
+vault, artifacts, local-workspace, and chat-session storage APIs.
 
 The agent answers questions about APIs, data models, SQL, and architecture. It
 grounds every answer in the **live PostgreSQL schema** rather than a stale
@@ -64,8 +64,8 @@ database/
   chroma.ts             vector store collections
   supabase.ts           vault and artifacts storage and metadata
 
-routes/                 chat, vault, artifacts, and workspaces HTTP handlers
-internal/               artifact normalisation, errors, vault, artifactStore, workspace
+routes/                 chat, vault, artifacts, workspaces, and chats HTTP handlers
+internal/               artifact normalisation, errors, vault, artifactStore, workspace, chats
 ```
 
 ## How the agent is grounded
@@ -345,6 +345,8 @@ bun run model:build                 # graph the repo containing cwd
   `reject`) after a HITL interrupt.
 
 Pass the `threadId` returned by the previous response to continue a session.
+Signed-in turns also upsert a row in `chat_threads` and append to `chat_messages`
+so the GUI can list, reopen, and delete sessions. Run `sql/chats.sql` first.
 
 **JSON** (`Accept: application/json`, the default): `{ ok, threadId, type,
 data, artifacts, usage }` where `type` is one of `text`, `api_spec`, `sql`,
@@ -354,8 +356,12 @@ get a finished turn.
 **SSE** (`Accept: text/event-stream`): events `thread`, `messages`, `step`,
 `interrupt`, `values`, `usage`, `done`, `error`. `done.status` is `complete`
 or `waiting`. A waiting turn is resumed with `POST /chat/resume` using the
-same `Accept`. Execution timeout does not include time spent waiting for
-approval. Vault and workspace mounts for the paused thread are held in
+same `Accept`. Execution timeout is inactivity, not wall clock: stream
+tokens, LLM calls, and tool calls reset `AGENT_INVOKE_TIMEOUT_MS` (default
+3 minutes). A pvt-plan that is still working will not be killed at 3:00.
+`AGENT_INVOKE_MAX_MS` (default 30 minutes) is the hard wall clock. Both
+accept underscores (`980_000`). Timeout does not include time spent waiting
+for approval. Vault and workspace mounts for the paused thread are held in
 memory for 30 minutes.
 
 **`model`.** A gateway id from `GET /v1/gateway/models`, e.g.
@@ -477,3 +483,17 @@ Mention tokens are `@Projects/{name}` and `@Projects/{name}/relative/path`.
 `POST /chat` accepts `workspaceId` so specialists' `ls` / `read_file` / `glob` /
 `grep` (and `workspace_*`) see that folder as `/`. Phase artifacts stay at
 `/artifacts/*.md`.
+
+### Chat sessions (`Authorization: Bearer <token>`)
+
+Stored conversation list for the Chat GUI. Metadata and message JSON live in
+Postgres (`chat_threads`, `chat_messages`); LangGraph `MemorySaver` still holds
+in-process agent state. After a restart, the next `/chat` turn seeds the graph
+from stored messages.
+
+- `GET /v1/chats?limit=20&cursor=` — newest first; `{ ok, data, nextCursor }`
+- `POST /v1/chats` — empty thread titled `New chat`
+- `GET /v1/chats/:threadId` — thread plus messages in order
+- `DELETE /v1/chats/:threadId` — messages cascade; artifacts are left in place
+
+Run `sql/chats.sql` in the Supabase SQL editor. Cursor is `updated_at|id`.
