@@ -5,6 +5,7 @@ import type { UsageCollector } from "../gateway/usage";
 import { withVaultMount, type VaultMount } from "../vault/mount";
 import { withWorkspaceRoot } from "../workspace/runtime";
 import type { ChatSseEvent } from "./events";
+import { recordAssistantTurn } from "../chats/service";
 import { persistTurnArtifacts, artifactFromState } from "./finalize";
 import {
   autoApproveDecisions,
@@ -19,7 +20,7 @@ import {
   valuesEvent,
   type HitlDecision,
 } from "./stream";
-import { executionTimeoutMs } from "./run-context";
+import { executionMaxMs, executionTimeoutMs } from "./run-context";
 import type { ChatActionRequest } from "./events";
 
 export interface AgentRunConfig {
@@ -34,9 +35,23 @@ export interface AgentRunConfig {
   startedAt: number;
 }
 
+function progressCallbacks(onProgress?: () => void) {
+  if (!onProgress) return [];
+  return [
+    {
+      handleLLMStart: onProgress,
+      handleLLMNewToken: onProgress,
+      handleLLMEnd: onProgress,
+      handleToolStart: onProgress,
+      handleToolEnd: onProgress,
+    },
+  ];
+}
+
 function invokeConfig(
   run: AgentRunConfig,
   signal: AbortSignal,
+  onProgress?: () => void,
 ): Record<string, unknown> {
   return {
     configurable: {
@@ -48,7 +63,7 @@ function invokeConfig(
     },
     recursionLimit: config.agent.recursionLimit,
     signal,
-    callbacks: [run.collector.handler],
+    callbacks: [run.collector.handler, ...progressCallbacks(onProgress)],
   };
 }
 
@@ -81,10 +96,11 @@ export async function streamAgentTurn(opts: {
   run: AgentRunConfig;
   signal: AbortSignal;
   emit: (event: ChatSseEvent) => void;
+  onProgress?: () => void;
 }): Promise<{ interrupted: boolean; values: unknown }> {
   const agent = agentFor(opts.run.model);
   const mapper = createStreamMapper();
-  const cfg = invokeConfig(opts.run, opts.signal);
+  const cfg = invokeConfig(opts.run, opts.signal, opts.onProgress);
 
   try {
     await withMounts(opts.run, async () => {
@@ -94,6 +110,7 @@ export async function streamAgentTurn(opts: {
         subgraphs: true,
       });
       for await (const chunk of stream) {
+        opts.onProgress?.();
         if (opts.signal.aborted) break;
         mapper.push(parseStreamChunk(chunk), opts.emit, opts.run.model);
       }
@@ -140,6 +157,13 @@ export async function finishTurn(opts: {
   });
   if (opts.emit) opts.emit(valuesEvent(opts.values, artifacts));
   const { type, data } = artifactFromState(opts.values);
+  await recordAssistantTurn({
+    userId: opts.run.userId,
+    threadId: opts.run.threadId,
+    type,
+    data,
+    artifacts,
+  });
   return { type, data, artifacts };
 }
 
@@ -147,14 +171,16 @@ export async function invokeAgentTurn(opts: {
   input: unknown;
   run: AgentRunConfig;
   signal: AbortSignal;
+  onProgress?: () => void;
 }): Promise<{ type: string; data: unknown; artifacts: unknown[]; values: unknown }> {
   const agent = agentFor(opts.run.model);
-  const cfg = invokeConfig(opts.run, opts.signal);
+  const cfg = invokeConfig(opts.run, opts.signal, opts.onProgress);
   let next: unknown = opts.input;
   let result: unknown;
 
   try {
     for (let hop = 0; hop < 16; hop++) {
+      opts.onProgress?.();
       result = await withMounts(opts.run, () =>
         agent.invoke(next as never, cfg),
       );
@@ -223,8 +249,42 @@ export function parseDecisions(raw: unknown): HitlDecision[] {
   });
 }
 
-export function startExecutionTimer(abort: AbortController): ReturnType<typeof setTimeout> {
-  return setTimeout(() => abort.abort(), executionTimeoutMs());
+export interface ExecutionWatchdog {
+  bump: () => void;
+  stop: () => void;
+}
+
+/**
+ * Two clocks: an idle timer that resets whenever the graph emits, and a hard
+ * wall clock that does not. A pvt-plan that is still calling tools must not
+ * die at three minutes; a specialist that has gone silent still must.
+ */
+export function startExecutionTimer(abort: AbortController): ExecutionWatchdog {
+  const idleMs = executionTimeoutMs();
+  const maxMs = executionMaxMs();
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const fire = (reason: "timeout-idle" | "timeout-max") => {
+    if (!abort.signal.aborted) abort.abort(reason);
+  };
+
+  const armIdle = () => {
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => fire("timeout-idle"), idleMs);
+  };
+
+  const maxTimer = setTimeout(() => fire("timeout-max"), maxMs);
+  armIdle();
+
+  return {
+    bump() {
+      if (!abort.signal.aborted) armIdle();
+    },
+    stop() {
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      clearTimeout(maxTimer);
+    },
+  };
 }
 
 export { resumeCommand };

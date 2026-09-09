@@ -50,6 +50,8 @@ import {
   putChatRun,
   type ChatRunContext,
 } from "../internal/chat/run-context";
+import { seedCheckpointIfEmpty } from "../internal/chats/seed";
+import { recordUserTurn } from "../internal/chats/service";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -341,12 +343,17 @@ async function usagePayload(
   };
 }
 
-function abortError(clientGone: boolean): HttpError {
+function abortError(clientGone: boolean, signal?: AbortSignal): HttpError {
+  if (clientGone) return new HttpError(504, "Chat cancelled.");
+  if (signal?.reason === "timeout-max") {
+    return new HttpError(
+      504,
+      `Agent timed out after ${config.agent.invokeMaxMs}ms.`,
+    );
+  }
   return new HttpError(
     504,
-    clientGone
-      ? "Chat cancelled."
-      : `Agent timed out after ${config.agent.invokeTimeoutMs}ms.`,
+    `Agent stalled for ${config.agent.invokeTimeoutMs}ms with no progress.`,
   );
 }
 
@@ -358,7 +365,7 @@ async function runStreamSegment(opts: {
   streaming: boolean;
 }): Promise<void> {
   const abort = new AbortController();
-  const timer = startExecutionTimer(abort);
+  const watchdog = startExecutionTimer(abort);
   const segmentStarted = Date.now();
   let clientGone = false;
   const onClose = () => {
@@ -378,6 +385,7 @@ async function runStreamSegment(opts: {
       run: opts.run,
       signal: abort.signal,
       emit,
+      onProgress: watchdog.bump,
     });
     opts.run.executionMs += Date.now() - segmentStarted;
     if (result.interrupted) {
@@ -404,10 +412,12 @@ async function runStreamSegment(opts: {
     emit({ event: "done", data: { status: "complete" } });
   } catch (err) {
     opts.run.executionMs += Date.now() - segmentStarted;
-    if (abort.signal.aborted || isAbortError(err)) throw abortError(clientGone);
+    if (abort.signal.aborted || isAbortError(err)) {
+      throw abortError(clientGone, abort.signal);
+    }
     throw err;
   } finally {
-    clearTimeout(timer);
+    watchdog.stop();
     opts.req.off("close", onClose);
   }
 }
@@ -481,6 +491,18 @@ async function chatHandler(
       throw new HttpError(400, "Message or file required.");
     }
 
+    await seedCheckpointIfEmpty({
+      userId: req.userId,
+      threadId,
+      model,
+    });
+    await recordUserTurn({
+      userId: req.userId,
+      threadId,
+      text: message,
+      fileNames: uploads.map((file) => file.name),
+    });
+
     collector = createUsageCollector(model ?? config.model.orchestrator);
     const input = {
       messages: [new HumanMessage({ content })],
@@ -502,7 +524,7 @@ async function chatHandler(
 
     if (!streaming) {
       const abort = new AbortController();
-      const timer = startExecutionTimer(abort);
+      const watchdog = startExecutionTimer(abort);
       let clientGone = false;
       const onClose = () => {
         if (res.writableEnded) return;
@@ -515,6 +537,7 @@ async function chatHandler(
           input,
           run,
           signal: abort.signal,
+          onProgress: watchdog.bump,
         });
         executionMs = Date.now() - startedAt;
         res.json({
@@ -526,10 +549,12 @@ async function chatHandler(
           usage: await usagePayload(collector, model, phase, executionMs),
         });
       } catch (err) {
-        if (abort.signal.aborted || isAbortError(err)) throw abortError(clientGone);
+        if (abort.signal.aborted || isAbortError(err)) {
+          throw abortError(clientGone, abort.signal);
+        }
         throw err;
       } finally {
-        clearTimeout(timer);
+        watchdog.stop();
         req.off("close", onClose);
       }
       return;
@@ -603,7 +628,7 @@ async function resumeHandler(
       writeSse(res, { event: "thread", data: { threadId } });
     }
     const abort = new AbortController();
-    const timer = startExecutionTimer(abort);
+    const watchdog = startExecutionTimer(abort);
     const segmentStarted = Date.now();
     let clientGone = false;
     const onClose = () => {
@@ -619,6 +644,7 @@ async function resumeHandler(
           run,
           signal: abort.signal,
           emit: (event) => writeSse(res, event),
+          onProgress: watchdog.bump,
         });
         run.executionMs += Date.now() - segmentStarted;
         if (result.interrupted) {
@@ -655,6 +681,7 @@ async function resumeHandler(
         input: resumeCommand(decisions),
         run,
         signal: abort.signal,
+        onProgress: watchdog.bump,
       });
       dropChatRun(threadId);
       res.json({
@@ -672,10 +699,12 @@ async function resumeHandler(
       });
     } catch (err) {
       run.executionMs += Date.now() - segmentStarted;
-      if (abort.signal.aborted || isAbortError(err)) throw abortError(clientGone);
+      if (abort.signal.aborted || isAbortError(err)) {
+        throw abortError(clientGone, abort.signal);
+      }
       throw err;
     } finally {
-      clearTimeout(timer);
+      watchdog.stop();
       req.off("close", onClose);
     }
   } catch (err) {

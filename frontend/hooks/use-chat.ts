@@ -1,7 +1,9 @@
-import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { UIMessage, UIPart } from "@/components/chat-message";
 import { Attachment } from "@/components/chat-input";
 import { useChatSession } from "@/features/chat-session/ChatSessionProvider";
+import { useChatHistory } from "@/features/chats/ChatHistoryProvider";
+import { titleFromText } from "@/features/chats/types";
 import { type ChatUsage } from "@/features/gateway/types";
 import { type ChatArtifact as StoredArtifact } from "@/features/artifacts/types";
 import { AGENT_API, VAULT_TOKEN } from "@/lib/api";
@@ -394,6 +396,7 @@ export const useChat = () => {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [pinnedPhase, setPinnedPhase] = useState<string | undefined>();
   const { setLive, settleTurn } = useChatSession();
+  const { sessionLoad, touchThread } = useChatHistory();
 
   const abortRef = useRef<AbortController | null>(null);
   const turnRef = useRef(0);
@@ -401,6 +404,41 @@ export const useChat = () => {
   const threadRef = useRef<string | null>(null);
   const phaseRef = useRef<string | undefined>(undefined);
   const onSettledRef = useRef<(() => void) | undefined>(undefined);
+  const titleRef = useRef<string | undefined>(undefined);
+
+  const reset = useCallback(
+    (nextThreadId: string | null, nextMessages: UIMessage[] = []) => {
+      turnRef.current += 1;
+      abortRef.current?.abort();
+      abortRef.current = null;
+      assistantIdRef.current = null;
+      threadRef.current = nextThreadId;
+      phaseRef.current = undefined;
+      onSettledRef.current = undefined;
+      titleRef.current = undefined;
+      setMessages(nextMessages);
+      setThreadId(nextThreadId);
+      setPinnedPhase(undefined);
+      setStatus("idle");
+      setLive({ status: "idle", threadId: nextThreadId, phase: null });
+    },
+    [setLive],
+  );
+
+  useEffect(() => {
+    if (!sessionLoad) return;
+    reset(sessionLoad.threadId, sessionLoad.messages);
+  }, [reset, sessionLoad]);
+
+  const rememberThread = useCallback(
+    (id: string) => {
+      touchThread({
+        id,
+        ...(titleRef.current ? { title: titleRef.current } : {}),
+      });
+    },
+    [touchThread],
+  );
 
   const stop = useCallback(() => {
     turnRef.current += 1;
@@ -448,6 +486,7 @@ export const useChat = () => {
         if (typeof json.threadId === "string" && json.threadId) {
           setThreadId(json.threadId);
           threadRef.current = json.threadId;
+          rememberThread(json.threadId);
         }
         const payload = (json.data ?? {}) as ChatArtifact &
           Record<string, string | undefined>;
@@ -468,6 +507,7 @@ export const useChat = () => {
           threadId: threadRef.current,
           phase: nextPhase,
         });
+        if (threadRef.current) rememberThread(threadRef.current);
         return "done";
       }
 
@@ -479,6 +519,7 @@ export const useChat = () => {
           if (id) {
             setThreadId(id);
             threadRef.current = id;
+            rememberThread(id);
             setLive({
               status: "streaming",
               threadId: id,
@@ -583,12 +624,13 @@ export const useChat = () => {
             threadId: threadRef.current,
             phase: phaseFromTurn(undefined, [], requestedPhase),
           });
+          if (threadRef.current) rememberThread(threadRef.current);
           outcome = "done";
         }
       });
       return outcome;
     },
-    [setLive, settleTurn],
+    [rememberThread, setLive, settleTurn],
   );
 
   const sendMessage = async ({
@@ -633,6 +675,7 @@ export const useChat = () => {
     onSettledRef.current = onSettled;
     phaseRef.current = phase;
     setPinnedPhase(phase);
+    titleRef.current = titleFromText(text);
 
     turnRef.current += 1;
     const turn = turnRef.current;
@@ -754,6 +797,8 @@ export const useChat = () => {
     approvePlan,
     pinnedPhase,
     busy: isBusyStatus(status),
+    threadId,
+    reset,
   };
 };
 

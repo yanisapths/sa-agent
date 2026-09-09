@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Folder,
   FolderGit2,
+  MessageSquare,
   PanelLeft,
   Plus,
   Trash2,
@@ -14,6 +15,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useTheme } from "@/components/theme-provider";
+import { useChatHistory } from "@/features/chats/ChatHistoryProvider";
 import { AddFolderDialog } from "@/features/workspace/AddFolderDialog";
 import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
 import { asterTheme } from "@/lib/theme";
@@ -29,8 +31,27 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme } = useTheme();
-  const { workspaces, attached, attach, create, remove, status, error } =
-    useWorkspace();
+  const {
+    workspaces,
+    attached,
+    attach,
+    create,
+    remove: removeWorkspace,
+    status: workspaceStatus,
+    error: workspaceError,
+  } = useWorkspace();
+  const {
+    threads,
+    nextCursor,
+    status: chatStatus,
+    error: chatError,
+    selectedThreadId,
+    loadingMore,
+    startNewChat,
+    openThread,
+    loadMore,
+    remove: removeChat,
+  } = useChatHistory();
   const [addOpen, setAddOpen] = useState(false);
   const wordmark =
     theme === "dark" ? "/assets/aster-dark.svg" : "/assets/aster-light.svg";
@@ -91,20 +112,24 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
 
       <div className={cn("px-3 py-3", !isExpanded && "flex justify-center")}>
         {isExpanded ? (
-          <Link href="/">
-            <Button variant="outline" className="w-full gap-2">
-              <Plus className="h-4 w-4" />
-              New Chat
-            </Button>
-          </Link>
+          <Button
+            variant="outline"
+            className="w-full gap-2"
+            onClick={() => void startNewChat()}
+          >
+            <Plus className="h-4 w-4" />
+            New Chat
+          </Button>
         ) : (
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
-              <Link href="/">
-                <Button variant="icon" className="bg-muted/5 rounded-full">
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </Link>
+              <Button
+                variant="icon"
+                className="bg-muted/5 rounded-full"
+                onClick={() => void startNewChat()}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
             </TooltipTrigger>
             <TooltipContent side="right">New Chat</TooltipContent>
           </Tooltip>
@@ -147,6 +172,102 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
 
       <div className="flex min-h-0 flex-1 flex-col px-3 pb-3">
         {isExpanded ? (
+          <p className="mb-2 text-xs font-medium text-sidebar-foreground">
+            Chats
+          </p>
+        ) : null}
+
+        {isExpanded && chatStatus === "error" && chatError && (
+          <p className="mb-2 px-1 text-[11px] text-rose-600">{chatError}</p>
+        )}
+        {isExpanded && chatStatus === "ready" && threads.length === 0 && (
+          <p className="mb-2 px-1 text-[11px] text-muted">No chats yet</p>
+        )}
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          {threads.map((thread) => {
+            const isSelected = selectedThreadId === thread.id;
+            const row = (
+              <div
+                className={cn(
+                  "group flex w-full items-center gap-1 rounded-lg text-sm",
+                  isSelected
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent/70",
+                  !isExpanded && "justify-center",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => void openThread(thread.id)}
+                  className={cn(
+                    "min-w-0 flex-1 truncate px-2 py-1.5 text-left",
+                    !isExpanded && "flex justify-center px-0",
+                  )}
+                >
+                  {isExpanded ? (
+                    <span className="flex min-w-0 items-center gap-2">
+                      <MessageSquare className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{thread.title}</span>
+                    </span>
+                  ) : (
+                    <MessageSquare className="h-4 w-4" />
+                  )}
+                </button>
+                {isExpanded && (
+                  <button
+                    type="button"
+                    className="mr-1 hidden shrink-0 rounded p-0.5 text-muted hover:text-rose-600 group-hover:inline-flex"
+                    onClick={() => void removeChat(thread.id)}
+                    aria-label={`Delete ${thread.title}`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            );
+
+            if (isExpanded) return <div key={thread.id}>{row}</div>;
+            return (
+              <Tooltip key={thread.id} delayDuration={0}>
+                <TooltipTrigger asChild>{row}</TooltipTrigger>
+                <TooltipContent side="right">{thread.title}</TooltipContent>
+              </Tooltip>
+            );
+          })}
+          {nextCursor ? (
+            isExpanded ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs"
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+              >
+                {loadingMore ? "Loading…" : "Load more"}
+              </Button>
+            ) : (
+              <Tooltip delayDuration={0}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="icon"
+                    size="sm"
+                    className="h-8 w-8"
+                    disabled={loadingMore}
+                    onClick={() => void loadMore()}
+                    aria-label="Load more chats"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Load more</TooltipContent>
+              </Tooltip>
+            )
+          ) : null}
+        </div>
+      </div>
+
+      <div className="border-sidebar-border flex max-h-48 min-h-0 shrink-0 flex-col border-t px-3 py-3">
+        {isExpanded ? (
           <div className="mb-2 flex items-center justify-between">
             <p className="text-xs font-medium text-sidebar-foreground">
               Projects
@@ -179,10 +300,10 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
           </div>
         )}
 
-        {isExpanded && status === "error" && error && (
-          <p className="mb-2 px-1 text-[11px] text-rose-600">{error}</p>
+        {isExpanded && workspaceStatus === "error" && workspaceError && (
+          <p className="mb-2 px-1 text-[11px] text-rose-600">{workspaceError}</p>
         )}
-        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+        <div className="min-h-0 space-y-1 overflow-y-auto">
           {workspaces.map((ws) => {
             const isAttached = attached?.id === ws.id;
             const row = (
@@ -216,7 +337,7 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
                   <button
                     type="button"
                     className="mr-1 hidden shrink-0 rounded p-0.5 text-muted hover:text-rose-600 group-hover:inline-flex"
-                    onClick={() => void remove(ws.id)}
+                    onClick={() => void removeWorkspace(ws.id)}
                     aria-label={`Remove ${ws.name}`}
                   >
                     <Trash2 className="h-3 w-3" />
