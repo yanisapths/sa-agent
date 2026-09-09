@@ -82,8 +82,9 @@ internal/               artifact normalisation, errors, vault, artifactStore, wo
 | Memory      | `resources/AGENTS.md`                                                | Every turn           |
 | Session     | Per-`threadId` checkpointer                                          | Lifetime of process  |
 
-All database access runs inside a read-only transaction with a statement
-timeout, and `run_sql` rejects anything that is not a `SELECT` or `WITH`.
+Schema tools and `SELECT`/`WITH` run inside a read-only transaction with a
+statement timeout. `run_sql` also accepts a single `INSERT`/`UPDATE`/`DELETE`
+(human-gated via `interruptOn`); DDL and multi-statement batches are rejected.
 
 ## System model
 

@@ -295,7 +295,7 @@ function requestedWorkspaceId(body: Record<string, unknown>): string | undefined
 function workspaceDirective(name: string, root: string): string {
   return (
     `[Workspace: ${name} at ${root}] The product repo is mounted as the agent's filesystem. ` +
-    `ls, read_file, glob, and grep from / see this folder (e.g. ls /internal/handler/voting or glob **/*.go). ` +
+    `ls, read_file, glob, and grep from / see this folder (e.g. ls /internal/handler/voting or glob with pattern **/*.go). ` +
     `Do not pass ${root}/… — use /path/from/repo/root. ` +
     `If a name is wrong, ls the parent; spelling and case may differ (e.g. Redme.md). ` +
     `/artifacts/*.md is still virtual phase scratch (write_file). ` +

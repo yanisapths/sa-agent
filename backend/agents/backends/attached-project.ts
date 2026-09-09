@@ -11,6 +11,7 @@ import {
   IGNORE_DIR_NAMES,
   isGitPath,
   resolveInsideRoot,
+  toVirtualPath,
   WorkspacePathError,
 } from "../../internal/workspace/paths";
 import {
@@ -19,6 +20,8 @@ import {
   VAULT_MOUNT,
 } from "../../internal/vault/mount";
 import { currentWorkspaceRoot } from "../../internal/workspace/runtime";
+
+export { toVirtualPath } from "../../internal/workspace/paths";
 
 /**
  * Ephemeral Deep Agent trees that must stay on StateBackend even when a
@@ -68,20 +71,6 @@ function isStatePath(filePath: string): boolean {
   return STATE_PREFIXES.some(
     (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`),
   );
-}
-
-/**
- * Map a host path inside the attached root onto the virtual tree (`/src/foo.go`).
- * Paths that are already virtual are left alone.
- */
-export function toVirtualPath(root: string, filePath: string): string {
-  const trimmed = filePath.trim().replaceAll("\\", "/");
-  if (!trimmed) return "/";
-  if (trimmed === root || trimmed.startsWith(`${root}/`)) {
-    const rel = trimmed.slice(root.length).replace(/^\/+/, "");
-    return rel ? `/${rel}` : "/";
-  }
-  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
 function ignoredPath(filePath: string): boolean {

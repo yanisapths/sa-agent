@@ -81,8 +81,9 @@ live schema is reported, not added. Treat such a report as a finding.
 
 - Inspect relationships before designing anything that joins entities: SQL, ER
   diagrams, and nested API response payloads all depend on the real FK graph.
-- `run_sql` is read-only and capped. Use it to verify a query returns what you
-  claim, not to browse data.
+- `run_sql` is capped and human-gated. Prefer SELECT/WITH to verify a query.
+  INSERT/UPDATE/DELETE are allowed only when the human should mutate live data;
+  DDL is rejected.
 - Offload findings to files and delegate the phase so this thread stays small.
 - Before proposing a change that contradicts how something is built, run
   `search_decisions`. There may be a reason, and reversing it needs an argument.

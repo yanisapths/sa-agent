@@ -181,7 +181,8 @@ export const PHASE: Record<Phase, PhaseContract> = {
 /**
  * PVT prep. The scarce resource is the test window and the SRE's attention,
  * so planning groups cases into shared setups and execute only emits scripts —
- * `run_sql` stays read-only and no phase here writes to a database.
+ * Prefer read-only `run_sql` here; DML is human-gated and PVT still emits
+ * scripts for SRE rather than mutating through the agent.
  */
 export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
   "pvt-discuss": {
