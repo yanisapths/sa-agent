@@ -55,13 +55,13 @@ function createBackend(): CompositeBackend {
   });
 }
 
-/** Orchestrator may write phase artifacts and mentioned vault files — never the product repo. */
+/**
+ * Skills/memory stay unwritable. Product-repo writes go through HITL on
+ * write_file / edit_file. A blanket `/**` deny rejected approved writes when
+ * the model passed a host path under the attached folder (mounted at `/`).
+ */
 const ORCHESTRATOR_FS_PERMISSIONS: FilesystemPermission[] = [
-  { operations: ["write"], paths: ["/artifacts/**"], mode: "allow" },
-  { operations: ["write"], paths: ["/large_tool_results/**"], mode: "allow" },
-  { operations: ["write"], paths: ["/conversation_history/**"], mode: "allow" },
-  { operations: ["write"], paths: ["/vault/**"], mode: "allow" },
-  { operations: ["write"], paths: ["/**"], mode: "deny" },
+  { operations: ["write"], paths: ["/resources/**"], mode: "deny" },
 ];
 
 export interface AgentSpec {
@@ -112,8 +112,8 @@ export function defineAgent(spec: AgentSpec) {
     checkpointer: spec.session === false ? undefined : SESSION,
     permissions: ORCHESTRATOR_FS_PERMISSIONS,
     interruptOn: AGENT_INTERRUPT_ON,
-    // After filesystem middleware so relative read_file paths are fixed before
-    // deepagents permission validatePath runs.
+    // After filesystem middleware so relative read_file paths and glob
+    // pattern/path mixups are fixed before schema and validatePath run.
     middleware: [normalizeVirtualFsPaths],
   }).withConfig({
     /**

@@ -126,6 +126,21 @@ function existingAncestor(absPath: string): string {
 }
 
 /**
+ * Map a host path inside the attached root onto the virtual tree (`/src/foo.go`).
+ * Paths that are already virtual are left alone.
+ */
+export function toVirtualPath(root: string, filePath: string): string {
+  const trimmed = filePath.trim().replaceAll("\\", "/");
+  const base = root.trim().replaceAll("\\", "/").replace(/\/+$/, "");
+  if (!trimmed) return "/";
+  if (trimmed === base || trimmed.startsWith(`${base}/`)) {
+    const rel = trimmed.slice(base.length).replace(/^\/+/, "");
+    return rel ? `/${rel}` : "/";
+  }
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+/**
  * Turn a model-supplied path into a relative path inside `root`.
  * Absolute paths that sit in the folder are accepted; anything outside is rejected.
  */
