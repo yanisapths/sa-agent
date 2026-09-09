@@ -2,6 +2,9 @@
  * Tools that pause for human review before they run. Read-only grounding
  * tools are omitted so a docs search does not become a click.
  *
+ * `run_sql` is gated because it can INSERT/UPDATE/DELETE; SELECTs pause too
+ * so the interrupt map stays name-based.
+ *
  * `task` is the phase specialist — that is the M8 gate.
  */
 const DECISIONS: Array<"approve" | "edit" | "reject"> = [
@@ -21,4 +24,5 @@ export const AGENT_INTERRUPT_ON: Record<
   build_system_model: { allowedDecisions: DECISIONS },
   write_file: { allowedDecisions: DECISIONS },
   edit_file: { allowedDecisions: DECISIONS },
+  run_sql: { allowedDecisions: DECISIONS },
 };

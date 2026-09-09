@@ -89,9 +89,10 @@ numbers unique and ascending in run order, `_(optional)` on the rollbacks:
 08-rollback_devops_(optional).sql   09-rollback_sre_(optional).sql
 ```
 
-No phase in this track writes to a database. `run_sql` stays read-only and
-proves the verification queries; the scripts are artifacts, and a human runs
-them. The convention lives in `skills/pvt-prep/SKILL.md`.
+No phase in this track should mutate the database through the agent.
+`run_sql` can DML when human-gated, but PVT still emits scripts for SRE —
+`run_sql` only proves verification queries; the scripts are artifacts, and a
+human runs them. The convention lives in `skills/pvt-prep/SKILL.md`.
 
 The chat GUI sends `POST /chat` with `Accept: text/event-stream` and renders
 tokens and tool steps as they stream. `Accept: application/json` still returns

@@ -1,5 +1,5 @@
 import { config } from "../../../config";
-import { readOnlyQuery } from "../../../database/postgres";
+import { readOnlyQuery, writeQuery } from "../../../database/postgres";
 import { orToolError } from "../errors";
 
 const SCHEMA = config.postgres.schema;
@@ -147,21 +147,62 @@ export async function inspectRelationships(
   });
 }
 
+type SqlKind = "read" | "write" | "reject";
+
+/**
+ * Classify a single statement. DDL and multi-statement batches stay rejected;
+ * DML is write; SELECT / read-only WITH is read.
+ */
+export function classifySql(sql: string): SqlKind {
+  const trimmed = sql.trim();
+  if (!trimmed) return "reject";
+  // One statement only — reject stacked commands.
+  if (/;\s*\S/.test(trimmed)) return "reject";
+
+  if (!/^(select|with|insert|update|delete)\b/i.test(trimmed)) {
+    return "reject";
+  }
+
+  if (/^(insert|update|delete)\b/i.test(trimmed)) return "write";
+
+  // WITH … INSERT/UPDATE/DELETE (data-modifying CTEs).
+  if (/^with\b/i.test(trimmed) && /\b(insert|update|delete)\b/i.test(trimmed)) {
+    return "write";
+  }
+
+  return "read";
+}
+
+function formatRows(rows: Record<string, unknown>[]): string {
+  if (rows.length === 0) return "0 rows.";
+
+  const capped = rows.slice(0, config.postgres.maxRows);
+  const truncated =
+    rows.length > capped.length
+      ? `\n(showing ${capped.length} of ${rows.length} rows)`
+      : "";
+
+  return `${JSON.stringify(capped, null, 2)}${truncated}`;
+}
+
 export async function runSql(sql: string): Promise<string> {
   return orToolError(DATABASE, async () => {
-    if (!/^\s*(select|with)\b/i.test(sql)) {
-      return "Rejected: only SELECT and WITH statements are allowed.";
+    const kind = classifySql(sql);
+    if (kind === "reject") {
+      return (
+        "Rejected: only a single SELECT, WITH, INSERT, UPDATE, or DELETE " +
+        "statement is allowed. DDL and multi-statement batches are rejected."
+      );
     }
 
-    const rows = await readOnlyQuery(sql);
-    if (rows.length === 0) return "0 rows.";
+    if (kind === "read") {
+      return formatRows(await readOnlyQuery(sql));
+    }
 
-    const capped = rows.slice(0, config.postgres.maxRows);
-    const truncated =
-      rows.length > capped.length
-        ? `\n(showing ${capped.length} of ${rows.length} rows)`
-        : "";
-
-    return `${JSON.stringify(capped, null, 2)}${truncated}`;
+    const { rows, rowCount } = await writeQuery(sql);
+    if (rows.length > 0) {
+      return `${rowCount} row(s) affected.\n${formatRows(rows)}`;
+    }
+    return `${rowCount} row(s) affected.`;
   });
 }

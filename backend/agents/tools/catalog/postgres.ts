@@ -48,11 +48,15 @@ export const postgresTools = [
   defineTool({
     name: "run_sql",
     description:
-      "Execute a read-only SELECT against the live database to verify a query or sample real data. " +
-      "Runs in a read-only transaction; INSERT/UPDATE/DELETE/DDL are rejected. " +
+      "Execute a single SQL statement against the live database. " +
+      "SELECT/WITH sample or verify data (read-only transaction). " +
+      "INSERT/UPDATE/DELETE mutate data (committed after human approval). " +
+      "DDL and multi-statement batches are rejected. " +
       "Always describe the tables first so the query references real columns.",
     schema: z.object({
-      sql: z.string().describe("A single SELECT or WITH statement"),
+      sql: z
+        .string()
+        .describe("A single SELECT, WITH, INSERT, UPDATE, or DELETE statement"),
     }),
     surfaces: KNOWLEDGE,
     invoke: ({ sql }) => runSql(sql),
