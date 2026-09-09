@@ -8,9 +8,9 @@ export type CardStarSeed = {
 	duration: number
 	twinkleDelay: number
 	twinkleDuration: number
-	floatX: string
-	floatY: string
-	floatZ: string
+	floatX: number
+	floatY: number
+	floatZ: number
 	sparkle?: boolean
 	flash?: boolean
 	tint?: string
@@ -46,9 +46,9 @@ function makeStar(
 		duration: 22 + rand() * 20,
 		twinkleDelay: -(rand() * 16),
 		twinkleDuration: 7 + rand() * 11,
-		floatX: `${sign() * (5 + rand() * 9) * drift}px`,
-		floatY: `${sign() * (7 + rand() * 12) * drift}px`,
-		floatZ: `${(18 + rand() * 32) * drift}px`,
+		floatX: sign() * (5 + rand() * 9) * drift,
+		floatY: sign() * (7 + rand() * 12) * drift,
+		floatZ: (18 + rand() * 32) * drift,
 		sparkle: sparkle || undefined,
 		tint: TINTS[Math.floor(rand() * TINTS.length)],
 	}

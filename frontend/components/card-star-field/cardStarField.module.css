@@ -70,6 +70,8 @@
 
 .star {
   position: absolute;
+  left: calc(var(--star-x) * 1%);
+  top: calc(var(--star-y) * 1%);
   color: var(--star-color, #fff);
   line-height: 1;
   font-size: var(--star-size);
