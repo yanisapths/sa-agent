@@ -1,6 +1,7 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { LLMResult } from "@langchain/core/outputs";
 import { ChatOpenAI } from "@langchain/openai";
+import { initChatModel } from "langchain";
 import { config } from "../config";
 
 /**
@@ -31,6 +32,13 @@ export function resolveModel(id: string): string | BaseChatModel {
   const model = gatewayModel(id);
   models.set(id, model);
   return model;
+}
+
+/** Same as `resolveModel`, but always a chat-model instance (plain LLM path). */
+export async function asChatModel(id: string): Promise<BaseChatModel> {
+  const resolved = resolveModel(id);
+  if (typeof resolved !== "string") return resolved;
+  return (await initChatModel(resolved)) as BaseChatModel;
 }
 
 /** `provider/model` is the gateway shape; `provider:model` is LangChain's. */

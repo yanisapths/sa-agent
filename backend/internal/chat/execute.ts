@@ -1,4 +1,6 @@
 import { agentFor } from "../../agents";
+import { chatAgentFor } from "../../agents/chat-agent";
+import type { AgentKind } from "../../agents/route";
 import { config } from "../../config";
 import { HttpError } from "../httpError";
 import type { UsageCollector } from "../gateway/usage";
@@ -21,6 +23,7 @@ import {
   type HitlDecision,
 } from "./stream";
 import { executionMaxMs, executionTimeoutMs } from "./run-context";
+import { invokePlainTurn, streamPlainTurn } from "./plain";
 import type { ChatActionRequest } from "./events";
 
 export interface AgentRunConfig {
@@ -28,11 +31,28 @@ export interface AgentRunConfig {
   userId?: string;
   model?: string;
   phase?: string;
+  /** `plain` = no tools. `chat` = web/Jira. `deep` = harness. */
+  kind?: AgentKind;
   workspaceId?: string;
   workspaceRoot?: string;
   vaultMount?: VaultMount;
   collector: UsageCollector;
   startedAt: number;
+}
+
+function agentForRun(run: AgentRunConfig) {
+  return run.kind === "chat" ? chatAgentFor(run.model) : agentFor(run.model);
+}
+
+type CheckpointGraph = {
+  getState: (config: {
+    configurable: { thread_id: string };
+  }) => Promise<{ values?: unknown; tasks?: unknown }>;
+};
+
+function checkpointGraph(agent: ReturnType<typeof agentForRun>): CheckpointGraph {
+  const rec = agent as { graph?: CheckpointGraph } & CheckpointGraph;
+  return rec.graph ?? rec;
 }
 
 function progressCallbacks(onProgress?: () => void) {
@@ -61,7 +81,8 @@ function invokeConfig(
         ? { workspaceId: run.workspaceId, workspaceRoot: run.workspaceRoot }
         : {}),
     },
-    recursionLimit: config.agent.recursionLimit,
+    recursionLimit:
+      run.kind === "chat" ? 16 : config.agent.recursionLimit,
     signal,
     callbacks: [run.collector.handler, ...progressCallbacks(onProgress)],
   };
@@ -98,7 +119,10 @@ export async function streamAgentTurn(opts: {
   emit: (event: ChatSseEvent) => void;
   onProgress?: () => void;
 }): Promise<{ interrupted: boolean; values: unknown }> {
-  const agent = agentFor(opts.run.model);
+  if (opts.run.kind === "plain") {
+    return streamPlainTurn(opts);
+  }
+  const agent = agentForRun(opts.run);
   const mapper = createStreamMapper();
   const cfg = invokeConfig(opts.run, opts.signal, opts.onProgress);
 
@@ -126,9 +150,9 @@ export async function streamAgentTurn(opts: {
     throw err;
   }
 
-  const snapshot = (await agent.getState({
+  const snapshot = await checkpointGraph(agent).getState({
     configurable: { thread_id: opts.run.threadId },
-  })) as { values?: unknown; tasks?: unknown };
+  });
   const interrupt = interruptFromState(snapshot) ?? interruptFromState(mapper.lastValues);
   if (interrupt) {
     opts.emit({
@@ -173,7 +197,12 @@ export async function invokeAgentTurn(opts: {
   signal: AbortSignal;
   onProgress?: () => void;
 }): Promise<{ type: string; data: unknown; artifacts: unknown[]; values: unknown }> {
-  const agent = agentFor(opts.run.model);
+  if (opts.run.kind === "plain") {
+    const result = await invokePlainTurn(opts);
+    const finished = await finishTurn({ run: opts.run, values: result.values });
+    return { ...finished, values: result.values };
+  }
+  const agent = agentForRun(opts.run);
   const cfg = invokeConfig(opts.run, opts.signal, opts.onProgress);
   let next: unknown = opts.input;
   let result: unknown;
@@ -187,7 +216,7 @@ export async function invokeAgentTurn(opts: {
       const interrupt =
         interruptFromState(result) ??
         interruptFromState(
-          await agent.getState({
+          await checkpointGraph(agent).getState({
             configurable: { thread_id: opts.run.threadId },
           }),
         );

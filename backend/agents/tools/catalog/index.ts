@@ -2,6 +2,7 @@ import { postgresTools } from "./postgres";
 import { knowledgeTools } from "./knowledge";
 import { systemModelTools } from "./system-model";
 import { jiraTools } from "./jira";
+import { webTools } from "./web";
 import { writeFilesTools } from "./write-files";
 import { workspaceTools } from "./workspace";
 import type { AnyCatalogTool, ToolSurface } from "./types";
@@ -14,6 +15,7 @@ export const TOOL_CATALOG = [
   ...knowledgeTools,
   ...systemModelTools,
   ...jiraTools,
+  ...webTools,
   ...writeFilesTools,
   ...workspaceTools,
 ] as const;

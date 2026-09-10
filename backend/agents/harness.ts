@@ -56,6 +56,7 @@ const INDEX = [
 const JIRA = [
   "get_jira_ticket",
   "read_jira_user_story",
+  "search_jira",
 ] as const satisfies readonly ToolName[];
 
 /**

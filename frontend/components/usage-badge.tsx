@@ -20,7 +20,15 @@ export function UsageBadge({ usage }: { usage: ChatUsage }) {
 
   const parts = [
     ranOn,
-    usage.phase ? `${usage.phase} phase` : null,
+    usage.agent === "plain"
+      ? "plain"
+      : usage.agent === "chat"
+        ? "chat"
+        : usage.phase
+          ? `${usage.phase} phase`
+          : usage.agent === "deep"
+            ? "deep"
+            : null,
     `${formatTokens(usage.inputTokens)} in`,
     `${formatTokens(usage.outputTokens)} out`,
     usage.reasoningTokens > 0

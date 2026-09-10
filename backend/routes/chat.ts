@@ -8,7 +8,7 @@ import {
 } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
-import { PHASE_OWNERS } from "../agents";
+import { PHASE_OWNERS, selectAgentKind, type AgentKind } from "../agents";
 import { config } from "../config";
 import { isChatModelId } from "../internal/gateway/models";
 import {
@@ -334,10 +334,12 @@ async function usagePayload(
   model: string | undefined,
   phase: string | undefined,
   durationMs: number,
+  kind?: string,
 ): Promise<Record<string, unknown>> {
   return {
     model: model ?? config.model.orchestrator,
     phase: phase ?? null,
+    agent: kind ?? "deep",
     durationMs,
     ...(await collector.totals()),
   };
@@ -395,6 +397,7 @@ async function runStreamSegment(opts: {
         opts.run.model,
         opts.run.phase,
         opts.run.executionMs,
+        opts.run.kind,
       );
       emit({ event: "usage", data: usage });
       emit({ event: "done", data: { status: "waiting" } });
@@ -407,6 +410,7 @@ async function runStreamSegment(opts: {
       opts.run.model,
       opts.run.phase,
       opts.run.executionMs,
+      opts.run.kind,
     );
     emit({ event: "usage", data: usage });
     emit({ event: "done", data: { status: "complete" } });
@@ -435,6 +439,7 @@ async function chatHandler(
   let collector: UsageCollector | undefined;
   let model: string | undefined;
   let phase: string | undefined;
+  let kind: AgentKind | undefined;
   let executionMs = 0;
   const streaming = wantsEventStream(req.headers.accept);
 
@@ -477,14 +482,20 @@ async function chatHandler(
     );
     const parked = await parkPvtCases(csvs);
     const seededFiles = { ...parked.files, ...vaultParked.files };
+    kind = selectAgentKind({
+      threadId,
+      message,
+      phase,
+      hasPvtCases: csvs.length > 0 || Object.keys(parked.files).length > 0,
+    });
     const content = toContentBlocks(message, otherFiles, [
       ...mentioned.notes,
       ...vaultParked.notes,
-      ...parked.notes,
-      ...(workspace
+      ...(kind === "deep" ? parked.notes : []),
+      ...(kind === "deep" && workspace
         ? [workspaceDirective(workspace.name, workspace.path)]
         : []),
-      ...(phase ? [phaseDirective(phase)] : []),
+      ...(kind === "deep" && phase ? [phaseDirective(phase)] : []),
     ]);
 
     if (content.length === 0) {
@@ -495,6 +506,7 @@ async function chatHandler(
       userId: req.userId,
       threadId,
       model,
+      kind,
     });
     await recordUserTurn({
       userId: req.userId,
@@ -506,13 +518,16 @@ async function chatHandler(
     collector = createUsageCollector(model ?? config.model.orchestrator);
     const input = {
       messages: [new HumanMessage({ content })],
-      ...(Object.keys(seededFiles).length > 0 ? { files: seededFiles } : {}),
+      ...(kind === "deep" && Object.keys(seededFiles).length > 0
+        ? { files: seededFiles }
+        : {}),
     };
     const run: ChatRunContext = {
       threadId,
       userId: req.userId,
       model,
       phase,
+      kind,
       workspaceRoot: workspace?.path,
       workspaceId: workspace?.id,
       vaultMount: vaultParked.mount,
@@ -546,7 +561,7 @@ async function chatHandler(
           type: result.type,
           data: result.data,
           artifacts: result.artifacts,
-          usage: await usagePayload(collector, model, phase, executionMs),
+          usage: await usagePayload(collector, model, phase, executionMs, kind),
         });
       } catch (err) {
         if (abort.signal.aborted || isAbortError(err)) {
@@ -576,6 +591,7 @@ async function chatHandler(
         model,
         phase,
         executionMs || Date.now() - startedAt,
+        kind,
       );
       if (streaming && res.headersSent && !res.writableEnded) {
         writeSse(res, { event: "error", data: { error: err.message } });
@@ -654,6 +670,7 @@ async function resumeHandler(
             run.model,
             run.phase,
             run.executionMs,
+            run.kind,
           );
           writeSse(res, { event: "usage", data: usage });
           writeSse(res, { event: "done", data: { status: "waiting" } });
@@ -669,6 +686,7 @@ async function resumeHandler(
             run.model,
             run.phase,
             run.executionMs,
+            run.kind,
           );
           writeSse(res, { event: "usage", data: usage });
           writeSse(res, { event: "done", data: { status: "complete" } });
@@ -695,6 +713,7 @@ async function resumeHandler(
           run.model,
           run.phase,
           run.executionMs + (Date.now() - segmentStarted),
+          run.kind,
         ),
       });
     } catch (err) {
@@ -719,6 +738,7 @@ async function resumeHandler(
             run.model,
             run.phase,
             run.executionMs,
+            run.kind,
           ),
         });
       }
@@ -734,6 +754,7 @@ async function resumeHandler(
           run.model,
           run.phase,
           run.executionMs,
+          run.kind,
         ),
       });
       return;

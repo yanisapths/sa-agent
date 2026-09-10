@@ -6,6 +6,9 @@ import { SA_AGENT_PROMPT } from "./prompt";
 /**
  * Cheap router. Specialists live in harness.ts and do the phase work.
  *
+ * Casual chat ("hi") is a bare LLM call. Questions that need docs, schema,
+ * web, or Jira use `chat-agent.ts`. Workflow, coding, and PVT reach this graph.
+ *
  * No memory: `resources/AGENTS.md` is 2.3k on every turn, deepagents mounts it
  * on the main agent only — specialists never see it — and everything in it the
  * router needs is already in SA_AGENT_PROMPT. Specialists inherit the same

@@ -5,6 +5,7 @@ import {
   formatTicket,
   formatUserStory,
   normalizeIssueKey,
+  searchIssues,
 } from "../../resources/mcp/jira-api";
 import { orToolError } from "../errors";
 import {
@@ -37,7 +38,7 @@ function notConfigured(): string {
 
 async function viaRemoteMcp(
   preferredNames: readonly string[],
-  issueKey: string,
+  args: Record<string, unknown>,
 ): Promise<string> {
   const tools = await getJiraMcpTools();
   if (tools.length === 0) {
@@ -52,9 +53,7 @@ async function viaRemoteMcp(
       `Got: ${tools.map((t) => t.name).join(", ")}`
     );
   }
-  const result = await mcpTool.invoke({
-    issue_key: normalizeIssueKey(issueKey),
-  });
+  const result = await mcpTool.invoke(args);
   return typeof result === "string" ? result : JSON.stringify(result, null, 2);
 }
 
@@ -69,7 +68,29 @@ async function loadIssue(
     );
   }
   if (isJiraRemoteMcpConfigured()) {
-    return orToolError("Jira MCP", () => viaRemoteMcp(remoteNames, issueKey));
+    return orToolError("Jira MCP", () =>
+      viaRemoteMcp(remoteNames, { issue_key: normalizeIssueKey(issueKey) }),
+    );
+  }
+  return notConfigured();
+}
+
+async function loadSearch(query: string, limit: number): Promise<string> {
+  if (hasJiraRestAuth()) {
+    return orToolError("Jira", () => searchIssues(query, limit));
+  }
+  if (isJiraRemoteMcpConfigured()) {
+    return orToolError("Jira MCP", () =>
+      viaRemoteMcp(
+        [
+          "search_jira",
+          "jira_search",
+          "searchJiraIssuesUsingJql",
+          "search_issues",
+        ],
+        { query, jql: query, limit, maxResults: limit },
+      ),
+    );
   }
   return notConfigured();
 }
@@ -112,5 +133,21 @@ export const jiraTools = [
         "getJiraIssue",
         "get_ticket",
       ]),
+  }),
+  defineTool({
+    name: "search_jira",
+    mcpName: "search_jira",
+    description:
+      "Search Jira by text, JQL, or an issue key. Returns a short hit list " +
+      "(key, type, status, summary). Use when the user wants to find tickets " +
+      "and did not give a single key. Do not use for schema, API, or SQL work.",
+    schema: z.object({
+      query: z
+        .string()
+        .describe("Search text, JQL, or an issue key such as PROJ-123"),
+      limit: z.number().int().min(1).max(20).default(8),
+    }),
+    surfaces: JIRA,
+    invoke: ({ query, limit }) => loadSearch(query, limit),
   }),
 ] as const;

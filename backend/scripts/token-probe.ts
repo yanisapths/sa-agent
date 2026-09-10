@@ -1,15 +1,19 @@
 import "../load-env";
-import { saAgent } from "../agents";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { chatAgent, saAgent } from "../agents";
+import { asChatModel } from "../agents/model";
+import { PLAIN_PROMPT } from "../agents/prompt";
+import { config } from "../config";
 
 /**
  * What one turn costs before the model reads a word of the question.
  *
  * Intercepts the request on its way to the gateway and prints the system
- * prompt and tool schemas separately, because the scaffolding deepagents
- * assembles — tool descriptions especially — dwarfs anything we write.
- * Run it after touching prompts, tools, subagents, or `agents/profile.ts`.
+ * prompt and tool schemas separately. Default is the plain LLM path ("hello").
  *
  *   bun run tokens
+ *   bun run tokens -- chat
+ *   bun run tokens -- deep
  *
  * Nothing reaches the gateway: the fetch is stubbed and the process exits on
  * the first request, so this is free to run.
@@ -17,6 +21,11 @@ import { saAgent } from "../agents";
 
 const est = (s: string) => Math.round(s.length / 4);
 const realFetch = globalThis.fetch;
+const which = process.argv.includes("deep")
+  ? "deep"
+  : process.argv.includes("chat")
+    ? "chat"
+    : "plain";
 // @ts-ignore
 globalThis.fetch = async (input: any, init: any) => {
   const url = String(input instanceof Request ? input.url : input);
@@ -37,7 +46,20 @@ globalThis.fetch = async (input: any, init: any) => {
     tt += n;
     console.log(`  tool ${(t.function?.name ?? "?").padEnd(20)} ${String(n).padStart(5)} tok`);
   }
-  console.log(`\nsystem ${sys} + tools ${tt} = payload ${est(String(init?.body ?? ""))} tok (${(body.tools ?? []).length} tools)`);
+  console.log(`\n[${which}] system ${sys} + tools ${tt} = payload ${est(String(init?.body ?? ""))} tok (${(body.tools ?? []).length} tools)`);
   process.exit(0);
 };
-await saAgent.invoke({ messages: [{ role: "user", content: "hello" }] }, { configurable: { thread_id: "probe" } });
+
+if (which === "plain") {
+  const model = await asChatModel(config.model.orchestrator);
+  await model.invoke([
+    new SystemMessage(PLAIN_PROMPT),
+    new HumanMessage("hello"),
+  ]);
+} else {
+  const agent = which === "deep" ? saAgent : chatAgent;
+  await agent.invoke(
+    { messages: [{ role: "user", content: "hello" }] },
+    { configurable: { thread_id: "probe" } },
+  );
+}
