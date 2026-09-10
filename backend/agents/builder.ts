@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { MemorySaver } from "@langchain/langgraph";
+import { createAgent } from "langchain";
 import {
   CompositeBackend,
   createDeepAgent,
@@ -34,6 +35,13 @@ const RESOURCE_MOUNT = "/resources";
  * model. Sharing it keeps a thread's history attached to the thread.
  */
 const SESSION = new MemorySaver();
+
+/**
+ * Chat agent checkpoints stay off the Deep Agent store. The graphs do not
+ * share a state schema (no filesystem, no `task`), so a shared thread_id
+ * would clobber whichever ran last.
+ */
+const CHAT_SESSION = new MemorySaver();
 
 /**
  * Read-only mount of `agents/resources` for skills and memory.
@@ -85,9 +93,9 @@ export interface AgentSpec {
 
 /**
  * Assembles a Deep Agent from a declarative resource spec — tools, skills,
- * memory, and subagents. Use this for every agent so they all share the same
- * harness wiring. Filesystem, planning, and delegation tools come from the
- * harness itself.
+ * memory, and subagents. Use this for harness work (workflow, coding, PVT).
+ * Casual chat goes through `defineChatAgent` so it does not pay for this
+ * scaffolding on every greeting.
  */
 export function defineAgent(spec: AgentSpec) {
   /**
@@ -121,5 +129,22 @@ export function defineAgent(spec: AgentSpec) {
      * same cap so nested `task()` specialists inherit it.
      */
     recursionLimit: config.agent.recursionLimit,
+  });
+}
+
+/**
+ * A ReAct agent with no Deep Agent harness. No filesystem, no `task()`, no
+ * skills middleware, no AGENTS.md. Greetings stay a few hundred tokens
+ * instead of several thousand of scaffolding.
+ */
+export function defineChatAgent(spec: AgentSpec) {
+  return createAgent({
+    name: spec.name,
+    model: resolveModel(spec.model ?? config.model.orchestrator),
+    systemPrompt: spec.systemPrompt,
+    tools: resolveTools(spec.tools ?? []),
+    checkpointer: spec.session === false ? undefined : CHAT_SESSION,
+  }).withConfig({
+    recursionLimit: 16,
   });
 }

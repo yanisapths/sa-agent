@@ -67,6 +67,8 @@ export interface ChatUsage {
   /** The model the turn was asked to run on. */
   model: string;
   phase: string | null;
+  /** Lightweight chat vs the Deep Agent harness. */
+  agent?: "plain" | "chat" | "deep";
   durationMs: number;
   calls: number;
   inputTokens: number;
