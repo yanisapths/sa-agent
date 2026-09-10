@@ -9,6 +9,7 @@ import { withWorkspaceRoot } from "../workspace/runtime";
 import type { ChatSseEvent } from "./events";
 import { recordAssistantTurn } from "../chats/service";
 import { persistTurnArtifacts, artifactFromState } from "./finalize";
+import { mintFeedbackUrls, type ChatFeedback } from "./feedback";
 import {
   autoApproveDecisions,
   costHintFor,
@@ -38,6 +39,9 @@ export interface AgentRunConfig {
   vaultMount?: VaultMount;
   collector: UsageCollector;
   startedAt: number;
+  /** LangSmith root span for this user-visible turn. */
+  runId?: string;
+  claimRoot?: boolean;
 }
 
 function agentForRun(run: AgentRunConfig) {
@@ -68,6 +72,19 @@ function progressCallbacks(onProgress?: () => void) {
   ];
 }
 
+function tracingFields(run: AgentRunConfig): Record<string, unknown> {
+  if (!run.runId || run.claimRoot === false) return {};
+  return {
+    runId: run.runId,
+    runName: "chat-turn",
+    tags: ["gui", run.kind ?? "deep"],
+    metadata: {
+      thread_id: run.threadId,
+      agent_kind: run.kind ?? "deep",
+    },
+  };
+}
+
 function invokeConfig(
   run: AgentRunConfig,
   signal: AbortSignal,
@@ -85,6 +102,7 @@ function invokeConfig(
       run.kind === "chat" ? 16 : config.agent.recursionLimit,
     signal,
     callbacks: [run.collector.handler, ...progressCallbacks(onProgress)],
+    ...tracingFields(run),
   };
 }
 
@@ -125,6 +143,7 @@ export async function streamAgentTurn(opts: {
   const agent = agentForRun(opts.run);
   const mapper = createStreamMapper();
   const cfg = invokeConfig(opts.run, opts.signal, opts.onProgress);
+  opts.run.claimRoot = false;
 
   try {
     await withMounts(opts.run, async () => {
@@ -170,7 +189,12 @@ export async function finishTurn(opts: {
   run: AgentRunConfig;
   values: unknown;
   emit?: (event: ChatSseEvent) => void;
-}): Promise<{ type: string; data: unknown; artifacts: unknown[] }> {
+}): Promise<{
+  type: string;
+  data: unknown;
+  artifacts: unknown[];
+  feedback: ChatFeedback | null;
+}> {
   const artifacts = await persistTurnArtifacts({
     userId: opts.run.userId,
     threadId: opts.run.threadId,
@@ -181,14 +205,22 @@ export async function finishTurn(opts: {
   });
   if (opts.emit) opts.emit(valuesEvent(opts.values, artifacts));
   const { type, data } = artifactFromState(opts.values);
+  const feedback = await mintFeedbackUrls(opts.run.runId, opts.run.threadId);
   await recordAssistantTurn({
     userId: opts.run.userId,
     threadId: opts.run.threadId,
     type,
     data,
     artifacts,
+    feedback: feedback ?? undefined,
   });
-  return { type, data, artifacts };
+  if (opts.emit && feedback) {
+    opts.emit({
+      event: "feedback",
+      data: { user_score: feedback.urls.user_score, runId: feedback.runId },
+    });
+  }
+  return { type, data, artifacts, feedback };
 }
 
 export async function invokeAgentTurn(opts: {
@@ -196,7 +228,13 @@ export async function invokeAgentTurn(opts: {
   run: AgentRunConfig;
   signal: AbortSignal;
   onProgress?: () => void;
-}): Promise<{ type: string; data: unknown; artifacts: unknown[]; values: unknown }> {
+}): Promise<{
+  type: string;
+  data: unknown;
+  artifacts: unknown[];
+  values: unknown;
+  feedback: ChatFeedback | null;
+}> {
   if (opts.run.kind === "plain") {
     const result = await invokePlainTurn(opts);
     const finished = await finishTurn({ run: opts.run, values: result.values });
@@ -204,6 +242,7 @@ export async function invokeAgentTurn(opts: {
   }
   const agent = agentForRun(opts.run);
   const cfg = invokeConfig(opts.run, opts.signal, opts.onProgress);
+  opts.run.claimRoot = false;
   let next: unknown = opts.input;
   let result: unknown;
 
@@ -213,6 +252,7 @@ export async function invokeAgentTurn(opts: {
       result = await withMounts(opts.run, () =>
         agent.invoke(next as never, cfg),
       );
+      delete cfg.runId;
       const interrupt =
         interruptFromState(result) ??
         interruptFromState(

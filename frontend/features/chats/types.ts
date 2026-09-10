@@ -1,11 +1,16 @@
 import { type UIMessage, type UIPart } from "@/components/chat-message";
 import { type ChatArtifact } from "@/features/artifacts/types";
 import { type ChatUsage } from "@/features/gateway/types";
-import { type ThoughtStep } from "@/lib/chat-stream";
+import {
+  type ChatFeedback,
+  type ThoughtStep,
+} from "@/lib/chat-stream";
 
 export const DEFAULT_CHAT_TITLE = "New chat";
 export const CHAT_LIST_PAGE_SIZE = 20;
 export const CHAT_TITLE_MAX = 80;
+
+export type { ChatFeedback, UserScore } from "@/lib/chat-stream";
 
 export type ChatRole = "user" | "assistant";
 
@@ -20,6 +25,7 @@ export interface ChatMessageContent {
   usage?: ChatUsage;
   artifacts?: ChatArtifact[];
   steps?: ThoughtStep[];
+  feedback?: ChatFeedback;
 }
 
 export interface ChatThread {
@@ -77,5 +83,6 @@ export function toUiMessage(row: ChatMessage): UIMessage {
     usage: row.content.usage,
     artifacts: row.content.artifacts,
     steps: row.content.steps,
+    feedback: row.content.feedback,
   };
 }

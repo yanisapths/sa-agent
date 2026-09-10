@@ -10,11 +10,23 @@ export type ChatMessagePart = {
   [key: string]: unknown;
 };
 
+export type ChatFeedbackUrls = {
+  user_score: string;
+};
+
+export type ChatFeedback = {
+  runId: string;
+  urls: ChatFeedbackUrls;
+  score?: 1 | -1;
+  comment?: string;
+};
+
 export type ChatMessageContent = {
   parts: ChatMessagePart[];
   usage?: unknown;
   artifacts?: unknown;
   steps?: unknown;
+  feedback?: ChatFeedback;
 };
 
 export type ChatThreadRow = {

@@ -6,6 +6,7 @@ import {
   CHAT_TITLE_MAX,
   DEFAULT_CHAT_TITLE,
   type AppendMessageInput,
+  type ChatFeedback,
   type ChatMessageContent,
   type ChatMessageResponse,
   type ChatMessageRow,
@@ -15,6 +16,7 @@ import {
   type ChatThreadResponse,
   type ChatThreadRow,
 } from "./types";
+import { asFeedback } from "../chat/feedback";
 
 const THREADS = "chat_threads";
 const MESSAGES = "chat_messages";
@@ -81,11 +83,13 @@ function asContent(raw: unknown): ChatMessageContent {
   }
   const rec = raw as ChatMessageContent;
   const parts = Array.isArray(rec.parts) ? rec.parts : [];
+  const feedback = asFeedback(rec.feedback);
   return {
     parts,
     ...(rec.usage !== undefined ? { usage: rec.usage } : {}),
     ...(rec.artifacts !== undefined ? { artifacts: rec.artifacts } : {}),
     ...(rec.steps !== undefined ? { steps: rec.steps } : {}),
+    ...(feedback ? { feedback } : {}),
   };
 }
 
@@ -351,6 +355,7 @@ export async function recordAssistantTurn(opts: {
   type: string;
   data: unknown;
   artifacts?: unknown;
+  feedback?: ChatFeedback;
 }): Promise<void> {
   if (!opts.userId) return;
   try {
@@ -360,11 +365,61 @@ export async function recordAssistantTurn(opts: {
       content: {
         parts: assistantParts(opts.type, opts.data),
         ...(opts.artifacts !== undefined ? { artifacts: opts.artifacts } : {}),
+        ...(opts.feedback ? { feedback: opts.feedback } : {}),
       },
     });
   } catch (err) {
     console.error("Failed to persist chat assistant turn:", err);
   }
+}
+
+export async function findAssistantFeedback(
+  userId: string,
+  threadId: string,
+  runId?: string,
+): Promise<{ id: string; content: ChatMessageContent } | null> {
+  const messages = await listMessages(userId, threadId);
+  const assistants = messages.filter((row) => row.role === "assistant");
+  if (runId) {
+    const match = [...assistants]
+      .reverse()
+      .find((row) => asFeedback(row.content.feedback)?.runId === runId);
+    if (match) return { id: match.id, content: match.content };
+  }
+  const last = [...assistants]
+    .reverse()
+    .find((row) => asFeedback(row.content.feedback)?.urls.user_score);
+  return last ? { id: last.id, content: last.content } : null;
+}
+
+export async function patchMessageFeedback(
+  userId: string,
+  messageId: string,
+  threadId: string,
+  feedback: ChatFeedback,
+): Promise<void> {
+  const existing = await getSupabase()
+    .from(MESSAGES)
+    .select("*")
+    .eq("id", messageId)
+    .eq("thread_id", threadId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  throwIfMissingTable(existing.error);
+  if (!existing.data) throw new HttpError(404, "Chat message not found");
+  const row = existing.data as ChatMessageRow;
+  const content = asContent(row.content);
+  const { error } = await getSupabase()
+    .from(MESSAGES)
+    .update({
+      content: {
+        ...content,
+        feedback,
+      },
+    })
+    .eq("id", messageId)
+    .eq("user_id", userId);
+  throwIfMissingTable(error);
 }
 
 function assistantParts(type: string, data: unknown): ChatMessageContent["parts"] {
