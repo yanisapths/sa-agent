@@ -9,6 +9,7 @@ import { type ChatArtifact as StoredArtifact } from "@/features/artifacts/types"
 import { AGENT_API, VAULT_TOKEN } from "@/lib/api";
 import { type ChatArtifact } from "@/lib/chat-response";
 import {
+  asFeedbackEvent,
   asUsage,
   isBusyStatus,
   mergeStep,
@@ -17,6 +18,7 @@ import {
   type HitlDecision,
   type InterruptPayload,
   type ThoughtStep,
+  type UserScore,
   type ValuesPayload,
 } from "@/lib/chat-stream";
 
@@ -466,6 +468,7 @@ export const useChat = () => {
           data?: ChatArtifact;
           artifacts?: StoredArtifact[];
           usage?: ChatUsage;
+          feedback?: { user_score?: string; runId?: string };
         };
         if (!res.ok || json?.ok === false) {
           const detail =
@@ -491,10 +494,12 @@ export const useChat = () => {
         const payload = (json.data ?? {}) as ChatArtifact &
           Record<string, string | undefined>;
         const part = artifactToPart(json.type ?? payload.type ?? "text", payload);
+        const feedback = asFeedbackEvent(json.feedback);
         patchAssistant(setMessages, assistantId, {
           parts: [part],
           usage: json.usage,
           artifacts: json.artifacts,
+          ...(feedback ? { feedback } : {}),
         });
         const nextPhase = phaseFromTurn(
           json.usage,
@@ -590,6 +595,13 @@ export const useChat = () => {
           const usage = asUsage(data);
           if (usage) {
             patchAssistant(setMessages, assistantId, { usage });
+          }
+          return;
+        }
+        if (event === "feedback") {
+          const feedback = asFeedbackEvent(data);
+          if (feedback) {
+            patchAssistant(setMessages, assistantId, { feedback });
           }
           return;
         }
@@ -789,12 +801,51 @@ export const useChat = () => {
     }
   };
 
+  const submitFeedback = async (
+    messageId: string,
+    score: UserScore,
+    comment?: string,
+    runId?: string,
+  ): Promise<void> => {
+    const thread = threadRef.current;
+    if (!thread) throw new Error("No active thread.");
+    const headers = new Headers();
+    if (VAULT_TOKEN) headers.set("Authorization", `Bearer ${VAULT_TOKEN}`);
+    headers.set("Content-Type", "application/json");
+    const res = await fetch(`${AGENT_API}/chat/feedback`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        threadId: thread,
+        ...(runId ? { runId } : {}),
+        score,
+        ...(comment ? { comment } : {}),
+      }),
+    });
+    const json = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      error?: string;
+    } | null;
+    if (!res.ok && res.status !== 409) {
+      throw new Error(
+        typeof json?.error === "string" ? json.error : "Could not submit feedback.",
+      );
+    }
+    patchAssistant(setMessages, messageId, (current) => ({
+      ...current,
+      feedback: current.feedback
+        ? { ...current.feedback, score, ...(comment ? { comment } : {}) }
+        : current.feedback,
+    }));
+  };
+
   return {
     messages,
     sendMessage,
     status,
     stop,
     approvePlan,
+    submitFeedback,
     pinnedPhase,
     busy: isBusyStatus(status),
     threadId,

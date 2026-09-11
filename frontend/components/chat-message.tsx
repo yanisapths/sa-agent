@@ -10,11 +10,14 @@ import {
 } from "@/features/artifacts/service";
 import { type ChatArtifact } from "@/features/artifacts/types";
 import { UsageBadge } from "./usage-badge";
+import { MessageFeedback } from "./message-feedback";
 import { ThoughtPanel } from "./thought-panel";
 import {
+  type ChatFeedback,
   type HitlDecision,
   type InterruptPayload,
   type ThoughtStep,
+  type UserScore,
 } from "@/lib/chat-stream";
 
 
@@ -36,6 +39,8 @@ export interface UIMessage {
   steps?: ThoughtStep[];
   /** Pending HITL tool batch, if the graph is paused. */
   interrupt?: InterruptPayload;
+  /** LangSmith presigned URLs and any submitted score for this turn. */
+  feedback?: ChatFeedback;
 }
 
 export interface ApiSpecPart extends UIMessagePart {
@@ -928,12 +933,14 @@ export function ChatMessage({
   thoughtOpen = false,
   waiting = false,
   onDecide,
+  onFeedback,
 }: {
   message: UIMessage;
   isStreaming?: boolean;
   thoughtOpen?: boolean;
   waiting?: boolean;
   onDecide?: (decisions: HitlDecision[]) => void;
+  onFeedback?: (score: UserScore, comment?: string) => Promise<void>;
 }) {
   const isUser = message.role === "user";
   return (
@@ -997,9 +1004,20 @@ export function ChatMessage({
               )}
           </div>
         </div>
-        {/* Only once the answer is complete — a cost that ticks up mid-render reads as noise. */}
-        {!isUser && !isStreaming && !waiting && message.usage && (
-          <UsageBadge usage={message.usage} />
+        {!isUser &&
+          !isStreaming &&
+          !waiting &&
+          (message.usage ||
+            (message.feedback?.urls.user_score && onFeedback)) && (
+          <div className="mt-1.5 flex flex-wrap items-start gap-x-3 gap-y-1">
+            {message.usage && <UsageBadge usage={message.usage} />}
+            {message.feedback?.urls.user_score && onFeedback && (
+              <MessageFeedback
+                feedback={message.feedback}
+                onSubmit={onFeedback}
+              />
+            )}
+          </div>
         )}
       </div>
     </div>

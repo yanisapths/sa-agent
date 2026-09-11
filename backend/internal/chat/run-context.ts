@@ -21,6 +21,13 @@ export interface ChatRunContext {
   executionMs: number;
   collector: UsageCollector;
   expiresAt: number;
+  /** LangSmith root span for this user-visible turn. */
+  runId?: string;
+  /**
+   * True until the first stream/invoke of this turn claims `runId` as the
+   * root span. Resume hops must not reuse it.
+   */
+  claimRoot?: boolean;
 }
 
 const runs = new Map<string, ChatRunContext>();

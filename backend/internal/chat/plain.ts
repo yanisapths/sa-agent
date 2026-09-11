@@ -12,6 +12,8 @@ type PlainRun = {
   userId?: string;
   model?: string;
   collector: UsageCollector;
+  runId?: string;
+  claimRoot?: boolean;
 };
 
 function contentText(content: unknown): string {
@@ -71,6 +73,15 @@ function llmConfig(
   signal: AbortSignal,
   onProgress?: () => void,
 ) {
+  const tracing =
+    run.runId && run.claimRoot !== false
+      ? {
+          runId: run.runId,
+          runName: "chat-turn",
+          tags: ["gui", "plain"],
+          metadata: { thread_id: run.threadId, agent_kind: "plain" },
+        }
+      : {};
   return {
     signal,
     callbacks: [
@@ -85,6 +96,7 @@ function llmConfig(
           ]
         : []),
     ],
+    ...tracing,
   };
 }
 
@@ -103,8 +115,10 @@ export async function streamPlainTurn(opts: {
   const userText = userTextFromInput(opts.input);
   const messages = await plainMessages(opts.run, userText);
   let assistant = "";
+  const cfg = llmConfig(opts.run, opts.signal, opts.onProgress);
+  opts.run.claimRoot = false;
 
-  const stream = await model.stream(messages, llmConfig(opts.run, opts.signal, opts.onProgress));
+  const stream = await model.stream(messages, cfg);
   for await (const chunk of stream) {
     opts.onProgress?.();
     if (opts.signal.aborted) break;
@@ -127,6 +141,8 @@ export async function invokePlainTurn(opts: {
   const userText = userTextFromInput(opts.input);
   const messages = await plainMessages(opts.run, userText);
   opts.onProgress?.();
-  const reply = await model.invoke(messages, llmConfig(opts.run, opts.signal, opts.onProgress));
+  const cfg = llmConfig(opts.run, opts.signal, opts.onProgress);
+  opts.run.claimRoot = false;
+  const reply = await model.invoke(messages, cfg);
   return { interrupted: false, values: valuesOf(contentText(reply.content)) };
 }

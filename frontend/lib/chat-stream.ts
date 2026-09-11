@@ -43,6 +43,19 @@ export type HitlDecision =
       editedAction: { name: string; args: Record<string, unknown> };
     };
 
+export type UserScore = 1 | -1;
+
+export type ChatFeedbackUrls = {
+  user_score: string;
+};
+
+export type ChatFeedback = {
+  runId: string;
+  urls: ChatFeedbackUrls;
+  score?: UserScore;
+  comment?: string;
+};
+
 export type ChatSseEventName =
   | "thread"
   | "messages"
@@ -50,6 +63,7 @@ export type ChatSseEventName =
   | "interrupt"
   | "values"
   | "usage"
+  | "feedback"
   | "done"
   | "error";
 
@@ -141,4 +155,16 @@ export function asUsage(data: unknown): ChatUsage | undefined {
   const row = data as ChatUsage;
   if (typeof row.model !== "string") return undefined;
   return row;
+}
+
+export function asFeedbackEvent(
+  data: unknown,
+): { runId: string; urls: { user_score: string } } | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const row = data as { user_score?: unknown; runId?: unknown };
+  if (typeof row.user_score !== "string" || !row.user_score) return undefined;
+  return {
+    runId: typeof row.runId === "string" ? row.runId : "",
+    urls: { user_score: row.user_score },
+  };
 }

@@ -51,7 +51,19 @@ import {
   type ChatRunContext,
 } from "../internal/chat/run-context";
 import { seedCheckpointIfEmpty } from "../internal/chats/seed";
-import { recordUserTurn } from "../internal/chats/service";
+import {
+  findAssistantFeedback,
+  patchMessageFeedback,
+  recordUserTurn,
+} from "../internal/chats/service";
+import {
+  asFeedback,
+  asUserScore,
+  newChatRunId,
+  pendingFeedback,
+  postFeedbackToken,
+  type ChatFeedback,
+} from "../internal/chat/feedback";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -535,6 +547,8 @@ async function chatHandler(
       executionMs: 0,
       collector,
       expiresAt: Date.now() + 30 * 60 * 1000,
+      runId: newChatRunId(),
+      claimRoot: true,
     };
 
     if (!streaming) {
@@ -562,6 +576,14 @@ async function chatHandler(
           data: result.data,
           artifacts: result.artifacts,
           usage: await usagePayload(collector, model, phase, executionMs, kind),
+          ...(result.feedback
+            ? {
+                feedback: {
+                  user_score: result.feedback.urls.user_score,
+                  runId: result.feedback.runId,
+                },
+              }
+            : {}),
         });
       } catch (err) {
         if (abort.signal.aborted || isAbortError(err)) {
@@ -715,6 +737,14 @@ async function resumeHandler(
           run.executionMs + (Date.now() - segmentStarted),
           run.kind,
         ),
+        ...(finished.feedback
+          ? {
+              feedback: {
+                user_score: finished.feedback.urls.user_score,
+                runId: finished.feedback.runId,
+              },
+            }
+          : {}),
       });
     } catch (err) {
       run.executionMs += Date.now() - segmentStarted;
@@ -763,8 +793,57 @@ async function resumeHandler(
   }
 }
 
+async function feedbackHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const threadId =
+      typeof body.threadId === "string" ? body.threadId.trim() : "";
+    if (!threadId) throw new HttpError(400, "threadId is required.");
+    const score = asUserScore(body.score);
+    if (score === undefined) {
+      throw new HttpError(400, "score must be 1 or -1.");
+    }
+    const runId = typeof body.runId === "string" ? body.runId.trim() : "";
+    const comment =
+      typeof body.comment === "string" && body.comment.trim()
+        ? body.comment.trim().slice(0, 2000)
+        : undefined;
+
+    const stored = req.userId
+      ? await findAssistantFeedback(req.userId, threadId, runId || undefined)
+      : null;
+    const pending = pendingFeedback(threadId, runId || undefined);
+    const feedback: ChatFeedback | undefined =
+      asFeedback(stored?.content.feedback) ??
+      (pending
+        ? { runId: pending.runId, urls: pending.urls }
+        : undefined);
+
+    if (!feedback) {
+      throw new HttpError(404, "No feedback token for this turn.");
+    }
+    if (feedback.score !== undefined) {
+      throw new HttpError(409, "Feedback already submitted for this turn.");
+    }
+
+    await postFeedbackToken(feedback.urls.user_score, score, comment);
+    const next = { ...feedback, score, ...(comment ? { comment } : {}) };
+    if (req.userId && stored) {
+      await patchMessageFeedback(req.userId, stored.id, threadId, next);
+    }
+    res.json({ ok: true, score, comment: comment ?? null });
+  } catch (err) {
+    next(err);
+  }
+}
+
 const chat = Router();
 chat.post("/", optionalAuth, upload.array("files"), chatHandler);
 chat.post("/resume", optionalAuth, resumeHandler);
+chat.post("/feedback", optionalAuth, feedbackHandler);
 
 export { chat };
