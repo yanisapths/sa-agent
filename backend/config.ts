@@ -76,11 +76,22 @@ function bifrostEnv(name: string): string | undefined {
   return process.env[`BIFROST_${name}`] || process.env[name];
 }
 
+/**
+ * Env integers accept the same underscores as JS literals (`980_000`).
+ * `Number("980_000")` is NaN, so a .env copied from `config.ts` would
+ * either crash startup or silently keep the default.
+ */
+function parsePositiveInt(raw: string): number | undefined {
+  const value = Number(raw.replace(/_/g, "").trim());
+  if (!Number.isInteger(value) || value <= 0) return undefined;
+  return value;
+}
+
 function positiveInt(name: string, fallback: number): number {
   const raw = bifrostEnv(name);
   if (!raw) return fallback;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) {
+  const value = parsePositiveInt(raw);
+  if (value === undefined) {
     throw new Error(
       `BIFROST_${name} must be a positive integer (got "${raw}")`,
     );
@@ -91,8 +102,8 @@ function positiveInt(name: string, fallback: number): number {
 function envPositiveInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) {
+  const value = parsePositiveInt(raw);
+  if (value === undefined) {
     throw new Error(`${name} must be a positive integer (got "${raw}")`);
   }
   return value;
@@ -235,9 +246,18 @@ export const config = {
    */
   agent: {
     /** Graph supersteps for the orchestrator and every `task()` specialist. */
-    recursionLimit: envPositiveInt("AGENT_RECURSION_LIMIT", 50),
-    /** Wall clock for one `/chat` invoke, including nested specialists. */
+    recursionLimit: envPositiveInt("AGENT_RECURSION_LIMIT", 5000),
+    /**
+     * Abort if the graph makes no progress for this long. Stream tokens,
+     * LLM calls, and tool calls reset it. A pvt-plan with a large artifact
+     * routinely runs past three minutes of wall clock; that is not a hang.
+     */
     invokeTimeoutMs: envPositiveInt("AGENT_INVOKE_TIMEOUT_MS", 180_000),
+    /**
+     * Hard wall clock for one `/chat` invoke, including nested specialists.
+     * The idle timer above will not save a specialist that keeps emitting.
+     */
+    invokeMaxMs: envPositiveInt("AGENT_INVOKE_MAX_MS", 1_800_000),
   },
 
   embeddings: {

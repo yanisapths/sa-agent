@@ -33,7 +33,7 @@ const onboardingTags = [
 
 export function ChatInterface() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { messages, sendMessage, status, stop, approvePlan, pinnedPhase } =
+  const { messages, sendMessage, status, stop, approvePlan, submitFeedback, pinnedPhase } =
     useChat();
   const isLoading = isBusyStatus(status);
   const hasMessages = messages.length > 0;
@@ -93,6 +93,17 @@ export function ChatInterface() {
                     onDecide={
                       status === "waiting" && lastAssistant
                         ? approvePlan
+                        : undefined
+                    }
+                    onFeedback={
+                      message.feedback?.urls.user_score
+                        ? (score, comment) =>
+                            submitFeedback(
+                              message.id,
+                              score,
+                              comment,
+                              message.feedback?.runId,
+                            )
                         : undefined
                     }
                   />

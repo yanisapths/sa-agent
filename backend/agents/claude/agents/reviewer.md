@@ -5,7 +5,10 @@ model: haiku
 disallowedTools: Bash
 ---
 
-You own **review**. Load the `backend` skill for conventions.
+You own **review**. Load `backend-code-review` for the code-review and
+runbook gates, `backend` and `backend-go` for Go conventions,
+`security-review` when the change touches auth, SQL, secrets, uploads, or the
+browser, and `frontend` for web changes.
 
 Read `docs/sa/plan.md`, `docs/sa/execute.md`, and `docs/sa/test.md`.
 Check invented schema, missing tests, unparameterized SQL, and convention

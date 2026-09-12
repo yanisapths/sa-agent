@@ -76,10 +76,22 @@ function sslVerify(): boolean {
   return process.env.JIRA_SSL_VERIFY !== "false";
 }
 
-function requestJson(url: string): Promise<unknown> {
+function requestJson(
+  url: string,
+  init?: { method?: "GET" | "POST"; body?: unknown },
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
     const pathWithQuery = `${parsed.pathname}${parsed.search}`;
+    const method = init?.method ?? "GET";
+    const payload =
+      init?.body === undefined ? undefined : JSON.stringify(init.body);
+    const headers: Record<string, string> = {
+      Authorization: authHeader(),
+      Accept: "application/json",
+    };
+    if (payload) headers["Content-Type"] = "application/json";
+
     const onResponse = (res: http.IncomingMessage) => {
       const chunks: Buffer[] = [];
       res.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -101,36 +113,23 @@ function requestJson(url: string): Promise<unknown> {
       });
     };
 
+    const options = {
+      hostname: parsed.hostname,
+      port: parsed.port || undefined,
+      path: pathWithQuery,
+      method,
+      headers,
+    };
+
     const req =
       parsed.protocol === "https:"
         ? https.request(
-            {
-              hostname: parsed.hostname,
-              port: parsed.port || undefined,
-              path: pathWithQuery,
-              method: "GET",
-              headers: {
-                Authorization: authHeader(),
-                Accept: "application/json",
-              },
-              rejectUnauthorized: sslVerify(),
-            },
+            { ...options, rejectUnauthorized: sslVerify() },
             onResponse,
           )
-        : http.request(
-            {
-              hostname: parsed.hostname,
-              port: parsed.port || undefined,
-              path: pathWithQuery,
-              method: "GET",
-              headers: {
-                Authorization: authHeader(),
-                Accept: "application/json",
-              },
-            },
-            onResponse,
-          );
+        : http.request(options, onResponse);
     req.on("error", reject);
+    if (payload) req.write(payload);
     req.end();
   });
 }
@@ -192,6 +191,89 @@ export async function fetchIssue(issueKey: string): Promise<JiraIssue> {
     `${requiredUrl()}/rest/api/2/issue/${encodeURIComponent(key)}` +
     `?expand=names,renderedFields`;
   return (await requestJson(url)) as JiraIssue;
+}
+
+function escapeJqlString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function looksLikeJql(query: string): boolean {
+  return /\b(AND|OR|ORDER BY|project\s*=|status\s*=|assignee\s*=|issuetype\s*=|text\s*~|summary\s*~)\b/i.test(
+    query,
+  );
+}
+
+/** A paste that is just a key or a browse URL, not a search phrase. */
+export function isBareIssueKey(query: string): boolean {
+  const key = normalizeIssueKey(query);
+  if (!/^[A-Z][A-Z0-9]+-\d+$/.test(key)) return false;
+  const trimmed = query.trim();
+  return (
+    trimmed.toUpperCase() === key ||
+    /\/browse\/[A-Z][A-Z0-9]+-\d+/i.test(trimmed)
+  );
+}
+
+function jqlFor(query: string): string {
+  const trimmed = query.trim();
+  if (looksLikeJql(trimmed)) return trimmed;
+  const escaped = escapeJqlString(trimmed);
+  return `text ~ "${escaped}" OR summary ~ "${escaped}" ORDER BY updated DESC`;
+}
+
+/**
+ * Search Jira and return a compact hit list. A bare issue key fetches that
+ * ticket instead of running JQL.
+ */
+export async function searchIssues(
+  query: string,
+  limit = 8,
+): Promise<string> {
+  const trimmed = query.trim();
+  if (!trimmed) return "search_jira needs a query, JQL, or issue key.";
+
+  if (isBareIssueKey(trimmed)) {
+    return formatTicket(await fetchIssue(trimmed));
+  }
+
+  const maxResults = Math.min(Math.max(limit, 1), 20);
+  const jql = jqlFor(trimmed);
+  const fields = "summary,status,issuetype,assignee,priority,updated";
+
+  let payload: { issues?: JiraIssue[]; total?: number };
+  try {
+    const url =
+      `${requiredUrl()}/rest/api/2/search` +
+      `?jql=${encodeURIComponent(jql)}` +
+      `&maxResults=${maxResults}` +
+      `&fields=${encodeURIComponent(fields)}`;
+    payload = (await requestJson(url)) as { issues?: JiraIssue[]; total?: number };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!/\b410\b|\b404\b/.test(message)) throw err;
+    payload = (await requestJson(`${requiredUrl()}/rest/api/3/search/jql`, {
+      method: "POST",
+      body: { jql, maxResults, fields: fields.split(",") },
+    })) as { issues?: JiraIssue[]; total?: number };
+  }
+
+  const issues = payload.issues ?? [];
+  if (issues.length === 0) {
+    return `No Jira issues matched ${JSON.stringify(trimmed)}.`;
+  }
+
+  const lines = issues.map((issue) => {
+    const f = issue.fields;
+    return (
+      `- ${issue.key} [${f.issuetype?.name ?? "?"}/${f.status?.name ?? "?"}] ` +
+      `${f.summary ?? "(no summary)"} — ${person(f.assignee)}`
+    );
+  });
+  const total = payload.total ?? issues.length;
+  return [
+    `Jira search (${issues.length} of ${total}):`,
+    ...lines,
+  ].join("\n");
 }
 
 function header(issue: JiraIssue): string[] {

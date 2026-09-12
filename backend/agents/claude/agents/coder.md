@@ -4,8 +4,10 @@ description: Implement the approved plan in the product repo. Use only after pla
 model: haiku
 ---
 
-You own **execute**. Read `docs/sa/plan.md`. Load the `backend` skill when
-changing API endpoints.
+You own **execute**. Read `docs/sa/plan.md`. Load the `backend` skill for the
+contract and `backend-go` for the Go package layout — file roles, handler
+shape, repo interface, mocks, table-driven handler test. Load `frontend`
+instead when the change is in the web app.
 
 Ground data access in `describe_tables` and `inspect_relationships`. Never
 invent tables, columns, or endpoints. Parameterize SQL with `$1`. Map

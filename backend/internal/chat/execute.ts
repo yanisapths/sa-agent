@@ -1,11 +1,15 @@
 import { agentFor } from "../../agents";
+import { chatAgentFor } from "../../agents/chat-agent";
+import type { AgentKind } from "../../agents/route";
 import { config } from "../../config";
 import { HttpError } from "../httpError";
 import type { UsageCollector } from "../gateway/usage";
 import { withVaultMount, type VaultMount } from "../vault/mount";
 import { withWorkspaceRoot } from "../workspace/runtime";
 import type { ChatSseEvent } from "./events";
+import { recordAssistantTurn } from "../chats/service";
 import { persistTurnArtifacts, artifactFromState } from "./finalize";
+import { mintFeedbackUrls, type ChatFeedback } from "./feedback";
 import {
   autoApproveDecisions,
   costHintFor,
@@ -19,7 +23,8 @@ import {
   valuesEvent,
   type HitlDecision,
 } from "./stream";
-import { executionTimeoutMs } from "./run-context";
+import { executionMaxMs, executionTimeoutMs } from "./run-context";
+import { invokePlainTurn, streamPlainTurn } from "./plain";
 import type { ChatActionRequest } from "./events";
 
 export interface AgentRunConfig {
@@ -27,16 +32,63 @@ export interface AgentRunConfig {
   userId?: string;
   model?: string;
   phase?: string;
+  /** `plain` = no tools. `chat` = web/Jira. `deep` = harness. */
+  kind?: AgentKind;
   workspaceId?: string;
   workspaceRoot?: string;
   vaultMount?: VaultMount;
   collector: UsageCollector;
   startedAt: number;
+  /** LangSmith root span for this user-visible turn. */
+  runId?: string;
+  claimRoot?: boolean;
+}
+
+function agentForRun(run: AgentRunConfig) {
+  return run.kind === "chat" ? chatAgentFor(run.model) : agentFor(run.model);
+}
+
+type CheckpointGraph = {
+  getState: (config: {
+    configurable: { thread_id: string };
+  }) => Promise<{ values?: unknown; tasks?: unknown }>;
+};
+
+function checkpointGraph(agent: ReturnType<typeof agentForRun>): CheckpointGraph {
+  const rec = agent as { graph?: CheckpointGraph } & CheckpointGraph;
+  return rec.graph ?? rec;
+}
+
+function progressCallbacks(onProgress?: () => void) {
+  if (!onProgress) return [];
+  return [
+    {
+      handleLLMStart: onProgress,
+      handleLLMNewToken: onProgress,
+      handleLLMEnd: onProgress,
+      handleToolStart: onProgress,
+      handleToolEnd: onProgress,
+    },
+  ];
+}
+
+function tracingFields(run: AgentRunConfig): Record<string, unknown> {
+  if (!run.runId || run.claimRoot === false) return {};
+  return {
+    runId: run.runId,
+    runName: "chat-turn",
+    tags: ["gui", run.kind ?? "deep"],
+    metadata: {
+      thread_id: run.threadId,
+      agent_kind: run.kind ?? "deep",
+    },
+  };
 }
 
 function invokeConfig(
   run: AgentRunConfig,
   signal: AbortSignal,
+  onProgress?: () => void,
 ): Record<string, unknown> {
   return {
     configurable: {
@@ -46,9 +98,11 @@ function invokeConfig(
         ? { workspaceId: run.workspaceId, workspaceRoot: run.workspaceRoot }
         : {}),
     },
-    recursionLimit: config.agent.recursionLimit,
+    recursionLimit:
+      run.kind === "chat" ? 16 : config.agent.recursionLimit,
     signal,
-    callbacks: [run.collector.handler],
+    callbacks: [run.collector.handler, ...progressCallbacks(onProgress)],
+    ...tracingFields(run),
   };
 }
 
@@ -81,10 +135,15 @@ export async function streamAgentTurn(opts: {
   run: AgentRunConfig;
   signal: AbortSignal;
   emit: (event: ChatSseEvent) => void;
+  onProgress?: () => void;
 }): Promise<{ interrupted: boolean; values: unknown }> {
-  const agent = agentFor(opts.run.model);
+  if (opts.run.kind === "plain") {
+    return streamPlainTurn(opts);
+  }
+  const agent = agentForRun(opts.run);
   const mapper = createStreamMapper();
-  const cfg = invokeConfig(opts.run, opts.signal);
+  const cfg = invokeConfig(opts.run, opts.signal, opts.onProgress);
+  opts.run.claimRoot = false;
 
   try {
     await withMounts(opts.run, async () => {
@@ -94,6 +153,7 @@ export async function streamAgentTurn(opts: {
         subgraphs: true,
       });
       for await (const chunk of stream) {
+        opts.onProgress?.();
         if (opts.signal.aborted) break;
         mapper.push(parseStreamChunk(chunk), opts.emit, opts.run.model);
       }
@@ -109,9 +169,9 @@ export async function streamAgentTurn(opts: {
     throw err;
   }
 
-  const snapshot = (await agent.getState({
+  const snapshot = await checkpointGraph(agent).getState({
     configurable: { thread_id: opts.run.threadId },
-  })) as { values?: unknown; tasks?: unknown };
+  });
   const interrupt = interruptFromState(snapshot) ?? interruptFromState(mapper.lastValues);
   if (interrupt) {
     opts.emit({
@@ -129,7 +189,12 @@ export async function finishTurn(opts: {
   run: AgentRunConfig;
   values: unknown;
   emit?: (event: ChatSseEvent) => void;
-}): Promise<{ type: string; data: unknown; artifacts: unknown[] }> {
+}): Promise<{
+  type: string;
+  data: unknown;
+  artifacts: unknown[];
+  feedback: ChatFeedback | null;
+}> {
   const artifacts = await persistTurnArtifacts({
     userId: opts.run.userId,
     threadId: opts.run.threadId,
@@ -140,28 +205,58 @@ export async function finishTurn(opts: {
   });
   if (opts.emit) opts.emit(valuesEvent(opts.values, artifacts));
   const { type, data } = artifactFromState(opts.values);
-  return { type, data, artifacts };
+  const feedback = await mintFeedbackUrls(opts.run.runId, opts.run.threadId);
+  await recordAssistantTurn({
+    userId: opts.run.userId,
+    threadId: opts.run.threadId,
+    type,
+    data,
+    artifacts,
+    feedback: feedback ?? undefined,
+  });
+  if (opts.emit && feedback) {
+    opts.emit({
+      event: "feedback",
+      data: { user_score: feedback.urls.user_score, runId: feedback.runId },
+    });
+  }
+  return { type, data, artifacts, feedback };
 }
 
 export async function invokeAgentTurn(opts: {
   input: unknown;
   run: AgentRunConfig;
   signal: AbortSignal;
-}): Promise<{ type: string; data: unknown; artifacts: unknown[]; values: unknown }> {
-  const agent = agentFor(opts.run.model);
-  const cfg = invokeConfig(opts.run, opts.signal);
+  onProgress?: () => void;
+}): Promise<{
+  type: string;
+  data: unknown;
+  artifacts: unknown[];
+  values: unknown;
+  feedback: ChatFeedback | null;
+}> {
+  if (opts.run.kind === "plain") {
+    const result = await invokePlainTurn(opts);
+    const finished = await finishTurn({ run: opts.run, values: result.values });
+    return { ...finished, values: result.values };
+  }
+  const agent = agentForRun(opts.run);
+  const cfg = invokeConfig(opts.run, opts.signal, opts.onProgress);
+  opts.run.claimRoot = false;
   let next: unknown = opts.input;
   let result: unknown;
 
   try {
     for (let hop = 0; hop < 16; hop++) {
+      opts.onProgress?.();
       result = await withMounts(opts.run, () =>
         agent.invoke(next as never, cfg),
       );
+      delete cfg.runId;
       const interrupt =
         interruptFromState(result) ??
         interruptFromState(
-          await agent.getState({
+          await checkpointGraph(agent).getState({
             configurable: { thread_id: opts.run.threadId },
           }),
         );
@@ -223,8 +318,42 @@ export function parseDecisions(raw: unknown): HitlDecision[] {
   });
 }
 
-export function startExecutionTimer(abort: AbortController): ReturnType<typeof setTimeout> {
-  return setTimeout(() => abort.abort(), executionTimeoutMs());
+export interface ExecutionWatchdog {
+  bump: () => void;
+  stop: () => void;
+}
+
+/**
+ * Two clocks: an idle timer that resets whenever the graph emits, and a hard
+ * wall clock that does not. A pvt-plan that is still calling tools must not
+ * die at three minutes; a specialist that has gone silent still must.
+ */
+export function startExecutionTimer(abort: AbortController): ExecutionWatchdog {
+  const idleMs = executionTimeoutMs();
+  const maxMs = executionMaxMs();
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const fire = (reason: "timeout-idle" | "timeout-max") => {
+    if (!abort.signal.aborted) abort.abort(reason);
+  };
+
+  const armIdle = () => {
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => fire("timeout-idle"), idleMs);
+  };
+
+  const maxTimer = setTimeout(() => fire("timeout-max"), maxMs);
+  armIdle();
+
+  return {
+    bump() {
+      if (!abort.signal.aborted) armIdle();
+    },
+    stop() {
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      clearTimeout(maxTimer);
+    },
+  };
 }
 
 export { resumeCommand };

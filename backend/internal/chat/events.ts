@@ -48,6 +48,7 @@ export type ChatSseEvent =
       };
     }
   | { event: "usage"; data: Record<string, unknown> }
+  | { event: "feedback"; data: { user_score: string; runId: string } }
   | { event: "done"; data: { status: "complete" | "waiting" } }
   | { event: "error"; data: { error: string } };
 

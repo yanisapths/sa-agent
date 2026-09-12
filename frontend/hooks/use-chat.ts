@@ -1,12 +1,15 @@
-import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { UIMessage, UIPart } from "@/components/chat-message";
 import { Attachment } from "@/components/chat-input";
 import { useChatSession } from "@/features/chat-session/ChatSessionProvider";
+import { useChatHistory } from "@/features/chats/ChatHistoryProvider";
+import { titleFromText } from "@/features/chats/types";
 import { type ChatUsage } from "@/features/gateway/types";
 import { type ChatArtifact as StoredArtifact } from "@/features/artifacts/types";
 import { AGENT_API, VAULT_TOKEN } from "@/lib/api";
 import { type ChatArtifact } from "@/lib/chat-response";
 import {
+  asFeedbackEvent,
   asUsage,
   isBusyStatus,
   mergeStep,
@@ -15,6 +18,7 @@ import {
   type HitlDecision,
   type InterruptPayload,
   type ThoughtStep,
+  type UserScore,
   type ValuesPayload,
 } from "@/lib/chat-stream";
 
@@ -394,6 +398,7 @@ export const useChat = () => {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [pinnedPhase, setPinnedPhase] = useState<string | undefined>();
   const { setLive, settleTurn } = useChatSession();
+  const { sessionLoad, touchThread } = useChatHistory();
 
   const abortRef = useRef<AbortController | null>(null);
   const turnRef = useRef(0);
@@ -401,6 +406,41 @@ export const useChat = () => {
   const threadRef = useRef<string | null>(null);
   const phaseRef = useRef<string | undefined>(undefined);
   const onSettledRef = useRef<(() => void) | undefined>(undefined);
+  const titleRef = useRef<string | undefined>(undefined);
+
+  const reset = useCallback(
+    (nextThreadId: string | null, nextMessages: UIMessage[] = []) => {
+      turnRef.current += 1;
+      abortRef.current?.abort();
+      abortRef.current = null;
+      assistantIdRef.current = null;
+      threadRef.current = nextThreadId;
+      phaseRef.current = undefined;
+      onSettledRef.current = undefined;
+      titleRef.current = undefined;
+      setMessages(nextMessages);
+      setThreadId(nextThreadId);
+      setPinnedPhase(undefined);
+      setStatus("idle");
+      setLive({ status: "idle", threadId: nextThreadId, phase: null });
+    },
+    [setLive],
+  );
+
+  useEffect(() => {
+    if (!sessionLoad) return;
+    reset(sessionLoad.threadId, sessionLoad.messages);
+  }, [reset, sessionLoad]);
+
+  const rememberThread = useCallback(
+    (id: string) => {
+      touchThread({
+        id,
+        ...(titleRef.current ? { title: titleRef.current } : {}),
+      });
+    },
+    [touchThread],
+  );
 
   const stop = useCallback(() => {
     turnRef.current += 1;
@@ -428,6 +468,7 @@ export const useChat = () => {
           data?: ChatArtifact;
           artifacts?: StoredArtifact[];
           usage?: ChatUsage;
+          feedback?: { user_score?: string; runId?: string };
         };
         if (!res.ok || json?.ok === false) {
           const detail =
@@ -448,14 +489,17 @@ export const useChat = () => {
         if (typeof json.threadId === "string" && json.threadId) {
           setThreadId(json.threadId);
           threadRef.current = json.threadId;
+          rememberThread(json.threadId);
         }
         const payload = (json.data ?? {}) as ChatArtifact &
           Record<string, string | undefined>;
         const part = artifactToPart(json.type ?? payload.type ?? "text", payload);
+        const feedback = asFeedbackEvent(json.feedback);
         patchAssistant(setMessages, assistantId, {
           parts: [part],
           usage: json.usage,
           artifacts: json.artifacts,
+          ...(feedback ? { feedback } : {}),
         });
         const nextPhase = phaseFromTurn(
           json.usage,
@@ -468,6 +512,7 @@ export const useChat = () => {
           threadId: threadRef.current,
           phase: nextPhase,
         });
+        if (threadRef.current) rememberThread(threadRef.current);
         return "done";
       }
 
@@ -479,6 +524,7 @@ export const useChat = () => {
           if (id) {
             setThreadId(id);
             threadRef.current = id;
+            rememberThread(id);
             setLive({
               status: "streaming",
               threadId: id,
@@ -552,6 +598,13 @@ export const useChat = () => {
           }
           return;
         }
+        if (event === "feedback") {
+          const feedback = asFeedbackEvent(data);
+          if (feedback) {
+            patchAssistant(setMessages, assistantId, { feedback });
+          }
+          return;
+        }
         if (event === "error") {
           const message =
             typeof (data as { error?: string }).error === "string"
@@ -583,12 +636,13 @@ export const useChat = () => {
             threadId: threadRef.current,
             phase: phaseFromTurn(undefined, [], requestedPhase),
           });
+          if (threadRef.current) rememberThread(threadRef.current);
           outcome = "done";
         }
       });
       return outcome;
     },
-    [setLive, settleTurn],
+    [rememberThread, setLive, settleTurn],
   );
 
   const sendMessage = async ({
@@ -633,6 +687,7 @@ export const useChat = () => {
     onSettledRef.current = onSettled;
     phaseRef.current = phase;
     setPinnedPhase(phase);
+    titleRef.current = titleFromText(text);
 
     turnRef.current += 1;
     const turn = turnRef.current;
@@ -746,14 +801,55 @@ export const useChat = () => {
     }
   };
 
+  const submitFeedback = async (
+    messageId: string,
+    score: UserScore,
+    comment?: string,
+    runId?: string,
+  ): Promise<void> => {
+    const thread = threadRef.current;
+    if (!thread) throw new Error("No active thread.");
+    const headers = new Headers();
+    if (VAULT_TOKEN) headers.set("Authorization", `Bearer ${VAULT_TOKEN}`);
+    headers.set("Content-Type", "application/json");
+    const res = await fetch(`${AGENT_API}/chat/feedback`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        threadId: thread,
+        ...(runId ? { runId } : {}),
+        score,
+        ...(comment ? { comment } : {}),
+      }),
+    });
+    const json = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      error?: string;
+    } | null;
+    if (!res.ok && res.status !== 409) {
+      throw new Error(
+        typeof json?.error === "string" ? json.error : "Could not submit feedback.",
+      );
+    }
+    patchAssistant(setMessages, messageId, (current) => ({
+      ...current,
+      feedback: current.feedback
+        ? { ...current.feedback, score, ...(comment ? { comment } : {}) }
+        : current.feedback,
+    }));
+  };
+
   return {
     messages,
     sendMessage,
     status,
     stop,
     approvePlan,
+    submitFeedback,
     pinnedPhase,
     busy: isBusyStatus(status),
+    threadId,
+    reset,
   };
 };
 

@@ -5,7 +5,8 @@ model: haiku
 disallowedTools: Bash
 ---
 
-You own **plan**. Load the `solution-architect` and `system-model` skills. Read
+You own **plan**. Load the `solution-architect` and `system-model` skills, and
+`backend-code-review` for its "review design before implement" gate. Read
 `docs/sa/discuss.md` (or the discuss artifact the user points at).
 
 Run `simulate_impact` on every element the change touches — table, column,

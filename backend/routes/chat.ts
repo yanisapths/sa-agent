@@ -8,7 +8,7 @@ import {
 } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
-import { PHASE_OWNERS } from "../agents";
+import { PHASE_OWNERS, selectAgentKind, type AgentKind } from "../agents";
 import { config } from "../config";
 import { isChatModelId } from "../internal/gateway/models";
 import {
@@ -50,6 +50,20 @@ import {
   putChatRun,
   type ChatRunContext,
 } from "../internal/chat/run-context";
+import { seedCheckpointIfEmpty } from "../internal/chats/seed";
+import {
+  findAssistantFeedback,
+  patchMessageFeedback,
+  recordUserTurn,
+} from "../internal/chats/service";
+import {
+  asFeedback,
+  asUserScore,
+  newChatRunId,
+  pendingFeedback,
+  postFeedbackToken,
+  type ChatFeedback,
+} from "../internal/chat/feedback";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -332,21 +346,28 @@ async function usagePayload(
   model: string | undefined,
   phase: string | undefined,
   durationMs: number,
+  kind?: string,
 ): Promise<Record<string, unknown>> {
   return {
     model: model ?? config.model.orchestrator,
     phase: phase ?? null,
+    agent: kind ?? "deep",
     durationMs,
     ...(await collector.totals()),
   };
 }
 
-function abortError(clientGone: boolean): HttpError {
+function abortError(clientGone: boolean, signal?: AbortSignal): HttpError {
+  if (clientGone) return new HttpError(504, "Chat cancelled.");
+  if (signal?.reason === "timeout-max") {
+    return new HttpError(
+      504,
+      `Agent timed out after ${config.agent.invokeMaxMs}ms.`,
+    );
+  }
   return new HttpError(
     504,
-    clientGone
-      ? "Chat cancelled."
-      : `Agent timed out after ${config.agent.invokeTimeoutMs}ms.`,
+    `Agent stalled for ${config.agent.invokeTimeoutMs}ms with no progress.`,
   );
 }
 
@@ -358,7 +379,7 @@ async function runStreamSegment(opts: {
   streaming: boolean;
 }): Promise<void> {
   const abort = new AbortController();
-  const timer = startExecutionTimer(abort);
+  const watchdog = startExecutionTimer(abort);
   const segmentStarted = Date.now();
   let clientGone = false;
   const onClose = () => {
@@ -378,6 +399,7 @@ async function runStreamSegment(opts: {
       run: opts.run,
       signal: abort.signal,
       emit,
+      onProgress: watchdog.bump,
     });
     opts.run.executionMs += Date.now() - segmentStarted;
     if (result.interrupted) {
@@ -387,6 +409,7 @@ async function runStreamSegment(opts: {
         opts.run.model,
         opts.run.phase,
         opts.run.executionMs,
+        opts.run.kind,
       );
       emit({ event: "usage", data: usage });
       emit({ event: "done", data: { status: "waiting" } });
@@ -399,15 +422,18 @@ async function runStreamSegment(opts: {
       opts.run.model,
       opts.run.phase,
       opts.run.executionMs,
+      opts.run.kind,
     );
     emit({ event: "usage", data: usage });
     emit({ event: "done", data: { status: "complete" } });
   } catch (err) {
     opts.run.executionMs += Date.now() - segmentStarted;
-    if (abort.signal.aborted || isAbortError(err)) throw abortError(clientGone);
+    if (abort.signal.aborted || isAbortError(err)) {
+      throw abortError(clientGone, abort.signal);
+    }
     throw err;
   } finally {
-    clearTimeout(timer);
+    watchdog.stop();
     opts.req.off("close", onClose);
   }
 }
@@ -425,6 +451,7 @@ async function chatHandler(
   let collector: UsageCollector | undefined;
   let model: string | undefined;
   let phase: string | undefined;
+  let kind: AgentKind | undefined;
   let executionMs = 0;
   const streaming = wantsEventStream(req.headers.accept);
 
@@ -467,30 +494,52 @@ async function chatHandler(
     );
     const parked = await parkPvtCases(csvs);
     const seededFiles = { ...parked.files, ...vaultParked.files };
+    kind = selectAgentKind({
+      threadId,
+      message,
+      phase,
+      hasPvtCases: csvs.length > 0 || Object.keys(parked.files).length > 0,
+    });
     const content = toContentBlocks(message, otherFiles, [
       ...mentioned.notes,
       ...vaultParked.notes,
-      ...parked.notes,
-      ...(workspace
+      ...(kind === "deep" ? parked.notes : []),
+      ...(kind === "deep" && workspace
         ? [workspaceDirective(workspace.name, workspace.path)]
         : []),
-      ...(phase ? [phaseDirective(phase)] : []),
+      ...(kind === "deep" && phase ? [phaseDirective(phase)] : []),
     ]);
 
     if (content.length === 0) {
       throw new HttpError(400, "Message or file required.");
     }
 
+    await seedCheckpointIfEmpty({
+      userId: req.userId,
+      threadId,
+      model,
+      kind,
+    });
+    await recordUserTurn({
+      userId: req.userId,
+      threadId,
+      text: message,
+      fileNames: uploads.map((file) => file.name),
+    });
+
     collector = createUsageCollector(model ?? config.model.orchestrator);
     const input = {
       messages: [new HumanMessage({ content })],
-      ...(Object.keys(seededFiles).length > 0 ? { files: seededFiles } : {}),
+      ...(kind === "deep" && Object.keys(seededFiles).length > 0
+        ? { files: seededFiles }
+        : {}),
     };
     const run: ChatRunContext = {
       threadId,
       userId: req.userId,
       model,
       phase,
+      kind,
       workspaceRoot: workspace?.path,
       workspaceId: workspace?.id,
       vaultMount: vaultParked.mount,
@@ -498,11 +547,13 @@ async function chatHandler(
       executionMs: 0,
       collector,
       expiresAt: Date.now() + 30 * 60 * 1000,
+      runId: newChatRunId(),
+      claimRoot: true,
     };
 
     if (!streaming) {
       const abort = new AbortController();
-      const timer = startExecutionTimer(abort);
+      const watchdog = startExecutionTimer(abort);
       let clientGone = false;
       const onClose = () => {
         if (res.writableEnded) return;
@@ -515,6 +566,7 @@ async function chatHandler(
           input,
           run,
           signal: abort.signal,
+          onProgress: watchdog.bump,
         });
         executionMs = Date.now() - startedAt;
         res.json({
@@ -523,13 +575,23 @@ async function chatHandler(
           type: result.type,
           data: result.data,
           artifacts: result.artifacts,
-          usage: await usagePayload(collector, model, phase, executionMs),
+          usage: await usagePayload(collector, model, phase, executionMs, kind),
+          ...(result.feedback
+            ? {
+                feedback: {
+                  user_score: result.feedback.urls.user_score,
+                  runId: result.feedback.runId,
+                },
+              }
+            : {}),
         });
       } catch (err) {
-        if (abort.signal.aborted || isAbortError(err)) throw abortError(clientGone);
+        if (abort.signal.aborted || isAbortError(err)) {
+          throw abortError(clientGone, abort.signal);
+        }
         throw err;
       } finally {
-        clearTimeout(timer);
+        watchdog.stop();
         req.off("close", onClose);
       }
       return;
@@ -551,6 +613,7 @@ async function chatHandler(
         model,
         phase,
         executionMs || Date.now() - startedAt,
+        kind,
       );
       if (streaming && res.headersSent && !res.writableEnded) {
         writeSse(res, { event: "error", data: { error: err.message } });
@@ -603,7 +666,7 @@ async function resumeHandler(
       writeSse(res, { event: "thread", data: { threadId } });
     }
     const abort = new AbortController();
-    const timer = startExecutionTimer(abort);
+    const watchdog = startExecutionTimer(abort);
     const segmentStarted = Date.now();
     let clientGone = false;
     const onClose = () => {
@@ -619,6 +682,7 @@ async function resumeHandler(
           run,
           signal: abort.signal,
           emit: (event) => writeSse(res, event),
+          onProgress: watchdog.bump,
         });
         run.executionMs += Date.now() - segmentStarted;
         if (result.interrupted) {
@@ -628,6 +692,7 @@ async function resumeHandler(
             run.model,
             run.phase,
             run.executionMs,
+            run.kind,
           );
           writeSse(res, { event: "usage", data: usage });
           writeSse(res, { event: "done", data: { status: "waiting" } });
@@ -643,6 +708,7 @@ async function resumeHandler(
             run.model,
             run.phase,
             run.executionMs,
+            run.kind,
           );
           writeSse(res, { event: "usage", data: usage });
           writeSse(res, { event: "done", data: { status: "complete" } });
@@ -655,6 +721,7 @@ async function resumeHandler(
         input: resumeCommand(decisions),
         run,
         signal: abort.signal,
+        onProgress: watchdog.bump,
       });
       dropChatRun(threadId);
       res.json({
@@ -668,14 +735,25 @@ async function resumeHandler(
           run.model,
           run.phase,
           run.executionMs + (Date.now() - segmentStarted),
+          run.kind,
         ),
+        ...(finished.feedback
+          ? {
+              feedback: {
+                user_score: finished.feedback.urls.user_score,
+                runId: finished.feedback.runId,
+              },
+            }
+          : {}),
       });
     } catch (err) {
       run.executionMs += Date.now() - segmentStarted;
-      if (abort.signal.aborted || isAbortError(err)) throw abortError(clientGone);
+      if (abort.signal.aborted || isAbortError(err)) {
+        throw abortError(clientGone, abort.signal);
+      }
       throw err;
     } finally {
-      clearTimeout(timer);
+      watchdog.stop();
       req.off("close", onClose);
     }
   } catch (err) {
@@ -690,6 +768,7 @@ async function resumeHandler(
             run.model,
             run.phase,
             run.executionMs,
+            run.kind,
           ),
         });
       }
@@ -705,6 +784,7 @@ async function resumeHandler(
           run.model,
           run.phase,
           run.executionMs,
+          run.kind,
         ),
       });
       return;
@@ -713,8 +793,57 @@ async function resumeHandler(
   }
 }
 
+async function feedbackHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const threadId =
+      typeof body.threadId === "string" ? body.threadId.trim() : "";
+    if (!threadId) throw new HttpError(400, "threadId is required.");
+    const score = asUserScore(body.score);
+    if (score === undefined) {
+      throw new HttpError(400, "score must be 1 or -1.");
+    }
+    const runId = typeof body.runId === "string" ? body.runId.trim() : "";
+    const comment =
+      typeof body.comment === "string" && body.comment.trim()
+        ? body.comment.trim().slice(0, 2000)
+        : undefined;
+
+    const stored = req.userId
+      ? await findAssistantFeedback(req.userId, threadId, runId || undefined)
+      : null;
+    const pending = pendingFeedback(threadId, runId || undefined);
+    const feedback: ChatFeedback | undefined =
+      asFeedback(stored?.content.feedback) ??
+      (pending
+        ? { runId: pending.runId, urls: pending.urls }
+        : undefined);
+
+    if (!feedback) {
+      throw new HttpError(404, "No feedback token for this turn.");
+    }
+    if (feedback.score !== undefined) {
+      throw new HttpError(409, "Feedback already submitted for this turn.");
+    }
+
+    await postFeedbackToken(feedback.urls.user_score, score, comment);
+    const next = { ...feedback, score, ...(comment ? { comment } : {}) };
+    if (req.userId && stored) {
+      await patchMessageFeedback(req.userId, stored.id, threadId, next);
+    }
+    res.json({ ok: true, score, comment: comment ?? null });
+  } catch (err) {
+    next(err);
+  }
+}
+
 const chat = Router();
 chat.post("/", optionalAuth, upload.array("files"), chatHandler);
 chat.post("/resume", optionalAuth, resumeHandler);
+chat.post("/feedback", optionalAuth, feedbackHandler);
 
 export { chat };

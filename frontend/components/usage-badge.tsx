@@ -20,7 +20,15 @@ export function UsageBadge({ usage }: { usage: ChatUsage }) {
 
   const parts = [
     ranOn,
-    usage.phase ? `${usage.phase} phase` : null,
+    usage.agent === "plain"
+      ? "plain"
+      : usage.agent === "chat"
+        ? "chat"
+        : usage.phase
+          ? `${usage.phase} phase`
+          : usage.agent === "deep"
+            ? "deep"
+            : null,
     `${formatTokens(usage.inputTokens)} in`,
     `${formatTokens(usage.outputTokens)} out`,
     usage.reasoningTokens > 0
@@ -36,7 +44,7 @@ export function UsageBadge({ usage }: { usage: ChatUsage }) {
 
   return (
     <p
-      className="mt-1.5 text-[11px] leading-relaxed text-muted/80"
+      className="text-[11px] leading-relaxed text-muted/80"
       title={
         usage.costEstimated
           ? "Cost is estimated from this key's observed spend — the gateway publishes no price list for this model."
