@@ -13,6 +13,12 @@ import { SA_AGENT_PROMPT } from "./prompt";
  * on the main agent only — specialists never see it — and everything in it the
  * router needs is already in SA_AGENT_PROMPT. Specialists inherit the same
  * rules through `GROUNDING` in harness.ts.
+ *
+ * Skills are mounted, unlike memory. Only the name and description of each are
+ * in the prompt; the body is read on demand. The router needs them to answer
+ * "which skill covers this" and to name the right one in the task it hands a
+ * specialist — a phase that loads `backend-code-review` when the work is a
+ * frontend diff wastes the turn. It still never does the work itself.
  */
 function build(modelId: string | undefined) {
   return defineAgent({
@@ -20,7 +26,8 @@ function build(modelId: string | undefined) {
     model: modelId ?? config.model.orchestrator,
     systemPrompt: SA_AGENT_PROMPT,
     tools: ORCHESTRATOR_TOOLS,
-    skills: [],
+    /** Every package under `resources/skills/`. Names + descriptions only. */
+    skills: ["/skills/"],
     memory: false,
     /** The picked model drives the specialists too, not just the router. */
     subagents: harnessSubagents(modelId),

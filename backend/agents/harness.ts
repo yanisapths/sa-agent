@@ -121,6 +121,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
     skills: [
       "/resources/skills/solution-architect/",
       "/resources/skills/system-model/",
+      "/resources/skills/backend-code-review/",
     ],
   },
   execute: {
@@ -141,6 +142,8 @@ export const PHASE: Record<Phase, PhaseContract> = {
     ],
     skills: [
       "/resources/skills/backend/",
+      "/resources/skills/backend-go/",
+      "/resources/skills/frontend/",
       "/resources/skills/system-model/",
     ],
   },
@@ -165,6 +168,10 @@ export const PHASE: Record<Phase, PhaseContract> = {
     tools: [...SCHEMA, ...INDEX, ...MODEL_READ, ...WRITE, ...WORKSPACE_READ, ...WORKSPACE_WRITE],
     skills: [
       "/resources/skills/backend/",
+      "/resources/skills/backend-go/",
+      "/resources/skills/backend-code-review/",
+      "/resources/skills/security-review/",
+      "/resources/skills/frontend/",
       "/resources/skills/system-model/",
     ],
   },
