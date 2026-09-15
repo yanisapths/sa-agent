@@ -24,6 +24,7 @@ export const CHAT_TOOLS = [
   "describe_tables",
   "inspect_relationships",
   "run_sql",
+  "get_present_datetime",
   "web_search",
   "search_jira",
   "get_jira_ticket",

@@ -3,6 +3,7 @@ import type { LLMResult } from "@langchain/core/outputs";
 import { ChatOpenAI } from "@langchain/openai";
 import { initChatModel } from "langchain";
 import { config } from "../config";
+import { currentLlmSession } from "../internal/gateway/session";
 
 /**
  * Model ids carry their own routing.
@@ -119,11 +120,138 @@ const BOT_CHALLENGE = /just a moment|error code: *1010|cf-browser-verification/i
 
 const BACKOFF_MS = 750;
 
+/**
+ * Pin this completion to the chat thread and mark cache breakpoints.
+ *
+ * Do not gate on AsyncLocalStorage. LangGraph can run the OpenAI fetch
+ * outside the turn's ALS, which left `cache_control` off the wire and
+ * kept every new user message on implicit cache (intra-turn hit, next
+ * turn miss). `prompt_cache_key` is already on the JSON from invoke
+ * config; that is enough to recover the session id.
+ */
+function withSessionCache(init?: RequestInit): RequestInit | undefined {
+  if (!init) return init;
+
+  const text = requestBodyText(init.body);
+  if (text == null) return init;
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return init;
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return init;
+  }
+
+  const rec = payload as Record<string, unknown>;
+  const session =
+    currentLlmSession() ||
+    (typeof rec.prompt_cache_key === "string" ? rec.prompt_cache_key.trim() : "");
+
+  let changed = false;
+  if (session) {
+    if (typeof rec.prompt_cache_key !== "string" || !rec.prompt_cache_key) {
+      rec.prompt_cache_key = session;
+      changed = true;
+    }
+    if (typeof rec.session_id !== "string" || !rec.session_id) {
+      rec.session_id = session;
+      changed = true;
+    }
+  }
+  if (markCacheBreakpoints(rec.messages)) changed = true;
+  if (markLastTool(rec.tools)) changed = true;
+  if (!changed) return init;
+
+  const headers = new Headers(init.headers);
+  headers.delete("Content-Length");
+  /**
+   * Bifrost can strip client cache_control and re-inject from this header.
+   * Harmless if the gateway ignores it.
+   */
+  headers.set("x-bf-prompt-cache-auto-inject", "true");
+  return { ...init, body: JSON.stringify(payload), headers };
+}
+
+function requestBodyText(body: BodyInit | null | undefined): string | undefined {
+  if (typeof body === "string") return body;
+  if (body instanceof Uint8Array) return new TextDecoder().decode(body);
+  if (body instanceof ArrayBuffer) return new TextDecoder().decode(body);
+  return undefined;
+}
+
+const CACHE_CONTROL = { type: "ephemeral" } as const;
+
+/**
+ * Qwen allows four message-level markers. System pins the stable tools+prompt
+ * prefix; the last message pins the conversation so the next turn can hit it.
+ */
+function markCacheBreakpoints(messages: unknown): boolean {
+  if (!Array.isArray(messages) || messages.length === 0) return false;
+
+  const system = messages.find(
+    (item) =>
+      item &&
+      typeof item === "object" &&
+      (item as { role?: unknown }).role === "system",
+  );
+  const last = messages[messages.length - 1];
+  let changed = false;
+  if (system && markCacheControl(system)) changed = true;
+  if (last && last !== system && markCacheControl(last)) changed = true;
+  return changed;
+}
+
+function markLastTool(tools: unknown): boolean {
+  if (!Array.isArray(tools) || tools.length === 0) return false;
+  const last = tools[tools.length - 1];
+  if (!last || typeof last !== "object") return false;
+  const rec = last as Record<string, unknown>;
+  if (rec.cache_control) return false;
+  rec.cache_control = CACHE_CONTROL;
+  return true;
+}
+
+function markCacheControl(message: unknown): boolean {
+  if (!message || typeof message !== "object") return false;
+  const rec = message as Record<string, unknown>;
+  const content = rec.content;
+
+  if (typeof content === "string") {
+    rec.content = [
+      { type: "text", text: content, cache_control: CACHE_CONTROL },
+    ];
+    return true;
+  }
+
+  if (!Array.isArray(content) || content.length === 0) {
+    if (Array.isArray(content) && content.length === 0) {
+      rec.content = [
+        { type: "text", text: "", cache_control: CACHE_CONTROL },
+      ];
+      return true;
+    }
+    return false;
+  }
+  const last = content[content.length - 1];
+  if (!last || typeof last !== "object") return false;
+  const block = last as Record<string, unknown>;
+  if (block.cache_control) return false;
+  block.cache_control = CACHE_CONTROL;
+  return true;
+}
+
 async function gatewayFetch(
   input: string | URL | Request,
   init?: RequestInit,
 ): Promise<Response> {
-  const authed: RequestInit = { ...init, headers: authorize(input, init) };
+  const prepared = withSessionCache(init);
+  const authed: RequestInit = {
+    ...prepared,
+    headers: authorize(input, prepared),
+  };
 
   for (let attempt = 0; ; attempt++) {
     const response = await fetch(input, authed);

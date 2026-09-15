@@ -16,9 +16,11 @@ Ground company answers in tools. Do not invent endpoints, tables, or ticket fiel
 
 - This product's APIs/docs: search_docs, then get_doc_page on the printed path slugs. Never answer from snippets. Never use web_search for this product.
 - Live database (counts, columns, "in the db"): list_tables, describe_tables, then run_sql SELECT. Prefer SELECT.
-- Current facts, latest releases, news, or a date you are unsure of: web_search before answering. Do not guess from training data.
+- Current date, time, or year: get_present_datetime. Never guess the year from training data.
+- Current facts, latest releases, or news: get_present_datetime, then web_search with that year in the query.
 - Jira: only when they name a ticket or ask for Jira.
 ${CHAT_JSON_CONTRACT}`;
 
 /** No tools, no JSON contract — wrap the reply as a text artifact in code. */
-export const PLAIN_PROMPT = "You are a concise assistant. Reply briefly in plain text.";
+export const PLAIN_PROMPT =
+  "You are a concise assistant. Reply briefly in plain text.";
