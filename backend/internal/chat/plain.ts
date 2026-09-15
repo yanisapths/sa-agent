@@ -5,6 +5,7 @@ import { PLAIN_PROMPT } from "../../agents/prompt";
 import { isCasualMessage } from "../../agents/route";
 import { listMessages, seedTextFor } from "../chats/service";
 import type { UsageCollector } from "../gateway/usage";
+import { withLlmSession } from "../gateway/session";
 import type { ChatSseEvent } from "./events";
 
 type PlainRun = {
@@ -96,6 +97,7 @@ function llmConfig(
           ]
         : []),
     ],
+    promptCacheKey: run.threadId,
     ...tracing,
   };
 }
@@ -111,24 +113,26 @@ export async function streamPlainTurn(opts: {
   emit: (event: ChatSseEvent) => void;
   onProgress?: () => void;
 }): Promise<{ interrupted: false; values: unknown }> {
-  const model = await asChatModel(opts.run.model ?? config.model.orchestrator);
-  const userText = userTextFromInput(opts.input);
-  const messages = await plainMessages(opts.run, userText);
-  let assistant = "";
-  const cfg = llmConfig(opts.run, opts.signal, opts.onProgress);
-  opts.run.claimRoot = false;
+  return withLlmSession(opts.run.threadId, async () => {
+    const model = await asChatModel(opts.run.model ?? config.model.orchestrator);
+    const userText = userTextFromInput(opts.input);
+    const messages = await plainMessages(opts.run, userText);
+    let assistant = "";
+    const cfg = llmConfig(opts.run, opts.signal, opts.onProgress);
+    opts.run.claimRoot = false;
 
-  const stream = await model.stream(messages, cfg);
-  for await (const chunk of stream) {
-    opts.onProgress?.();
-    if (opts.signal.aborted) break;
-    const delta = contentText(chunk.content);
-    if (!delta) continue;
-    assistant += delta;
-    opts.emit({ event: "messages", data: { text: assistant, ns: [] } });
-  }
+    const stream = await model.stream(messages, cfg);
+    for await (const chunk of stream) {
+      opts.onProgress?.();
+      if (opts.signal.aborted) break;
+      const delta = contentText(chunk.content);
+      if (!delta) continue;
+      assistant += delta;
+      opts.emit({ event: "messages", data: { text: assistant, ns: [] } });
+    }
 
-  return { interrupted: false, values: valuesOf(assistant) };
+    return { interrupted: false as const, values: valuesOf(assistant) };
+  });
 }
 
 export async function invokePlainTurn(opts: {
@@ -137,12 +141,17 @@ export async function invokePlainTurn(opts: {
   signal: AbortSignal;
   onProgress?: () => void;
 }): Promise<{ interrupted: false; values: unknown }> {
-  const model = await asChatModel(opts.run.model ?? config.model.orchestrator);
-  const userText = userTextFromInput(opts.input);
-  const messages = await plainMessages(opts.run, userText);
-  opts.onProgress?.();
-  const cfg = llmConfig(opts.run, opts.signal, opts.onProgress);
-  opts.run.claimRoot = false;
-  const reply = await model.invoke(messages, cfg);
-  return { interrupted: false, values: valuesOf(contentText(reply.content)) };
+  return withLlmSession(opts.run.threadId, async () => {
+    const model = await asChatModel(opts.run.model ?? config.model.orchestrator);
+    const userText = userTextFromInput(opts.input);
+    const messages = await plainMessages(opts.run, userText);
+    opts.onProgress?.();
+    const cfg = llmConfig(opts.run, opts.signal, opts.onProgress);
+    opts.run.claimRoot = false;
+    const reply = await model.invoke(messages, cfg);
+    return {
+      interrupted: false as const,
+      values: valuesOf(contentText(reply.content)),
+    };
+  });
 }
