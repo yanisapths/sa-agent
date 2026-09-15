@@ -1,0 +1,16 @@
+{
+  "job_name": "sa-agent-evals",
+  "n_attempts": 1,
+  "environment": {
+    "type": "docker",
+    "delete": true
+  },
+  "orchestrator": {
+    "n_concurrent_trials": 4
+  },
+  "agents": [
+    {
+      "name": "oracle"
+    }
+  ]
+}
