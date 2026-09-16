@@ -12,6 +12,7 @@ import {
 } from "deepagents";
 import { config } from "../config";
 import { AttachedProjectBackend } from "./backends/attached-project";
+import { guardrailsForModel } from "./guardrail/guardrail";
 import { AGENT_INTERRUPT_ON } from "./interrupt-on";
 import { normalizeVirtualFsPaths } from "./middleware/normalize-virtual-fs-paths";
 import { resolveModel } from "./model";
@@ -107,10 +108,11 @@ export function defineAgent(spec: AgentSpec) {
   const skills = (spec.skills ?? ["/skills/"]).map(
     (source) => `${RESOURCE_MOUNT}${source}`,
   );
+  const model = resolveModel(spec.model ?? config.model.orchestrator);
 
   return createDeepAgent({
     name: spec.name,
-    model: resolveModel(spec.model ?? config.model.orchestrator),
+    model,
     systemPrompt: spec.systemPrompt,
     tools: resolveTools(spec.tools),
     backend: createBackend(),
@@ -122,7 +124,7 @@ export function defineAgent(spec: AgentSpec) {
     interruptOn: AGENT_INTERRUPT_ON,
     // After filesystem middleware so relative read_file paths and glob
     // pattern/path mixups are fixed before schema and validatePath run.
-    middleware: [normalizeVirtualFsPaths],
+    middleware: [normalizeVirtualFsPaths, ...guardrailsForModel(model)],
   }).withConfig({
     /**
      * deepagents binds 10000. A later withConfig wins, and `/chat` passes the
@@ -138,12 +140,14 @@ export function defineAgent(spec: AgentSpec) {
  * instead of several thousand of scaffolding.
  */
 export function defineChatAgent(spec: AgentSpec) {
+  const model = resolveModel(spec.model ?? config.model.orchestrator);
   return createAgent({
     name: spec.name,
-    model: resolveModel(spec.model ?? config.model.orchestrator),
+    model,
     systemPrompt: spec.systemPrompt,
     tools: resolveTools(spec.tools ?? []),
     checkpointer: spec.session === false ? undefined : CHAT_SESSION,
+    middleware: guardrailsForModel(model),
   }).withConfig({
     recursionLimit: 16,
   });

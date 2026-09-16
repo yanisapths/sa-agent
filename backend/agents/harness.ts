@@ -1,5 +1,6 @@
 import type { FilesystemPermission, SubAgent } from "deepagents";
 import { config } from "../config";
+import { guardrailsForModel } from "./guardrail/guardrail";
 import { AGENT_INTERRUPT_ON } from "./interrupt-on";
 import { normalizeVirtualFsPaths } from "./middleware/normalize-virtual-fs-paths";
 import { resolveModel } from "./model";
@@ -310,16 +311,17 @@ function specialist(
   modelOverride?: string,
 ): SubAgent {
   const canWriteProduct = row.tools.includes("workspace_write");
+  const model = resolveModel(modelOverride ?? (row.model as string));
   return {
     name: row.owner as string,
     description,
     systemPrompt,
-    model: resolveModel(modelOverride ?? (row.model as string)),
+    model,
     tools: resolveTools(row.tools) as NonNullable<SubAgent["tools"]>,
     skills: skillSources(row.skills),
     permissions: canWriteProduct ? PRODUCT_WRITES : ARTIFACT_WRITES,
     interruptOn: AGENT_INTERRUPT_ON,
-    middleware: [normalizeVirtualFsPaths],
+    middleware: [normalizeVirtualFsPaths, ...guardrailsForModel(model)],
   };
 }
 
