@@ -1,0 +1,21 @@
+id: greeting_1
+suite: conversational
+prompt: thanks
+graders:
+  - type: json_contract
+  - type: forbidden_tools
+    names:
+      - search_docs
+      - get_doc_page
+      - search_schema_docs
+      - list_tables
+      - describe_tables
+      - inspect_relationships
+      - run_sql
+      - web_search
+      - search_jira
+      - get_jira_ticket
+      - read_jira_user_story
+  - type: max_turns
+    max: 2
+tracked_metrics: [n_turns, n_toolcalls, n_total_tokens]

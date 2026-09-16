@@ -1,0 +1,12 @@
+id: update-units_1
+suite: coding
+fixture: coding/units/workspace
+prompt: |
+  Set Widget A Units Sold to 50 in sales.csv and recalculate Revenue as
+  Units Sold × Unit Price. Do not change any other row.
+graders:
+  - type: units_updated
+    product: Widget A
+    units: 50
+    file: sales.csv
+tracked_metrics: [n_turns, n_toolcalls, n_total_tokens]

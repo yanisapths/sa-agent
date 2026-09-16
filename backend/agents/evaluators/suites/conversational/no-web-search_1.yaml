@@ -1,0 +1,14 @@
+id: no-web-search_1
+suite: conversational
+prompt: What's the billing API path in this product?
+reference:
+  endpoint: GET /invoices
+graders:
+  - type: json_contract
+  - type: forbidden_tools
+    names: [web_search]
+  - type: llm_rubric
+    assertions:
+      - Uses product docs tools rather than the public web
+      - Answer is grounded in tool results and cites GET /invoices, not an invented path
+tracked_metrics: [n_turns, n_toolcalls, n_total_tokens]

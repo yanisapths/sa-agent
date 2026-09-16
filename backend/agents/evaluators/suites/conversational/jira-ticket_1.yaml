@@ -1,0 +1,17 @@
+id: jira-ticket_1
+suite: conversational
+prompt: What's the status of PROJ-123? Please explain it clearly.
+reference:
+  ticket: PROJ-123
+  status: In Progress
+graders:
+  - type: json_contract
+  - type: required_tools
+    names: [get_jira_ticket]
+  - type: llm_rubric
+    assertions:
+      - Resolution was clearly explained
+      - Names PROJ-123 status as In Progress from the ticket tool
+  - type: forbidden_tools
+    names: [web_search, run_sql]
+tracked_metrics: [n_turns, n_toolcalls, n_total_tokens]

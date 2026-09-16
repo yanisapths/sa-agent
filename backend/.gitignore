@@ -214,3 +214,6 @@ dist
 
 .env*
 !.env.example
+
+# Local eval transcripts and scores
+agents/evaluators/results/

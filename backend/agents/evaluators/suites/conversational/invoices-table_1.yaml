@@ -1,0 +1,14 @@
+id: invoices-table_1
+suite: conversational
+prompt: Which table stores invoices?
+reference:
+  table: invoices
+graders:
+  - type: json_contract
+  - type: llm_rubric
+    assertions:
+      - Names the invoices table without theatrical empathy
+      - Answer is grounded in tool results, not invented tables
+  - type: forbidden_tools
+    names: [web_search]
+tracked_metrics: [n_turns, n_toolcalls, n_total_tokens]

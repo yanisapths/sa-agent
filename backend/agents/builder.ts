@@ -1,5 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { StructuredToolInterface } from "@langchain/core/tools";
 import { MemorySaver } from "@langchain/langgraph";
 import { createAgent } from "langchain";
 import {
@@ -18,6 +20,9 @@ import { normalizeVirtualFsPaths } from "./middleware/normalize-virtual-fs-paths
 import { resolveModel } from "./model";
 import { registerGatewayHarness } from "./profile";
 import { resolveTools, type ToolName } from "./tools";
+
+export type AgentModel = string | BaseChatModel;
+export type AgentTools = readonly ToolName[] | StructuredToolInterface[];
 
 const RESOURCE_ROOT = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -78,8 +83,8 @@ export interface AgentSpec {
   name: string;
   /** Role and output contract. Combined with the harness base prompt. */
   systemPrompt: string;
-  /** Tool names from the registry. Omit to grant all of them. */
-  tools?: readonly ToolName[];
+  /** Tool names from the registry, or already-built tools (eval fixtures). Omit to grant all of them. */
+  tools?: AgentTools;
   /** Skill directories under `resources/`. Defaults to every skill. */
   skills?: readonly string[];
   /** Load `resources/AGENTS.md` into the system prompt. Default true. */
@@ -88,8 +93,27 @@ export interface AgentSpec {
   session?: boolean;
   /** Specialised child agents reachable through the `task` tool. */
   subagents?: SubAgent[];
-  /** Model override, as `provider/model` (gateway) or `provider:model`. */
-  model?: string;
+  /** Model override, as `provider/model` (gateway), `provider:model`, or a chat-model instance. */
+  model?: AgentModel;
+}
+
+function resolveSpecModel(model?: AgentModel): string | BaseChatModel {
+  if (model && typeof model !== "string") return model;
+  return resolveModel(model ?? config.model.orchestrator);
+}
+
+function resolveSpecTools(
+  tools: AgentTools | undefined,
+  allIfOmitted: boolean,
+): StructuredToolInterface[] {
+  if (tools === undefined) {
+    return allIfOmitted ? resolveTools() : [];
+  }
+  if (tools.length === 0) return [];
+  if (typeof tools[0] === "string") {
+    return resolveTools(tools as readonly ToolName[]);
+  }
+  return [...(tools as StructuredToolInterface[])];
 }
 
 /**
@@ -108,13 +132,13 @@ export function defineAgent(spec: AgentSpec) {
   const skills = (spec.skills ?? ["/skills/"]).map(
     (source) => `${RESOURCE_MOUNT}${source}`,
   );
-  const model = resolveModel(spec.model ?? config.model.orchestrator);
+  const model = resolveSpecModel(spec.model);
 
   return createDeepAgent({
     name: spec.name,
     model,
     systemPrompt: spec.systemPrompt,
-    tools: resolveTools(spec.tools),
+    tools: resolveSpecTools(spec.tools, true),
     backend: createBackend(),
     skills,
     memory: spec.memory === false ? undefined : [`${RESOURCE_MOUNT}/AGENTS.md`],
@@ -140,12 +164,12 @@ export function defineAgent(spec: AgentSpec) {
  * instead of several thousand of scaffolding.
  */
 export function defineChatAgent(spec: AgentSpec) {
-  const model = resolveModel(spec.model ?? config.model.orchestrator);
+  const model = resolveSpecModel(spec.model);
   return createAgent({
     name: spec.name,
     model,
     systemPrompt: spec.systemPrompt,
-    tools: resolveTools(spec.tools ?? []),
+    tools: resolveSpecTools(spec.tools, false),
     checkpointer: spec.session === false ? undefined : CHAT_SESSION,
     middleware: guardrailsForModel(model),
   }).withConfig({

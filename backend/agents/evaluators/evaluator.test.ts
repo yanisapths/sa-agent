@@ -10,8 +10,10 @@ import {
   jsonContractEvaluator,
   lastAiText,
   llmJudgeEvaluator,
+  maxTurnsEvaluator,
   requiredToolsEvaluator,
   runEvaluators,
+  scoreJudgeVerdict,
   unitsUpdatedEvaluator,
 } from "./evaluator";
 import { withIsolatedSandbox } from "./sandbox";
@@ -38,11 +40,47 @@ describe("evaluators", () => {
     expect(result.score).toBe(false);
   });
 
-  test("required tools: fails when the agent skips search_docs", () => {
-    const result = requiredToolsEvaluator(["search_docs"])({
+  test("required tools: fails when the agent skips search_docs", async () => {
+    const result = await requiredToolsEvaluator(["search_docs"])({
       outputs: { messages: [new AIMessage("skipping tools")] },
     });
     expect(result.score).toBe(false);
+  });
+
+  test("max turns: fails when the transcript has too many human messages", async () => {
+    const result = await maxTurnsEvaluator(1)({
+      outputs: {
+        messages: [
+          { type: "human", content: "one" },
+          { type: "ai", content: "ok" },
+          { type: "human", content: "two" },
+        ],
+      },
+    });
+    expect(result.score).toBe(false);
+  });
+
+  test("judge verdict uses the first token only", () => {
+    expect(scoreJudgeVerdict("1 ok")).toBe(true);
+    expect(scoreJudgeVerdict("PASS with caveats")).toBe(true);
+    expect(scoreJudgeVerdict("0 - mentions 1 table")).toBe(false);
+    expect(scoreJudgeVerdict("0 - does not pass")).toBe(false);
+    expect(scoreJudgeVerdict("FAIL")).toBe(false);
+  });
+
+  test("llm judge does not treat a 0 comment as a pass", async () => {
+    const pass = await llmJudgeEvaluator(
+      fakeModel().respond(new AIMessage("1 ok")),
+    )({ outputs: { text: "ok" } });
+    const hiddenOne = await llmJudgeEvaluator(
+      fakeModel().respond(new AIMessage("0 - mentions 1 table")),
+    )({ outputs: { text: "ok" } });
+    const notPass = await llmJudgeEvaluator(
+      fakeModel().respond(new AIMessage("0 - does not pass")),
+    )({ outputs: { text: "ok" } });
+    expect(pass.score).toBe(true);
+    expect(hiddenOne.score).toBe(false);
+    expect(notPass.score).toBe(false);
   });
 
   test("agent: grounded JSON reply uses search_docs and never run_sql", async () => {

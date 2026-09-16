@@ -1,0 +1,20 @@
+id: explain-schema-empathy_1
+suite: conversational
+messages:
+  - |
+    I already looked at the docs twice and still cannot find where billing lives. This is blocking a ticket.
+  - |
+    OK — so which table do I actually query?
+reference:
+  table: invoices
+graders:
+  - type: json_contract
+  - type: llm_rubric
+    assertions:
+      - Agent showed empathy for the frustration
+      - Resolution was clearly explained
+      - Answer is grounded in tool results, not invented tables
+  - type: forbidden_tools
+    names: [web_search]
+max_turns: 10
+tracked_metrics: [n_turns, n_toolcalls, n_total_tokens]

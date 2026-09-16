@@ -1,4 +1,10 @@
-export { defineAgent, defineChatAgent, type AgentSpec } from "./builder";
+export {
+  defineAgent,
+  defineChatAgent,
+  type AgentModel,
+  type AgentSpec,
+  type AgentTools,
+} from "./builder";
 export {
   ARTIFACT,
   PHASE,
@@ -11,7 +17,13 @@ export {
   type PvtPhase,
 } from "./harness";
 export { agentFor, saAgent } from "./sa-agent";
-export { chatAgentFor, chatAgent, CHAT_TOOLS } from "./chat-agent";
+export {
+  chatAgentFor,
+  chatAgent,
+  CHAT_TOOLS,
+  buildChatAgent,
+  chatSystemPrompt,
+} from "./chat-agent";
 export {
   selectAgentKind,
   lastAgentKind,

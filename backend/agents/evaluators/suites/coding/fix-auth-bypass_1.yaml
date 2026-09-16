@@ -1,0 +1,14 @@
+id: fix-auth-bypass_1
+suite: coding
+fixture: coding/auth-bypass/workspace
+prompt: |
+  Fix the authentication bypass in src/auth.ts: empty string and null passwords
+  must be rejected. A missing password must also be rejected. The valid password
+  is still "secret". Do not change the function name.
+graders:
+  - type: deterministic_tests
+    command: bun tests/verify.ts
+  - type: llm_rubric
+    assertions:
+      - Patch is small and addresses empty/null password rejection
+tracked_metrics: [n_turns, n_toolcalls, n_total_tokens]

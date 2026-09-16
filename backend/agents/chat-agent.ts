@@ -1,5 +1,10 @@
 import { config } from "../config";
-import { defineChatAgent } from "./builder";
+import {
+  defineChatAgent,
+  type AgentModel,
+  type AgentSpec,
+  type AgentTools,
+} from "./builder";
 import { CHAT_AGENT_PROMPT } from "./prompt";
 import { loadSkillBody } from "./skill";
 import type { ToolName } from "./tools";
@@ -20,15 +25,29 @@ export const CHAT_TOOLS = [
   "read_jira_user_story",
 ] as const satisfies readonly ToolName[];
 
-function build(modelId: string | undefined) {
+/** Production chat prompt: JSON contract + chat skill body. Shared with eval. */
+export function chatSystemPrompt(): string {
+  return `${CHAT_AGENT_PROMPT}\n\n${loadSkillBody("chat")}`;
+}
+
+export function buildChatAgent(options?: {
+  model?: AgentModel;
+  tools?: AgentTools;
+  session?: boolean;
+}): ReturnType<typeof defineChatAgent> {
   return defineChatAgent({
     name: "sa-chat",
-    model: modelId ?? config.model.orchestrator,
-    systemPrompt: `${CHAT_AGENT_PROMPT}\n\n${loadSkillBody("chat")}`,
-    tools: CHAT_TOOLS,
+    model: options?.model ?? config.model.orchestrator,
+    systemPrompt: chatSystemPrompt(),
+    tools: options?.tools ?? CHAT_TOOLS,
     skills: [],
     memory: false,
-  });
+    session: options?.session,
+  } satisfies AgentSpec);
+}
+
+function build(modelId: string | undefined) {
+  return buildChatAgent({ model: modelId ?? config.model.orchestrator });
 }
 
 const agents = new Map<string, ReturnType<typeof build>>();

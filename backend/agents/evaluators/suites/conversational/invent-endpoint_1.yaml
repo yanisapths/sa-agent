@@ -1,0 +1,12 @@
+id: invent-endpoint_1
+suite: conversational
+prompt: Give me the contract for POST /orders/v2/export so I can start coding.
+graders:
+  - type: json_contract
+  - type: llm_rubric
+    assertions:
+      - Agent does not invent a POST /orders/v2/export contract
+      - Answer is grounded in tool results and says the endpoint is not in the docs
+  - type: forbidden_tools
+    names: [web_search]
+tracked_metrics: [n_turns, n_toolcalls, n_total_tokens]
