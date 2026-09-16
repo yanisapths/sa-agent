@@ -1,67 +1,367 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Database,
+  Folder,
+  Globe,
+  Search,
+  Sparkles,
+  Wrench,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { cn } from "@/lib/utils";
 import {
   type ActionRequest,
   type HitlDecision,
   type InterruptPayload,
   type ThoughtStep,
 } from "@/lib/chat-stream";
-import { isModelTrace, TokenIcon, TraceIcon } from "@/components/trace-icon";
+import { isModelTrace, TokenIcon } from "@/components/trace-icon";
 
-const STATUS_LABEL: Record<ThoughtStep["status"], string> = {
-  queued: "Queued",
-  running: "Running",
-  waiting: "Waiting",
-  error: "Error",
-  retried: "Retried",
-  completed: "Done",
+type VerbSet = { live: string; done: string; allow: string };
+
+const VERBS: Record<string, VerbSet> = {
+  search_docs: {
+    live: "Searching docs",
+    done: "Searched docs",
+    allow: "searching docs",
+  },
+  get_doc_page: { live: "Reading docs", done: "Read docs", allow: "reading docs" },
+  search_schema_docs: {
+    live: "Searching schema docs",
+    done: "Searched schema docs",
+    allow: "searching schema docs",
+  },
+  list_tables: {
+    live: "Listing tables",
+    done: "Listed tables",
+    allow: "listing tables",
+  },
+  describe_tables: {
+    live: "Describing tables",
+    done: "Described tables",
+    allow: "describing tables",
+  },
+  inspect_relationships: {
+    live: "Inspecting relationships",
+    done: "Inspected relationships",
+    allow: "inspecting relationships",
+  },
+  run_sql: {
+    live: "Querying schema",
+    done: "Queried schema",
+    allow: "querying",
+  },
+  get_present_datetime: {
+    live: "Checking the time",
+    done: "Checked the time",
+    allow: "checking the time",
+  },
+  web_search: {
+    live: "Searching the web",
+    done: "Searched the web",
+    allow: "searching the web",
+  },
+  get_jira_ticket: {
+    live: "Loading a Jira ticket",
+    done: "Loaded a Jira ticket",
+    allow: "loading a Jira ticket",
+  },
+  read_jira_user_story: {
+    live: "Reading a user story",
+    done: "Read a user story",
+    allow: "reading a user story",
+  },
+  search_jira: {
+    live: "Searching Jira",
+    done: "Searched Jira",
+    allow: "searching Jira",
+  },
+  build_system_model: {
+    live: "Building the system model",
+    done: "Built the system model",
+    allow: "building the system model",
+  },
+  query_system_model: {
+    live: "Querying the system model",
+    done: "Queried the system model",
+    allow: "querying the system model",
+  },
+  simulate_impact: {
+    live: "Simulating impact",
+    done: "Simulated impact",
+    allow: "simulating impact",
+  },
+  record_decision: {
+    live: "Recording a decision",
+    done: "Recorded a decision",
+    allow: "recording a decision",
+  },
+  search_decisions: {
+    live: "Searching decisions",
+    done: "Searched decisions",
+    allow: "searching decisions",
+  },
+  write_files: { live: "Writing files", done: "Wrote files", allow: "writing files" },
+  workspace_ls: {
+    live: "Listing workspace files",
+    done: "Listed workspace files",
+    allow: "listing workspace files",
+  },
+  workspace_read: {
+    live: "Reading workspace",
+    done: "Read workspace",
+    allow: "reading workspace",
+  },
+  workspace_grep: {
+    live: "Searching workspace",
+    done: "Searched workspace",
+    allow: "searching workspace",
+  },
+  workspace_write: {
+    live: "Writing to workspace",
+    done: "Wrote to workspace",
+    allow: "writing to workspace",
+  },
 };
 
-function statusClass(status: ThoughtStep["status"]): string {
-  if (status === "completed") return "text-emerald-600";
-  if (status === "error") return "text-red-600";
-  if (status === "waiting") return "text-amber-600";
-  if (status === "running") return "text-sky-600";
-  return "text-muted";
+function clip(value: string, max: number): string {
+  const text = value.trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1).trimEnd()}…`;
 }
 
-function groupLabel(name: string, ns: string[]): string {
-  return isModelTrace(name, ns) ? "model_request" : "tools";
+function sentenceCase(name: string): string {
+  const words = name.replace(/_/g, " ").trim();
+  if (!words) return name;
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function leafLabel(name: string, ns: string[]): string {
-  if (isModelTrace(name, ns) && /model_request/i.test(name))
-    return "ChatOpenAI";
-  return name;
+function specialistLabel(args: Record<string, unknown>): string {
+  const owner = String(args.subagent_type ?? args.owner ?? "specialist");
+  return owner.replace(/^pvt-/, "PVT ").replace(/-/g, " ");
+}
+
+function argPhrase(args: Record<string, unknown>): string {
+  if (typeof args.query === "string" && args.query.trim()) {
+    return `for “${clip(args.query, 48)}”`;
+  }
+  const path = args.path ?? args.paths ?? args.target ?? args.filename;
+  if (typeof path === "string" && path.trim()) return clip(path, 56);
+  if (Array.isArray(path) && path.length > 0) {
+    return clip(path.map(String).join(", "), 56);
+  }
+  if (typeof args.sql === "string" && args.sql.trim()) return clip(args.sql, 72);
+  if (typeof args.description === "string" && args.description.trim()) {
+    return clip(args.description, 72);
+  }
+  return "";
+}
+
+function verbsFor(name: string, args: Record<string, unknown>): VerbSet {
+  if (name === "task") {
+    const specialist = specialistLabel(args);
+    return {
+      live: `Asking ${specialist}`,
+      done: `Asked ${specialist}`,
+      allow: `asking ${specialist}`,
+    };
+  }
+  return (
+    VERBS[name] ?? {
+      live: sentenceCase(name),
+      done: sentenceCase(name),
+      allow: sentenceCase(name).toLowerCase(),
+    }
+  );
+}
+
+function titled(label: string, phrase: string): string {
+  return phrase ? `${label} ${phrase}` : label;
+}
+
+function evidenceChips(text: string): { href: string; label: string }[] {
+  const urls = text.match(/https?:\/\/[^\s)>\]]+/gi) ?? [];
+  const seen = new Set<string>();
+  const chips: { href: string; label: string }[] = [];
+  for (const href of urls) {
+    try {
+      const host = new URL(href).hostname.replace(/^www\./, "");
+      if (!host || seen.has(host)) continue;
+      seen.add(host);
+      chips.push({ href, label: host });
+    } catch {
+      continue;
+    }
+  }
+  return chips;
+}
+
+function evidenceProse(text: string, chips: { href: string }[]): string {
+  let next = text;
+  for (const chip of chips) next = next.split(chip.href).join(" ");
+  return next.replace(/\s+/g, " ").trim();
+}
+
+function StepGlyph({ name, ns }: { name: string; ns: string[] }) {
+  const className = "h-3.5 w-3.5 shrink-0 text-muted";
+  if (isModelTrace(name, ns)) return <Sparkles className={className} />;
+  if (/web_search/.test(name)) return <Globe className={className} />;
+  if (/search_/.test(name)) return <Search className={className} />;
+  if (/sql|tables|relationships/.test(name)) return <Database className={className} />;
+  if (/workspace|write_files/.test(name)) return <Folder className={className} />;
+  return <Wrench className={className} />;
 }
 
 export function ThoughtPanel({
   steps,
-  interrupt,
   open,
   waiting,
-  onDecide,
+  startedAt,
 }: {
   steps: ThoughtStep[];
-  interrupt?: InterruptPayload;
   open: boolean;
   waiting: boolean;
-  onDecide?: (decisions: HitlDecision[]) => void;
+  startedAt?: number;
 }) {
   const [expanded, setExpanded] = useState(open);
   const [prevOpen, setPrevOpen] = useState(open);
-  const [edits, setEdits] = useState<Record<number, string>>({});
+  const [doneLabel, setDoneLabel] = useState<string | null>(null);
   if (open !== prevOpen) {
     setPrevOpen(open);
-    if (open) setExpanded(true);
+    setExpanded(open);
   }
-  const actions = interrupt?.actionRequests ?? [];
-  const evidence = steps.filter((step) => step.evidence);
+  if (open && doneLabel) setDoneLabel(null);
+  if (!open && !doneLabel && startedAt) {
+    const secs = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+    setDoneLabel(`Thought for ${secs}s`);
+  }
 
+  const visible = steps.filter(
+    (step) => !isModelTrace(step.name, step.ns) || Boolean(step.evidence),
+  );
+
+  if (steps.length === 0) return null;
+  if (visible.length === 0 && !open) return null;
+
+  const active = [...steps]
+    .reverse()
+    .find(
+      (step) =>
+        step.status === "running" ||
+        step.status === "waiting" ||
+        step.status === "queued",
+    );
+  const live = active
+    ? titled(verbsFor(active.name, active.args).live, argPhrase(active.args))
+    : "Thinking";
+  const header = waiting
+    ? "Waiting for your OK"
+    : open
+      ? `${live}…`
+      : (doneLabel ?? "Thought");
+
+  return (
+    <div className="w-full text-left">
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 py-0.5 text-sm text-muted hover:text-foreground"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+      >
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5" />
+        )}
+        <Sparkles className="h-3.5 w-3.5" />
+        <span className="truncate font-medium">{header}</span>
+      </button>
+      {expanded && visible.length > 0 && (
+        <ol className="ml-2 mt-2 space-y-2.5 border-l border-border pl-4">
+          {visible.map((step) => (
+            <ThoughtStepRow key={step.id} step={step} />
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function ThoughtStepRow({ step }: { step: ThoughtStep }) {
+  const model = isModelTrace(step.name, step.ns);
+  const chips = step.evidence ? evidenceChips(step.evidence) : [];
+  const prose = step.evidence ? evidenceProse(step.evidence, chips) : "";
+  const label = model
+    ? clip(prose || "Reasoning", 280)
+    : titled(verbsFor(step.name, step.args).done, argPhrase(step.args));
+
+  return (
+    <li className="text-sm text-muted">
+      {model ? (
+        <p className="leading-relaxed">{label}</p>
+      ) : (
+        <div className="flex items-start gap-2 text-foreground">
+          <StepGlyph name={step.name} ns={step.ns} />
+          <span className="min-w-0 leading-relaxed">{label}</span>
+        </div>
+      )}
+      {chips.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {chips.map((chip) => (
+            <a
+              key={chip.href}
+              href={chip.href}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-muted hover:text-foreground"
+            >
+              {chip.label}
+            </a>
+          ))}
+        </div>
+      )}
+      {!model && prose ? <EvidenceNote text={prose} /> : null}
+    </li>
+  );
+}
+
+function EvidenceNote({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const short = clip(text, 220);
+  const canExpand = short !== text;
+  if (!text) return null;
+  return (
+    <div className="mt-1">
+      <p className="text-[13px] leading-relaxed text-muted">
+        {open || !canExpand ? text : short}
+      </p>
+      {canExpand && (
+        <button
+          type="button"
+          className="mt-0.5 text-[11px] text-muted hover:text-foreground"
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function PlanPanel({
+  interrupt,
+  waiting,
+  onDecide,
+}: {
+  interrupt?: InterruptPayload;
+  waiting: boolean;
+  onDecide?: (decisions: HitlDecision[]) => void;
+}) {
+  const [edits, setEdits] = useState<Record<number, string>>({});
+  const actions = interrupt?.actionRequests ?? [];
   const editMap = useMemo(() => {
     const next: Record<number, string> = { ...edits };
     actions.forEach((action, index) => {
@@ -72,7 +372,7 @@ export function ThoughtPanel({
     return next;
   }, [actions, edits]);
 
-  if (steps.length === 0 && actions.length === 0) return null;
+  if (actions.length === 0) return null;
 
   const decide = (type: "approve" | "reject") => {
     if (!onDecide) return;
@@ -110,131 +410,42 @@ export function ThoughtPanel({
   };
 
   return (
-    <div className="w-full rounded-xl border border-border bg-muted/10 text-left">
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 text-xs text-muted hover:text-foreground"
-        onClick={() => setExpanded((value) => !value)}
-      >
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5" />
-        )}
-        <TraceIcon kind="chain" className="h-4 w-4 rounded" />
-        <span className="font-medium">Thought</span>
-        <span className="text-muted">
-          {waiting
-            ? "Waiting for approval"
-            : `${steps.filter((s) => s.status === "completed").length}/${Math.max(steps.length, actions.length)} steps`}
-        </span>
-      </button>
-      {expanded && (
-        <div className="space-y-3 border-t border-border px-3 py-3">
-          {actions.length > 0 && (
-            <section>
-              <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Plan
-              </h4>
-              <div className="space-y-2">
-                {actions.map((action, index) => (
-                  <ActionCard
-                    key={`${action.name}:${index}`}
-                    action={action}
-                    value={editMap[index] ?? ""}
-                    onChange={(value) =>
-                      setEdits((prev) => ({ ...prev, [index]: value }))
-                    }
-                    disabled={!waiting}
-                  />
-                ))}
-              </div>
-              {waiting && onDecide && (
-                <div className="mt-2 flex gap-2">
-                  <Button size="sm" onClick={() => decide("approve")}>
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => decide("reject")}
-                  >
-                    Reject
-                  </Button>
-                </div>
-              )}
-            </section>
-          )}
-
-          {steps.length > 0 && (
-            <section>
-              <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Execution
-              </h4>
-              <ol className="space-y-2">
-                {steps.map((step) => {
-                  const model = isModelTrace(step.name, step.ns);
-                  return (
-                    <li key={step.id} className="text-xs">
-                      <div className="flex items-center gap-2 text-muted">
-                        <TraceIcon kind="chain" />
-                        <span>{groupLabel(step.name, step.ns)}</span>
-                      </div>
-                      <div className="ml-2.5 flex items-center justify-between gap-2 border-l border-border py-1 pl-3">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <TraceIcon kind={model ? "model" : "tool"} />
-                          <span className="truncate font-mono text-foreground">
-                            {leafLabel(step.name, step.ns)}
-                          </span>
-                        </span>
-                        <span
-                          className={cn(
-                            "flex shrink-0 items-center gap-1",
-                            statusClass(step.status),
-                          )}
-                        >
-                          {step.costHint ? <TokenIcon /> : null}
-                          {STATUS_LABEL[step.status]}
-                        </span>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-            </section>
-          )}
-
-          {evidence.length > 0 && (
-            <section>
-              <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Evidence
-              </h4>
-              <ul className="space-y-2">
-                {evidence.map((step) => (
-                  <li
-                    key={`ev-${step.id}`}
-                    className="rounded-lg border border-border bg-background p-2"
-                  >
-                    <p className="mb-1 flex items-center gap-2 font-mono text-[11px] text-muted">
-                      <TraceIcon
-                        kind={
-                          isModelTrace(step.name, step.ns) ? "model" : "tool"
-                        }
-                      />
-                      {step.name}
-                    </p>
-                    <pre className="max-h-32 overflow-auto whitespace-pre-wrap text-[11px] leading-relaxed text-foreground">
-                      {step.evidence}
-                    </pre>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+    <section
+      aria-label="Plan approval"
+      className="w-full rounded-2xl border border-border bg-surface p-3 text-left"
+    >
+      <div className="space-y-3">
+        {actions.map((action, index) => (
+          <ActionCard
+            key={`${action.name}:${index}`}
+            action={action}
+            value={editMap[index] ?? ""}
+            onChange={(value) =>
+              setEdits((prev) => ({ ...prev, [index]: value }))
+            }
+            disabled={!waiting}
+          />
+        ))}
+      </div>
+      {waiting && onDecide && (
+        <div className="mt-3 flex gap-2">
+          <Button size="sm" onClick={() => decide("approve")}>
+            Allow
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => decide("reject")}>
+            Reject
+          </Button>
         </div>
       )}
-    </div>
+    </section>
   );
+}
+
+function actionTitle(action: ActionRequest): string {
+  if (action.description?.trim()) return action.description.trim();
+  const allow = verbsFor(action.name, action.args).allow;
+  const scope = action.scope && action.scope !== action.name ? action.scope : "";
+  return scope ? `Allow ${allow} ${clip(scope, 72)}` : `Allow ${allow}`;
 }
 
 function ActionCard({
@@ -248,34 +459,50 @@ function ActionCard({
   onChange: (value: string) => void;
   disabled: boolean;
 }) {
+  const [details, setDetails] = useState(false);
   const canEdit = action.allowedDecisions.includes("edit") && !disabled;
+  const scope =
+    action.scope && action.scope !== action.name ? action.scope : "";
   return (
-    <div className="rounded-lg border border-border bg-background p-2">
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <span className="flex items-center gap-2 font-mono text-xs font-medium">
-          <TraceIcon kind={isModelTrace(action.name) ? "model" : "tool"} />
-          {action.name}
-        </span>
-        <span className="flex items-center gap-1 text-[11px] text-muted">
-          <TokenIcon />
-          {action.costHint}
-        </span>
+    <div>
+      <div className="flex items-start gap-2">
+        <StepGlyph name={action.name} ns={[]} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium leading-snug text-foreground">
+            {actionTitle(action)}
+          </p>
+          {(scope || action.costHint) && (
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-muted">
+              {scope ? <span className="truncate">{scope}</span> : null}
+              {action.costHint ? (
+                <span className="inline-flex items-center gap-1">
+                  <TokenIcon />
+                  {action.costHint}
+                </span>
+              ) : null}
+            </p>
+          )}
+          <button
+            type="button"
+            className="mt-1 text-[12px] text-muted hover:text-foreground"
+            onClick={() => setDetails((value) => !value)}
+          >
+            {details ? "Hide details" : "Details"}
+          </button>
+          {details &&
+            (canEdit ? (
+              <textarea
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                className="mt-1.5 h-24 w-full resize-y rounded-md border border-border bg-transparent p-2 font-mono text-[11px]"
+              />
+            ) : (
+              <pre className="mt-1.5 max-h-24 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-muted">
+                {JSON.stringify(action.args, null, 2)}
+              </pre>
+            ))}
+        </div>
       </div>
-      <p className="mb-1 text-[11px] text-muted">
-        {action.scope}
-        {action.permission === "interrupt" ? " · needs approval" : ""}
-      </p>
-      {canEdit ? (
-        <textarea
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-24 w-full resize-y rounded-md border border-border bg-transparent p-2 font-mono text-[11px]"
-        />
-      ) : (
-        <pre className="max-h-24 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
-          {JSON.stringify(action.args, null, 2)}
-        </pre>
-      )}
     </div>
   );
 }

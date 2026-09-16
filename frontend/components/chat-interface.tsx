@@ -11,6 +11,7 @@ import { Code, FileText, Search } from "lucide-react";
 import { motion } from "framer-motion";
 import { CardStarField } from "./card-star-field/CardStarField";
 import { ChatMessage } from "./chat-message";
+import { PlanPanel } from "./thought-panel";
 import { isBusyStatus } from "@/lib/chat-stream";
 
 const onboardingTags = [
@@ -33,10 +34,13 @@ const onboardingTags = [
 
 export function ChatInterface() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { messages, sendMessage, status, stop, approvePlan, submitFeedback, pinnedPhase } =
+  const { messages, sendMessage, status, stop, approvePlan, submitFeedback } =
     useChat();
   const isLoading = isBusyStatus(status);
   const hasMessages = messages.length > 0;
+  const lastMessage = messages.at(-1);
+  const waitingForApproval =
+    status === "waiting" && lastMessage?.role === "assistant";
   const models = useGatewayModels();
   const { refresh: refreshQuota } = useQuota();
   const { attached } = useWorkspace();
@@ -88,13 +92,7 @@ export function ChatInterface() {
                       lastAssistant &&
                       (status === "streaming" || status === "submitted")
                     }
-                    thoughtOpen={Boolean(pinnedPhase) || status === "waiting"}
                     waiting={status === "waiting" && lastAssistant}
-                    onDecide={
-                      status === "waiting" && lastAssistant
-                        ? approvePlan
-                        : undefined
-                    }
                     onFeedback={
                       message.feedback?.urls.user_score
                         ? (score, comment) =>
@@ -165,6 +163,15 @@ export function ChatInterface() {
 
       {hasMessages && (
         <div className="relative z-1 bg-background/50 backdrop-blur-sm p-4 msg-enter">
+          {waitingForApproval && (
+            <div className="mx-auto mb-3 max-h-[40vh] max-w-6xl overflow-y-auto">
+              <PlanPanel
+                interrupt={lastMessage?.interrupt}
+                waiting
+                onDecide={approvePlan}
+              />
+            </div>
+          )}
           <ChatInput
             onSend={handleSend}
             isLoading={isLoading}

@@ -11,10 +11,9 @@ import {
 import { type ChatArtifact } from "@/features/artifacts/types";
 import { UsageBadge } from "./usage-badge";
 import { MessageFeedback } from "./message-feedback";
-import { ThoughtPanel } from "./thought-panel";
+import { PlanPanel, ThoughtPanel } from "./thought-panel";
 import {
   type ChatFeedback,
-  type HitlDecision,
   type InterruptPayload,
   type ThoughtStep,
   type UserScore,
@@ -37,6 +36,8 @@ export interface UIMessage {
   artifacts?: ChatArtifact[];
   /** Live tool / specialist steps for this turn. */
   steps?: ThoughtStep[];
+  /** Client timestamp when the first step arrived, for “Thought for Ns”. */
+  startedAt?: number;
   /** Pending HITL tool batch, if the graph is paused. */
   interrupt?: InterruptPayload;
   /** LangSmith presigned URLs and any submitted score for this turn. */
@@ -930,19 +931,19 @@ function MessagePart({ part }: { part: UIPart }) {
 export function ChatMessage({
   message,
   isStreaming = false,
-  thoughtOpen = false,
   waiting = false,
-  onDecide,
   onFeedback,
 }: {
   message: UIMessage;
   isStreaming?: boolean;
-  thoughtOpen?: boolean;
   waiting?: boolean;
-  onDecide?: (decisions: HitlDecision[]) => void;
   onFeedback?: (score: UserScore, comment?: string) => Promise<void>;
 }) {
   const isUser = message.role === "user";
+  const hasParts = (message.parts?.length ?? 0) > 0;
+  const hasArtifacts =
+    !isStreaming && !waiting && (message.artifacts?.length ?? 0) > 0;
+  const showBubble = isUser || hasParts || isStreaming || hasArtifacts;
   return (
     <div
       className={cn(
@@ -966,50 +967,51 @@ export function ChatMessage({
       </div>
       <div
         className={cn(
-          "flex flex-col gap-1 max-w-[85%]",
+          "flex flex-col gap-2 max-w-[85%]",
           isUser ? "items-end" : "items-start",
         )}
       >
-        <div
-          className={cn(
-            "rounded-2xl px-4 py-2.5 text-sm",
-            isUser
-              ? "bg-muted/30 text-foreground rounded-tr-sm"
-              : "bg-surface border border-border text-foreground rounded-tl-sm",
-          )}
-        >
-          <div className="space-y-2">
-            {!isUser &&
-              ((message.steps?.length ?? 0) > 0 ||
-                (message.interrupt?.actionRequests.length ?? 0) > 0) && (
-                <ThoughtPanel
-                  steps={message.steps ?? []}
-                  interrupt={message.interrupt}
-                  open={thoughtOpen || waiting}
-                  waiting={waiting}
-                  onDecide={onDecide}
-                />
-              )}
-            {message.parts?.map((part, i) => (
-              <MessagePart key={i} part={part as UIPart} />
-            ))}
-            {isStreaming && (
-              <span className="inline-block w-0.5 h-4 bg-muted ml-0.5 align-middle animate-pulse rounded" />
+        {!isUser && (message.steps?.length ?? 0) > 0 && (
+          <ThoughtPanel
+            steps={message.steps ?? []}
+            open={isStreaming || waiting}
+            waiting={waiting}
+            startedAt={message.startedAt}
+          />
+        )}
+        {showBubble && (
+          <div
+            className={cn(
+              "rounded-2xl px-4 py-2.5 text-sm",
+              isUser
+                ? "bg-muted/30 text-foreground rounded-tr-sm"
+                : "bg-surface border border-border text-foreground rounded-tl-sm",
             )}
-            {!isUser &&
-              !isStreaming &&
-              !waiting &&
-              (message.artifacts?.length ?? 0) > 0 && (
+          >
+            <div className="space-y-2">
+              {message.parts?.map((part, i) => (
+                <MessagePart key={i} part={part as UIPart} />
+              ))}
+              {isStreaming && (
+                <span className="inline-block w-0.5 h-4 bg-muted ml-0.5 align-middle animate-pulse rounded" />
+              )}
+              {hasArtifacts && (
                 <ArtifactChips artifacts={message.artifacts ?? []} />
               )}
+            </div>
           </div>
-        </div>
+        )}
+        {!isUser &&
+          !waiting &&
+          (message.interrupt?.actionRequests.length ?? 0) > 0 && (
+            <PlanPanel interrupt={message.interrupt} waiting={false} />
+          )}
         {!isUser &&
           !isStreaming &&
           !waiting &&
           (message.usage ||
             (message.feedback?.urls.user_score && onFeedback)) && (
-          <div className="mt-1.5 flex flex-wrap items-start gap-x-3 gap-y-1">
+          <div className="mt-0.5 flex flex-wrap items-start gap-x-3 gap-y-1">
             {message.usage && <UsageBadge usage={message.usage} />}
             {message.feedback?.urls.user_score && onFeedback && (
               <MessageFeedback
