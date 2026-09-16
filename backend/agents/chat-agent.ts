@@ -1,19 +1,8 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { config } from "../config";
 import { defineChatAgent } from "./builder";
 import { CHAT_AGENT_PROMPT } from "./prompt";
+import { loadSkillBody } from "./skill";
 import type { ToolName } from "./tools";
-
-const CHAT_SKILL = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "resources/skills/chat/SKILL.md",
-);
-
-function skillBody(markdown: string): string {
-  return markdown.replace(/^---[\s\S]*?---\s*/, "").trim();
-}
 
 /** Lookups: product docs, live schema, web, Jira. No filesystem, no specialists. */
 export const CHAT_TOOLS = [
@@ -35,7 +24,7 @@ function build(modelId: string | undefined) {
   return defineChatAgent({
     name: "sa-chat",
     model: modelId ?? config.model.orchestrator,
-    systemPrompt: `${CHAT_AGENT_PROMPT}\n\n${skillBody(readFileSync(CHAT_SKILL, "utf8"))}`,
+    systemPrompt: `${CHAT_AGENT_PROMPT}\n\n${loadSkillBody("chat")}`,
     tools: CHAT_TOOLS,
     skills: [],
     memory: false,

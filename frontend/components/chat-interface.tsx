@@ -47,12 +47,15 @@ export function ChatInterface() {
   const [input, setInput] = useState("");
   /** `null` means the server's configured default. */
   const [model, setModel] = useState<string | null>(null);
+  /** Caveman is on until the human dismisses the chip. */
+  const [caveman, setCaveman] = useState(true);
 
   const handleSend = (
     text: string,
     attachments: Attachment[],
     mentions: string[],
     phase?: string,
+    style?: string,
   ) => {
     if ((!text.trim() && attachments.length === 0) || isLoading) return;
     void sendMessage({
@@ -61,6 +64,7 @@ export function ChatInterface() {
       mentions,
       model,
       phase,
+      style,
       workspaceId: attached?.id,
       onSettled: refreshQuota,
     });
@@ -136,6 +140,8 @@ export function ChatInterface() {
                 model={model}
                 onModelChange={setModel}
                 hasMessages={false}
+                caveman={caveman}
+                onCavemanChange={setCaveman}
               />
             </div>
 
@@ -183,6 +189,8 @@ export function ChatInterface() {
             model={model}
             onModelChange={setModel}
             hasMessages
+            caveman={caveman}
+            onCavemanChange={setCaveman}
           />
         </div>
       )}

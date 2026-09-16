@@ -2,6 +2,7 @@ import { config } from "../../config";
 import type { VaultMount } from "../vault/mount";
 import type { UsageCollector } from "../gateway/usage";
 import type { AgentKind } from "../../agents/route";
+import { type ChatStyle } from "../../agents/skill";
 
 /** How long a paused HITL turn keeps its vault/workspace mounts. */
 const CONTEXT_TTL_MS = 30 * 60 * 1000;
@@ -11,6 +12,7 @@ export interface ChatRunContext {
   userId: string | undefined;
   model: string | undefined;
   phase: string | undefined;
+  style: ChatStyle | undefined;
   kind: AgentKind | undefined;
   workspaceRoot: string | undefined;
   workspaceId: string | undefined;

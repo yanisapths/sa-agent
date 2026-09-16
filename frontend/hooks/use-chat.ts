@@ -653,6 +653,7 @@ export const useChat = () => {
     mentions = [],
     model,
     phase,
+    style,
     workspaceId,
     onSettled,
   }: {
@@ -661,6 +662,7 @@ export const useChat = () => {
     mentions?: string[];
     model?: string | null;
     phase?: string;
+    style?: string;
     workspaceId?: string;
     onSettled?: () => void;
   }) => {
@@ -718,6 +720,7 @@ export const useChat = () => {
       if (threadId) formData.append("threadId", threadId);
       if (model) formData.append("model", model);
       if (phase) formData.append("phase", phase);
+      formData.append("style", style ?? "caveman");
       if (workspaceId) formData.append("workspaceId", workspaceId);
 
       const res = await fetch(`${AGENT_API}/chat`, {

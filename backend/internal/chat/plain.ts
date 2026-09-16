@@ -3,6 +3,7 @@ import { config } from "../../config";
 import { asChatModel } from "../../agents/model";
 import { PLAIN_PROMPT } from "../../agents/prompt";
 import { isCasualMessage } from "../../agents/route";
+import { loadSkillBody, type ChatStyle } from "../../agents/skill";
 import { listMessages, seedTextFor } from "../chats/service";
 import type { UsageCollector } from "../gateway/usage";
 import { withLlmSession } from "../gateway/session";
@@ -12,6 +13,7 @@ type PlainRun = {
   threadId: string;
   userId?: string;
   model?: string;
+  style?: ChatStyle;
   collector: UsageCollector;
   runId?: string;
   claimRoot?: boolean;
@@ -43,8 +45,12 @@ async function plainMessages(
   run: PlainRun,
   userText: string,
 ): Promise<Array<SystemMessage | HumanMessage | AIMessage>> {
+  const system =
+    run.style === "caveman"
+      ? `${PLAIN_PROMPT}\n\n${loadSkillBody("caveman")}`
+      : PLAIN_PROMPT;
   const messages: Array<SystemMessage | HumanMessage | AIMessage> = [
-    new SystemMessage(PLAIN_PROMPT),
+    new SystemMessage(system),
   ];
 
   /**

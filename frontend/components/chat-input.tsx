@@ -1,6 +1,14 @@
 "use client";
 
-import { ArrowUp, Folder, FolderGit2, PlusIcon, Square, X, FileText } from "lucide-react";
+import {
+  ArrowUp,
+  Folder,
+  FolderGit2,
+  PlusIcon,
+  Square,
+  X,
+  FileText,
+} from "lucide-react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { Button } from "./ui/Button";
 import { SlashCommandChip } from "./slash-command-chip";
@@ -17,12 +25,14 @@ import {
 import Image from "next/image";
 import {
   type SlashCommand,
+  CAVEMAN_COMMAND,
   composeSlashMessage,
   consumeSlashToken,
   filterSlashCommands,
   findSlashCommand,
   matchSlashQuery,
   selectedPhase,
+  selectedStyle,
   withSlashCommand,
 } from "./slash-commands";
 import { ModelPicker } from "./model-picker";
@@ -50,6 +60,8 @@ interface ChatInputProps {
     mentions: string[],
     /** Phase specialist to pin, from a `/sa-*` or `/pvt-*` command. */
     phase?: string,
+    /** Sticky reply style. Default caveman; dismiss the chip to refuse. */
+    style?: string,
   ) => void;
   isLoading?: boolean;
   placeholder?: string;
@@ -61,6 +73,9 @@ interface ChatInputProps {
   model?: string | null;
   onModelChange?: (model: string | null) => void;
   hasMessages?: boolean;
+  /** Caveman starts on. Parent keeps the choice across the empty/thread remount. */
+  caveman?: boolean;
+  onCavemanChange?: (on: boolean) => void;
 }
 
 export const sendButtonVariants: Variants = {
@@ -109,21 +124,19 @@ export function ChatInput({
   model = null,
   onModelChange,
   hasMessages,
+  caveman = true,
+  onCavemanChange,
 }: ChatInputProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>(() =>
+    caveman ? [CAVEMAN_COMMAND] : [],
+  );
   const [pickedMentions, setPickedMentions] = useState<string[]>([]);
   const [folderMenuOpen, setFolderMenuOpen] = useState(false);
   const [addFolderOpen, setAddFolderOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const {
-    workspaces,
-    attached,
-    attach,
-    detach,
-    create,
-  } = useWorkspace();
+  const { workspaces, attached, attach, detach, create } = useWorkspace();
   const slashQuery = matchSlashQuery(value);
   const slashOptions =
     slashQuery === null
@@ -148,6 +161,16 @@ export function ChatInput({
           })
           .slice(0, 8);
 
+  const updateSlashCommands = (
+    updater: (prev: SlashCommand[]) => SlashCommand[],
+  ) => {
+    setSlashCommands((prev) => {
+      const next = updater(prev);
+      onCavemanChange?.(next.some((item) => item.style === "caveman"));
+      return next;
+    });
+  };
+
   const insertMention = (token: string) => {
     onChange(value.replace(/@[^\s]*$/, `${token} `));
     setPickedMentions((prev) =>
@@ -161,7 +184,7 @@ export function ChatInput({
   ) => {
     onChange(consumeSlashToken(fromValue));
     /** A turn runs one specialist, so a second phase replaces the first. */
-    setSlashCommands((prev) => withSlashCommand(prev, command));
+    updateSlashCommands((prev) => withSlashCommand(prev, command));
   };
 
   const handleInputChange = (next: string) => {
@@ -206,10 +229,16 @@ export function ChatInput({
   const submit = () => {
     const message = composeSlashMessage(value, slashCommands);
     if ((!message && attachments.length === 0) || isLoading) return;
-    onSend(message, attachments, pickedMentions, selectedPhase(slashCommands));
+    onSend(
+      message,
+      attachments,
+      pickedMentions,
+      selectedPhase(slashCommands),
+      selectedStyle(slashCommands),
+    );
     onChange("");
     setAttachments([]);
-    setSlashCommands([]);
+    updateSlashCommands((prev) => prev.filter((item) => item.kind === "style"));
     setPickedMentions([]);
   };
 
@@ -246,8 +275,7 @@ export function ChatInput({
     : activePhase
       ? `What should ${activePhase.chipLabel} work on?`
       : (placeholder ?? rotatingHint);
-  const showRotatingHint =
-    rotateOnboarding && value.length === 0 && !isLoading;
+  const showRotatingHint = rotateOnboarding && value.length === 0 && !isLoading;
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -348,7 +376,7 @@ export function ChatInput({
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
-                className="flex flex-wrap items-center gap-2 px-3 pt-3"
+                className="flex flex-wrap items-center gap-2 px-3 py-2"
               >
                 {attached && (
                   <motion.div
@@ -388,7 +416,7 @@ export function ChatInput({
                     <SlashCommandChip
                       command={command}
                       onRemove={() =>
-                        setSlashCommands((prev) =>
+                        updateSlashCommands((prev) =>
                           prev.filter((item) => item.token !== command.token),
                         )
                       }
@@ -468,7 +496,7 @@ export function ChatInput({
               onKeyDown={handleKeyDown}
               disabled={isLoading}
               rows={1}
-              className="block w-full min-h-[5.75rem] resize-none overflow-hidden border-0 bg-transparent p-4 pb-14 text-foreground outline-none ring-0 placeholder:text-muted"
+              className="block w-full min-h-[5.75rem] resize-none overflow-hidden border-0 bg-transparent p-4 mb-14 text-foreground outline-none ring-0 placeholder:text-muted"
               style={{ boxShadow: "none" }}
             />
           </div>

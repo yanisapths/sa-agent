@@ -9,6 +9,12 @@ import {
 import multer from "multer";
 import { randomUUID } from "node:crypto";
 import { PHASE_OWNERS, selectAgentKind, type AgentKind } from "../agents";
+import {
+  CHAT_STYLES,
+  DEFAULT_CHAT_STYLE,
+  parseChatStyle,
+  type ChatStyle,
+} from "../agents/skill";
 import { config } from "../config";
 import { isChatModelId } from "../internal/gateway/models";
 import {
@@ -287,6 +293,26 @@ function requestedPhase(body: Record<string, unknown>): string | undefined {
 }
 
 /**
+ * A style is a conversational voice, not a specialist. Caveman is the
+ * default; the human has to send `off` (or `normal`) to refuse it.
+ * Unknown values fail here rather than silently no-opping inside the agent.
+ */
+function requestedStyle(body: Record<string, unknown>): ChatStyle {
+  const raw = body.style;
+  if (typeof raw !== "string" || !raw.trim()) return DEFAULT_CHAT_STYLE;
+
+  const style = raw.trim().toLowerCase();
+  const parsed = parseChatStyle(style);
+  if (!parsed) {
+    throw new HttpError(
+      400,
+      `Unknown style "${style}". Expected one of: ${CHAT_STYLES.join(", ")}, normal.`,
+    );
+  }
+  return parsed;
+}
+
+/**
  * Phrased to reinforce the router contract in `agents/prompt.ts` — "task()
  * exactly one specialist" — rather than argue with it, so the only thing left
  * for the router to decide is already decided.
@@ -451,6 +477,7 @@ async function chatHandler(
   let collector: UsageCollector | undefined;
   let model: string | undefined;
   let phase: string | undefined;
+  let style: ChatStyle = DEFAULT_CHAT_STYLE;
   let kind: AgentKind | undefined;
   let executionMs = 0;
   const streaming = wantsEventStream(req.headers.accept);
@@ -468,6 +495,7 @@ async function chatHandler(
     const body = (req.body ?? {}) as Record<string, unknown>;
     model = await requestedModel(body);
     phase = requestedPhase(body);
+    style = requestedStyle(body);
     const workspace = await attachedWorkspace(
       req.userId,
       requestedWorkspaceId(body),
@@ -539,6 +567,7 @@ async function chatHandler(
       userId: req.userId,
       model,
       phase,
+      style,
       kind,
       workspaceRoot: workspace?.path,
       workspaceId: workspace?.id,

@@ -1,6 +1,8 @@
+import { SystemMessage } from "@langchain/core/messages";
 import { agentFor } from "../../agents";
 import { chatAgentFor } from "../../agents/chat-agent";
 import type { AgentKind } from "../../agents/route";
+import { loadSkillBody, type ChatStyle } from "../../agents/skill";
 import { config } from "../../config";
 import { HttpError } from "../httpError";
 import type { UsageCollector } from "../gateway/usage";
@@ -33,6 +35,8 @@ export interface AgentRunConfig {
   userId?: string;
   model?: string;
   phase?: string;
+  /** Reply style. Injected on chat/plain turns only — never on harness. */
+  style?: ChatStyle;
   /** `plain` = no tools. `chat` = web/Jira. `deep` = harness. */
   kind?: AgentKind;
   workspaceId?: string;
@@ -47,6 +51,21 @@ export interface AgentRunConfig {
 
 function agentForRun(run: AgentRunConfig) {
   return run.kind === "chat" ? chatAgentFor(run.model) : agentFor(run.model);
+}
+
+/**
+ * Caveman is a conversational voice. Prepend it on chat turns so the JSON
+ * envelope still holds; harness specialists never see it.
+ */
+function inputWithStyle(input: unknown, run: AgentRunConfig): unknown {
+  if (run.style !== "caveman" || run.kind !== "chat") return input;
+  if (!input || typeof input !== "object") return input;
+  const rec = input as { messages?: unknown[] };
+  if (!Array.isArray(rec.messages)) return input;
+  return {
+    ...rec,
+    messages: [new SystemMessage(loadSkillBody("caveman")), ...rec.messages],
+  };
 }
 
 type CheckpointGraph = {
@@ -151,7 +170,7 @@ export async function streamAgentTurn(opts: {
 
   try {
     await withMounts(opts.run, async () => {
-      const stream = await agent.stream(opts.input as never, {
+      const stream = await agent.stream(inputWithStyle(opts.input, opts.run) as never, {
         ...cfg,
         streamMode: ["messages", "updates", "values"],
         subgraphs: true,
@@ -247,7 +266,7 @@ export async function invokeAgentTurn(opts: {
   const agent = agentForRun(opts.run);
   const cfg = invokeConfig(opts.run, opts.signal, opts.onProgress);
   opts.run.claimRoot = false;
-  let next: unknown = opts.input;
+  let next: unknown = inputWithStyle(opts.input, opts.run);
   let result: unknown;
 
   try {

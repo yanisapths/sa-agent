@@ -20,6 +20,7 @@ const CASUAL =
 /**
  * Slash leftovers and natural-language asks for the harness loop. Keep this
  * conservative: a miss goes to the tool chat, not the 6k harness.
+ * Style commands (`/caveman`) are not deep intent.
  */
 const DEEP_INTENT = [
   /\/(sa-)?(discuss|plan|execute|test|review)\b/i,
