@@ -10,6 +10,7 @@ import {
   useState,
   useCallback,
   useEffect,
+  useLayoutEffect,
   type FormEvent,
   type KeyboardEvent,
 } from "react";
@@ -115,6 +116,7 @@ export function ChatInput({
   const [folderMenuOpen, setFolderMenuOpen] = useState(false);
   const [addFolderOpen, setAddFolderOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const {
     workspaces,
     attached,
@@ -246,6 +248,16 @@ export function ChatInput({
       : (placeholder ?? rotatingHint);
   const showRotatingHint =
     rotateOnboarding && value.length === 0 && !isLoading;
+
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const max = Math.round(window.innerHeight * 0.4);
+    el.style.height = "0px";
+    const next = Math.min(el.scrollHeight, max);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
+  }, [value]);
 
   return (
     <div className="w-full">
@@ -448,13 +460,15 @@ export function ChatInput({
               </AnimatePresence>
             )}
             <textarea
+              ref={textareaRef}
               placeholder={showRotatingHint ? "" : inputPlaceholder}
               aria-label={showRotatingHint ? inputPlaceholder : undefined}
               value={value}
               onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={isLoading}
-              className="w-full min-h-[120px] resize-none border-0 bg-transparent outline-none ring-0 p-4 pb-14 text-foreground placeholder:text-muted block"
+              rows={1}
+              className="block w-full min-h-[5.75rem] resize-none overflow-hidden border-0 bg-transparent p-4 pb-14 text-foreground outline-none ring-0 placeholder:text-muted"
               style={{ boxShadow: "none" }}
             />
           </div>

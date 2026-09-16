@@ -4,6 +4,7 @@ import type { AgentKind } from "../../agents/route";
 import { config } from "../../config";
 import { HttpError } from "../httpError";
 import type { UsageCollector } from "../gateway/usage";
+import { withLlmSession } from "../gateway/session";
 import { withVaultMount, type VaultMount } from "../vault/mount";
 import { withWorkspaceRoot } from "../workspace/runtime";
 import type { ChatSseEvent } from "./events";
@@ -102,6 +103,7 @@ function invokeConfig(
       run.kind === "chat" ? 16 : config.agent.recursionLimit,
     signal,
     callbacks: [run.collector.handler, ...progressCallbacks(onProgress)],
+    promptCacheKey: run.threadId,
     ...tracingFields(run),
   };
 }
@@ -110,8 +112,10 @@ function withMounts<T>(
   run: AgentRunConfig,
   fn: () => Promise<T>,
 ): Promise<T> {
-  return withWorkspaceRoot(run.workspaceRoot, () =>
-    withVaultMount(run.vaultMount, fn),
+  return withLlmSession(run.threadId, () =>
+    withWorkspaceRoot(run.workspaceRoot, () =>
+      withVaultMount(run.vaultMount, fn),
+    ),
   );
 }
 
