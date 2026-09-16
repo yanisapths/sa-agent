@@ -547,6 +547,7 @@ export const useChat = () => {
           setStatus((prev) => (prev === "waiting" ? prev : "streaming"));
           patchAssistant(setMessages, assistantId, (current) => ({
             ...current,
+            startedAt: current.startedAt ?? Date.now(),
             steps: mergeStep(current.steps ?? [], step),
           }));
           return;
@@ -561,6 +562,7 @@ export const useChat = () => {
           });
           patchAssistant(setMessages, assistantId, (current) => ({
             ...current,
+            startedAt: current.startedAt ?? Date.now(),
             interrupt,
             steps: (interrupt.actionRequests ?? []).reduce(
               (steps, action, index) =>
