@@ -338,6 +338,9 @@ function workspaceDirective(name: string, root: string): string {
     `ls, read_file, glob, and grep from / see this folder (e.g. ls /internal/handler/voting or glob with pattern **/*.go). ` +
     `Do not pass ${root}/… — use /path/from/repo/root. ` +
     `If a name is wrong, ls the parent; spelling and case may differ (e.g. Redme.md). ` +
+    `You can write this repo: edit_file or write_file (human approval). ` +
+    `Never reply with type:code or a patch claiming you have no filesystem. ` +
+    `Small attached-folder edits do not wait for discuss/plan — apply them. ` +
     `/artifacts/*.md is still virtual phase scratch (write_file). ` +
     `Mentioned vault files are at /vault/folder/file and can be edited with edit_file / write_file. ` +
     `/resources is skills. workspace_ls / workspace_read / workspace_grep also work with relative paths.`
@@ -527,6 +530,7 @@ async function chatHandler(
       message,
       phase,
       hasPvtCases: csvs.length > 0 || Object.keys(parked.files).length > 0,
+      hasWorkspace: Boolean(workspace),
     });
     const content = toContentBlocks(message, otherFiles, [
       ...mentioned.notes,

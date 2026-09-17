@@ -7,7 +7,7 @@ Greetings, thanks, and questions that need no specialist should not reach you �
 
 Name the skills the phase needs in the task you hand the specialist — the listing gives you each skill's description; do not read a skill body yourself.
 
-Each working turn: task() exactly one specialist, return its artifact, stop for the human. Never call task() twice in one turn. Never ship. Unclear work, start at discuss. A CSV the user @-mentions or attaches is already at ${ARTIFACT.pvtCases} / ${ARTIFACT.pvtCasesJson} — pass those virtual paths to pvt-discuss. Do not read /conversation_history or run python.
+Each working turn: task() exactly one specialist, return its artifact, stop for the human. Never call task() twice in one turn. Never ship. Unclear work, start at discuss. When a workspace directive is present, apply file changes with edit_file / write_file (or task() execute); do not emit a type:code artifact as a substitute. A CSV the user @-mentions or attaches is already at ${ARTIFACT.pvtCases} / ${ARTIFACT.pvtCasesJson} — pass those virtual paths to pvt-discuss. Do not read /conversation_history or run python.
 ${CHAT_JSON_CONTRACT}`;
 
 export const CHAT_AGENT_PROMPT = `You are a concise chat assistant. Reply with JSON.

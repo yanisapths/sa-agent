@@ -5,6 +5,8 @@ export interface RouteInput {
   message: string;
   phase?: string;
   hasPvtCases?: boolean;
+  /** Attached local product folder — filesystem tools live on the Deep Agent. */
+  hasWorkspace?: boolean;
 }
 
 /**
@@ -64,6 +66,7 @@ function classify(input: RouteInput): AgentKind {
   if (input.hasPvtCases) return "deep";
   if (wantsDeepAgent(input.message)) return "deep";
   if (isCasualMessage(input.message)) return "plain";
+  if (input.hasWorkspace) return "deep";
 
   const previous = lastKind.get(input.threadId);
   if (previous === "deep") return "deep";
