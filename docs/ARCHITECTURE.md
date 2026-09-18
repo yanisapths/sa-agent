@@ -2,13 +2,66 @@
 
 sa-agent is a **capability provider**, not the product you are analysing. The
 LLM runtime either sits in this repo (chat GUI) or in a **product workspace**
-(Claude Code or Codex, via the plugin). Tools, skills, and memory live here.
+(Claude Code or Codex, via the plugin). Tools, skills, memory, and guardrails
+live here.
 
 The core is a six-phase loop. Each phase receives declared inputs only
 (index hits, live schema, previous artifact), produces one file, and stops
 at a human gate. Distillation at phase N is what makes phase N+1 cheap.
 
 Read [`harness.ts`](../backend/agents/harness.ts) first. That file is the contract.
+[`route.ts`](../backend/agents/route.ts) decides which graph a GUI turn actually
+runs. [`guardrail/guardrail.ts`](../backend/agents/guardrail/guardrail.ts) wraps
+every graph.
+
+## System
+
+```mermaid
+flowchart TB
+  subgraph clients [Callers]
+    GUI["Chat GUI<br/>POST /chat"]
+    CC["Claude Code / Codex<br/>product repo"]
+  end
+
+  subgraph guiRuntime [This repo — LangChain]
+    Route["route.ts<br/>plain · chat · deep"]
+    Guard["guardrails<br/>filter · PII · safety"]
+    Plain["plain LLM<br/>greetings"]
+    Chat["chat-agent.ts<br/>docs · schema · web · Jira"]
+    Deep["sa-agent.ts<br/>orchestrator + task()"]
+    Specialists["harness specialists<br/>discuss … review · pvt-*"]
+  end
+
+  subgraph shared [One capability core]
+    Catalog["tools/catalog<br/>postgres · knowledge · system-model<br/>jira · web · write_files · workspace"]
+    Skills["resources/skills/*/SKILL.md"]
+    Memory["resources/AGENTS.md"]
+    Model[".sa/system-model.db<br/>in the product repo"]
+  end
+
+  subgraph pluginRuntime [Plugin — product repo]
+    Agents["claude/agents/*.md"]
+    MCP["sa-knowledge + jira MCP"]
+  end
+
+  GUI --> Route
+  Route --> Guard
+  Guard --> Plain
+  Guard --> Chat
+  Guard --> Deep
+  Deep -->|"task() one phase"| Specialists
+  Chat --> Catalog
+  Deep --> Catalog
+  Specialists --> Catalog
+  Specialists --> Skills
+  Deep -->|"names + descriptions"| Skills
+  CC --> Agents
+  CC --> MCP
+  MCP --> Catalog
+  Agents --> Skills
+  Agents --> Memory
+  Catalog --> Model
+```
 
 ## Why a harness (not one model)
 
@@ -34,13 +87,17 @@ The PVT prep track below has its own three: `AGENT_PVT_DISCUSS_MODEL`,
 
 ## The loop
 
+```mermaid
+flowchart LR
+  discuss["discuss"] -->|discuss.md| plan["plan"]
+  plan -->|plan.md| execute["execute"]
+  execute -->|execute.md| test["test"]
+  test -->|test.md| review["review"]
+  review -->|review.md| ship["ship<br/>you commit"]
 ```
-[discuss] ── discuss.md ──► [plan] ── plan.md ──► [execute] ── execute.md ──► [test]
-   HITL                       HITL                    HITL                      HITL
-                                                                                 │
-[ship] ◄── you commit ── [review] ◄── review.md ────────────────────────────────┘
-  human                     HITL
-```
+
+Each arrow is a **human gate**. There is no `/start` command. The artifact
+file **is** the interface.
 
 | Phase | Receives | Produces | You do |
 | --- | --- | --- | --- |
@@ -51,8 +108,6 @@ The PVT prep track below has its own three: `AGENT_PVT_DISCUSS_MODEL`,
 | **review** | plan + execute + test | findings, ship-ready? | accept or send back |
 | **ship** | accepted review | commit / PR | you ship |
 
-There is no `/start` command. The artifact file **is** the interface.
-
 ## The PVT prep track
 
 Preparing a Production Verification Test is a **second track**, not more phases
@@ -60,9 +115,10 @@ on the first. It ends in SQL scripts another team runs against production, so
 it never reaches execute-the-code or review-the-diff. `PVT_PHASES` /
 `PVT_PHASE` in [`harness.ts`](../backend/agents/harness.ts).
 
-```
-[pvt-discuss] ── pvt-discuss.md ──► [pvt-plan] ── pvt-plan.md ──► [pvt-execute]
-     HITL                              HITL                            HITL
+```mermaid
+flowchart LR
+  pd["pvt-discuss"] -->|pvt-discuss.md| pp["pvt-plan"]
+  pp -->|pvt-plan.md| pe["pvt-execute"]
 ```
 
 | Phase | Specialist (LangChain / Claude Code) | Receives | Produces |
@@ -98,7 +154,35 @@ The chat GUI sends `POST /chat` with `Accept: text/event-stream` and renders
 tokens and tool steps as they stream. `Accept: application/json` still returns
 one artifact (`text` / `api_spec` / `sql` / `diagram` / `code`). The orchestrator
 does not write the product repo. Claude Code writes `docs/sa/<phase>.md` in the
-product repo.
+product repo. The GUI writes `/artifacts/<phase>.md` in thread state; execute /
+review / pvt-execute may also write an attached local folder.
+
+## GUI routing
+
+[`route.ts`](../backend/agents/route.ts) picks a graph **before** the model
+runs. A miss is the tool chat, not the harness.
+
+```mermaid
+flowchart TD
+  In["POST /chat"] --> Q{"named phase,<br/>PVT cases,<br/>or deep intent?"}
+  Q -->|yes| Deep["deep — sa-agent.ts"]
+  Q -->|no| G{"greeting?"}
+  G -->|yes| Plain["plain — no tools"]
+  G -->|no| W{"workspace attached?"}
+  W -->|yes| Deep
+  W -->|no| Prev{"thread was already deep?"}
+  Prev -->|yes| Deep
+  Prev -->|no| Chat["chat — chat-agent.ts"]
+```
+
+| Kind | Graph | Tools | Skills |
+| --- | --- | --- | --- |
+| **plain** | one LLM call | none | optional `caveman` voice |
+| **chat** | ReAct `createAgent` | docs, schema, `run_sql`, datetime, web, Jira | `chat` body in the prompt; `caveman` on chat turns only |
+| **deep** | Deep Agent | orchestrator set + `task()` specialists | skill **names** on the router; full packages on the specialist |
+
+A greeting after a harness turn drops back to plain. A follow-up that is not
+small talk stays on the Deep Agent. Style (`/caveman`) is not deep intent.
 
 ## The system model
 
@@ -106,10 +190,14 @@ A third grounding source, next to the live schema and the index. The schema
 knows what exists; the index knows what someone wrote down; the system model
 knows **what connects to what**, and the decision records know **why**.
 
-```
-Endpoint ──handled_by──► Service ──imports──► Repository ──queries──► Table ──has_column──► Column
-   ▲                                                                    ▲
-   └──calls── Component (frontend)                    Decision ──decides──┘
+```mermaid
+flowchart LR
+  Endpoint -->|handled_by| Service
+  Service -->|imports| Repository
+  Repository -->|queries| Table
+  Table -->|has_column| Column
+  Component -->|calls| Endpoint
+  Decision -->|decides| Table
 ```
 
 Every edge points **dependent → dependency**. Impact analysis is therefore one
@@ -158,39 +246,119 @@ for API specs.
 
 Live schema orientation (`list_tables`, `describe_tables`,
 `inspect_relationships`) is on the router so it can finish a brief without
-asking the human for columns. `run_sql` stays inside the specialist.
+asking the human for columns. `run_sql` stays inside the specialist (and on
+the GUI chat agent for lookup questions).
 
-Jira is Discuss only, and only when a ticket or story is named.
+Jira is Discuss / PVT-discuss only, and only when a ticket or story is named —
+except the GUI **chat** agent, which may call Jira when the user names a
+ticket without entering the harness.
+
+When a local project folder is attached, `workspace_ls` / `workspace_read` /
+`workspace_grep` (and Deep Agents `ls` / `read_file` / `glob` / `grep` from
+`/`) see that repo. `/artifacts` and `/vault` stay in thread state.
 
 ## Two runtimes, one tool core
 
+```mermaid
+flowchart TB
+  Catalog["agents/tools/catalog<br/>Zod schema + invoke"]
+  Catalog --> PG["core/postgres"]
+  Catalog --> KN["core/knowledge · mintlify"]
+  Catalog --> SM["core/system-model"]
+  Catalog --> JR["jira"]
+  Catalog --> WEB["web · datetime"]
+  Catalog --> WF["write_files"]
+  Catalog --> WS["workspace"]
+
+  Catalog --> LC["LangChain adapter"]
+  Catalog --> MCP["MCP stdio"]
+
+  LC --> Deep["Deep Agent<br/>sa-agent.ts · harness.ts<br/>POST /chat"]
+  LC --> Chat["Chat agent<br/>chat-agent.ts"]
+  MCP --> Plug["Claude Code / Codex<br/>plugin: agents/claude<br/>same phases, product-repo artifacts"]
 ```
-                    ┌──────────────────────────────────────────┐
-                    │  agents/tools/catalog (Zod + invoke)     │
-                    │  core/ postgres knowledge system-model   │
-                    └──────────────┬──────────┬────────────────┘
-                                   │          │
-              LangChain adapter    │          │  MCP stdio
-                                   ▼          ▼
-                    ┌──────────────────┐  ┌──────────────────────────┐
-                    │ Deep Agent       │  │ Claude Code / Codex      │
-                    │ sa-agent.ts      │  │ plugin: agents/claude    │
-                    │ harness.ts       │  │ same six phases          │
-                    │ POST /chat       │  │ product-repo artifacts   │
-                    └──────────────────┘  └──────────────────────────┘
+
+## Skills
+
+Source of truth: [`agents/resources/skills/`](../backend/agents/resources/skills/).
+Plugin `claude/skills/` is a symlink into that tree (`grill-me` is plugin-only).
+
+deepagents lists **children** of each skills source as packages. `PHASE.skills`
+names the package (`/resources/skills/backend/`); the source is its parent.
+The GUI orchestrator mounts `/skills/` so it can **name** the right package in
+the `task()` it hands a specialist. It does not read skill bodies or do the
+work. Specialists load only the packages in their `PHASE` / `PVT_PHASE` row.
+
+| Skill | Who loads it |
+| --- | --- |
+| `system-analyst` | discuss, pvt-discuss |
+| `solution-architect` | plan |
+| `backend`, `backend-go`, `frontend` | execute, review (frontend when the change is the web app); pvt-plan / pvt-execute use `backend` |
+| `backend-code-review` | plan (design gate), review |
+| `security-review` | review (auth, SQL, secrets, uploads, browser) |
+| `test-engineer` | test, pvt-plan |
+| `system-model` | discuss, plan, execute, test, review |
+| `jira` | discuss, pvt-discuss (when a ticket is named) |
+| `pvt-prep` | all three PVT phases |
+| `chat` | GUI chat agent (prompt body, not Deep Agents skills middleware) |
+| `caveman` | GUI chat/plain voice; never on harness specialists |
+
+**New skill** — `agents/resources/skills/<name>/SKILL.md` only, then grant it
+on a phase in `harness.ts`. The plugin path is a symlink.
+
+## Guardrails
+
+Every GUI graph (plain, chat, deep, and each specialist) runs
+[`guardrailsForModel`](../backend/agents/guardrail/guardrail.ts). Layers, in
+order:
+
+```mermaid
+flowchart LR
+  In["human message"] --> F["ContentFilter<br/>banned jailbreak phrases"]
+  F --> PII["PII redact<br/>email · card · sk- keys"]
+  PII --> Agent["model + tools"]
+  Agent --> Safe["SafetyGuardrail<br/>SAFE / UNSAFE on final text"]
+  Safe --> Out["reply or blocked JSON"]
 ```
+
+1. **Before-agent filter** — blocks the turn when the latest human message
+   contains a jailbreak phrase. `hack` / `exploit` stay allowed so architecture
+   questions about auth still run.
+2. **PII** — redacts email, credit-card, and `sk-` API keys on input, output,
+   and tool results.
+3. **After-agent safety** — a second pass of the same chat model judges the
+   final AI text. `UNSAFE` is replaced with a blocked text artifact.
+
+HITL is **not** in this stack on live agents. Interrupt maps live on the Deep
+Agent (`interruptOn` in `builder.ts` / `harness.ts`).
+
+Filesystem permissions are a second fence: discuss / plan / test may write
+`/artifacts`, `/vault`, and scratch paths only; execute / review / pvt-execute
+may write the attached product repo but never `/resources/**` (skills and
+memory).
 
 ## Deep Agent (GUI / `/chat`)
 
 [`harness.ts`](../backend/agents/harness.ts) + [`sa-agent.ts`](../backend/agents/sa-agent.ts):
 
 1. **Orchestrator model** — haiku. Tools: index + schema orientation
-   (`list_tables`, `describe_tables`, `inspect_relationships`). No `run_sql`.
-2. **Skills** — none on the router. Each specialist loads its own.
+   (`list_tables`, `describe_tables`, `inspect_relationships`), `write_files`,
+   workspace reads. No `run_sql`, no Jira.
+2. **Skills** — names + descriptions of every package under `resources/skills/`
+   so the router can pick the right one for the specialist. Bodies stay unread.
 3. **`task`** — Deep Agents delegation. One specialist per gate.
-4. **Scratch files** — `/artifacts/*.md` on the per-thread StateBackend. When a project folder is attached, `ls` / `read_file` / `glob` / `grep` from `/` see that repo; `/artifacts` stays in state.
-5. **Memory** — `/resources/AGENTS.md` every turn.
+   `PHASE_OWNERS` is derived from `PHASE` + `PVT_PHASE`; `ship` has no owner.
+4. **Scratch files** — `/artifacts/*.md` on the per-thread StateBackend. When a
+   project folder is attached, reads from `/` see that repo; `/artifacts` stays
+   in state. Vault files mount at `/vault`.
+5. **Memory** — **off** on the GUI orchestrator (`memory: false`). The loop
+   rules are already in `SA_AGENT_PROMPT`. Specialists inherit
+   [`GROUNDING`](../backend/agents/specialists/types.ts). Plugin sessions still
+   load `resources/AGENTS.md`.
 6. **JSON contract** — [`contract/chat-response.ts`](../backend/contract/chat-response.ts); the orchestrator prompt is generated from it.
+7. **Checkpointer** — one `MemorySaver` for every Deep Agent model id, so
+   switching model mid-thread keeps history. The chat agent has a **separate**
+   saver (different state schema; a shared `thread_id` would clobber).
 
 ## Plugin runtimes (product repo)
 
@@ -223,7 +391,7 @@ environment only, which is why it cannot use `${SA_AGENT_HOME}` in `.mcp.json`.
 1. Live database.
 2. System model (as current as the last `build_system_model`).
 3. Live Mintlify docs (`search_docs` / `get_doc_page`) and DDL snapshots.
-4. Jira only in discuss, only when named.
+4. Jira only in discuss (and GUI chat), only when named.
 
 Never invent a table, column, or endpoint.
 
@@ -279,7 +447,8 @@ the first decision the next time someone asks "why is it like this".
 The chat GUI sends `Accept: text/event-stream` on `POST /chat`. The agent
 **streams** (`messages`, `updates`, `values`, subgraphs) so tokens and tool
 steps appear as they run. Sensitive tools pause via Deep Agents `interruptOn`
-(`task`, writes, `record_decision`, `build_system_model`). The GUI shows the
+(`task`, `write_files`, `workspace_write`, `write_file`, `edit_file`,
+`record_decision`, `build_system_model`, `run_sql`). The GUI shows the
 pending actions (args, scope, cost hint) and resumes with
 `POST /chat/resume` `{ threadId, decisions }` (`approve` / `edit` / `reject`).
 
@@ -304,10 +473,12 @@ One edit. Generated plugin files and the frontend contract are refreshed with
   `model/scan.ts` or `model/schema.ts`. Shared core; both runtimes call it.
 - **New Jira tool** — catalog row with `surfaces: ["langchain", "mcp-jira"]`
   and an invoke that uses `resources/mcp/jira-api.ts`.
-- **New skill** — `agents/resources/skills/<name>/SKILL.md` only. The plugin
-  path is a symlink into that directory.
+- **New skill** — `agents/resources/skills/<name>/SKILL.md` only, then a
+  `PHASE.skills` (or `PVT_PHASE.skills`) grant. The plugin path is a symlink
+  into that directory.
 - **Memory / loop** — `agents/resources/AGENTS.md` only (`claude/memory/` is a
-  symlink).
+  symlink). GUI orchestrator does not auto-load it; keep `SA_AGENT_PROMPT` and
+  `GROUNDING` in sync when the loop rules change.
 - **New phase** — a specialist in `agents/specialists/` plus a `PHASE` /
   `PVT_PHASE` row in `harness.ts`. `claude/agents/*.md` is generated.
 - **New chat artifact kind** — add a variant to
@@ -315,5 +486,7 @@ One edit. Generated plugin files and the frontend contract are refreshed with
   `frontend/lib/chat-response.ts` follow from `bun run surfaces`.
 - **New MCP server** — add it to the template in `backend/scripts/surfaces.ts`
   (writes `.mcp.json` and `.mcp.codex.json`).
+- **Guardrail change** — `agents/guardrail/guardrail.ts`. Live agents call
+  `guardrailsForModel`; do not bolt a second filter onto `POST /chat`.
 
 Copy-paste starters: [`templates/`](../backend/agents/templates/).
