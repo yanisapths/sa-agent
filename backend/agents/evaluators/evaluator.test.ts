@@ -38,10 +38,16 @@ describe("evaluators", () => {
     expect(result.score).toBe(false);
   });
 
-  test("required tools: fails when the agent skips search_docs", () => {
-    const result = requiredToolsEvaluator(["search_docs"])({
+  test("required tools: fails when the agent skips search_docs", async () => {
+    let result = requiredToolsEvaluator(["search_docs"])({
       outputs: { messages: [new AIMessage("skipping tools")] },
     });
+
+    // Handle both Promise and non-Promise returns
+    if (result instanceof Promise) {
+      result = await result;
+    }
+
     expect(result.score).toBe(false);
   });
 

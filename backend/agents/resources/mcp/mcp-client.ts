@@ -59,6 +59,7 @@ function jiraConnection(): Connection | undefined {
 
 let client: MultiServerMCPClient | undefined;
 let toolsPromise: Promise<DynamicStructuredTool[]> | undefined;
+let nextDevToolsClient: MultiServerMCPClient | undefined;
 
 export function getJiraMcpClient(): MultiServerMCPClient | undefined {
   if (client) return client;
@@ -85,4 +86,37 @@ export async function getJiraMcpTools(): Promise<DynamicStructuredTool[]> {
     return [];
   });
   return toolsPromise;
+}
+
+/**
+ * Get the next-devtools MCP client. This allows the agent to inspect
+ * the running Next.js dev server (when running on localhost:3000).
+ */
+export function getNextDevToolsMcpClient(): MultiServerMCPClient {
+  if (nextDevToolsClient) return nextDevToolsClient;
+
+  nextDevToolsClient = new MultiServerMCPClient({
+    throwOnLoadError: false,
+    onConnectionError: "ignore",
+    mcpServers: {
+      "next-devtools": {
+        transport: "stdio",
+        command: "npx",
+        args: ["-y", "next-devtools-mcp@latest"],
+        env: envRecord(),
+        restart: { enabled: true, maxAttempts: 3, delayMs: 1000 },
+      },
+    },
+  });
+  return nextDevToolsClient;
+}
+
+export async function getNextDevToolsMcpTools(): Promise<DynamicStructuredTool[]> {
+  const mcp = getNextDevToolsMcpClient();
+  try {
+    return await mcp.getTools();
+  } catch (err: unknown) {
+    console.debug("next-devtools MCP failed to load tools:", err);
+    return [];
+  }
 }

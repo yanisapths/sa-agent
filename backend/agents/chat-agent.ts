@@ -4,7 +4,7 @@ import { CHAT_AGENT_PROMPT } from "./prompt";
 import { loadSkillBody } from "./skill";
 import type { ToolName } from "./tools";
 
-/** Lookups: product docs, live schema, web, Jira. No filesystem, no specialists. */
+/** Lookups: product docs, live schema, web, Jira. Execution: sandbox. No filesystem, no specialists. */
 export const CHAT_TOOLS = [
   "search_docs",
   "get_doc_page",
@@ -18,6 +18,7 @@ export const CHAT_TOOLS = [
   "search_jira",
   "get_jira_ticket",
   "read_jira_user_story",
+  "sandbox_exec",
 ] as const satisfies readonly ToolName[];
 
 function build(modelId: string | undefined) {

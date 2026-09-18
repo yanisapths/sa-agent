@@ -29,6 +29,7 @@ import {
 import { executionMaxMs, executionTimeoutMs } from "./run-context";
 import { invokePlainTurn, streamPlainTurn } from "./plain";
 import type { ChatActionRequest } from "./events";
+import { withToolEventEmitter, type ToolEventEmitter } from "./tool-context";
 
 export interface AgentRunConfig {
   threadId: string;
@@ -168,18 +169,30 @@ export async function streamAgentTurn(opts: {
   const cfg = invokeConfig(opts.run, opts.signal, opts.onProgress);
   opts.run.claimRoot = false;
 
+  // Create tool event emitter to capture sandbox-run events
+  const toolEmitter: ToolEventEmitter = {
+    sandboxRun: (event) => {
+      opts.emit({
+        event: "sandbox-run",
+        data: event,
+      });
+    },
+  };
+
   try {
     await withMounts(opts.run, async () => {
-      const stream = await agent.stream(inputWithStyle(opts.input, opts.run) as never, {
-        ...cfg,
-        streamMode: ["messages", "updates", "values"],
-        subgraphs: true,
+      await withToolEventEmitter(toolEmitter, async () => {
+        const stream = await agent.stream(inputWithStyle(opts.input, opts.run) as never, {
+          ...cfg,
+          streamMode: ["messages", "updates", "values"],
+          subgraphs: true,
+        });
+        for await (const chunk of stream) {
+          opts.onProgress?.();
+          if (opts.signal.aborted) break;
+          mapper.push(parseStreamChunk(chunk), opts.emit, opts.run.model);
+        }
       });
-      for await (const chunk of stream) {
-        opts.onProgress?.();
-        if (opts.signal.aborted) break;
-        mapper.push(parseStreamChunk(chunk), opts.emit, opts.run.model);
-      }
     });
   } catch (err) {
     if (opts.signal.aborted || isAbortError(err)) throw err;

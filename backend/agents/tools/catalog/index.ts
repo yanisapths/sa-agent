@@ -5,6 +5,7 @@ import { jiraTools } from "./jira";
 import { webTools } from "./web";
 import { writeFilesTools } from "./write-files";
 import { workspaceTools } from "./workspace";
+import { sandboxTools } from "./sandbox";
 import type { AnyCatalogTool, ToolSurface } from "./types";
 
 export type { AnyCatalogTool, ToolContext, ToolSurface } from "./types";
@@ -18,6 +19,7 @@ export const TOOL_CATALOG = [
   ...webTools,
   ...writeFilesTools,
   ...workspaceTools,
+  ...sandboxTools,
 ] as const;
 
 export type CatalogToolName = (typeof TOOL_CATALOG)[number]["name"];

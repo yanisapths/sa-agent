@@ -15,6 +15,7 @@ import { PlanPanel, ThoughtPanel } from "./thought-panel";
 import {
   type ChatFeedback,
   type InterruptPayload,
+  type SandboxRun,
   type ThoughtStep,
   type UserScore,
 } from "@/lib/chat-stream";
@@ -42,6 +43,8 @@ export interface UIMessage {
   interrupt?: InterruptPayload;
   /** LangSmith presigned URLs and any submitted score for this turn. */
   feedback?: ChatFeedback;
+  /** Sandbox execution results from this turn. */
+  sandboxRuns?: SandboxRun[];
 }
 
 export interface ApiSpecPart extends UIMessagePart {
@@ -87,6 +90,19 @@ export interface CodePart extends UIMessagePart {
   code: string;
 }
 
+export interface SandboxRunPart extends UIMessagePart {
+  type: "sandbox-run";
+  runId: string;
+  command: string;
+  status: "queued" | "running" | "completed" | "error";
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number;
+  error?: string;
+  duration?: number;
+  startedAt?: number;
+}
+
 export type UIPart =
   | UIMessagePart
   | ApiSpecPart
@@ -94,7 +110,8 @@ export type UIPart =
   | ImagePart
   | FilePart
   | DiagramPart
-  | CodePart;
+  | CodePart
+  | SandboxRunPart;
 
 
 const cn = (...c: (string | false | undefined | null)[]) =>
@@ -871,6 +888,92 @@ function ArtifactChips({ artifacts }: { artifacts: ChatArtifact[] }) {
 }
 
 
+function SandboxRunDisplay({ part }: { part: SandboxRunPart }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const statusColor =
+    part.status === "completed" && part.exitCode === 0
+      ? "text-emerald-600 bg-emerald-50"
+      : part.status === "error" || (part.exitCode && part.exitCode !== 0)
+        ? "text-red-600 bg-red-50"
+        : part.status === "running" || part.status === "queued"
+          ? "text-blue-600 bg-blue-50"
+          : "text-muted";
+
+  const hasOutput = Boolean(part.stdout || part.stderr || part.error);
+
+  return (
+    <div className="bg-surface/5 rounded-lg border border-border overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-3 py-2 flex items-center justify-between hover:bg-surface/10 transition-colors text-left"
+      >
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-xs font-mono text-muted">$</span>
+          <code className="text-xs font-mono truncate">{part.command}</code>
+          <span
+            className={cn(
+              "text-xs font-semibold px-1.5 py-0.5 rounded border whitespace-nowrap",
+              statusColor,
+            )}
+          >
+            {part.status === "completed" && part.exitCode === 0
+              ? "Exit 0"
+              : part.status === "completed"
+                ? `Exit ${part.exitCode}`
+                : part.status === "error"
+                  ? "Error"
+                  : part.status.charAt(0).toUpperCase() + part.status.slice(1)}
+          </span>
+          {part.duration && (
+            <span className="text-xs text-muted ml-auto whitespace-nowrap">
+              {part.duration}ms
+            </span>
+          )}
+        </div>
+        {hasOutput && (
+          <span
+            className={cn(
+              "text-muted text-xs transition-transform",
+              isOpen && "rotate-180",
+            )}
+          >
+            ▾
+          </span>
+        )}
+      </button>
+
+      {isOpen && hasOutput && (
+        <div className="border-t border-border px-3 py-2 bg-surface/5 space-y-2">
+          {part.stdout && (
+            <div>
+              <p className="text-xs text-muted mb-1 font-mono">stdout</p>
+              <pre className="text-xs bg-surface/10 rounded p-2 overflow-x-auto max-h-[200px] overflow-y-auto">
+                {part.stdout}
+              </pre>
+            </div>
+          )}
+          {part.stderr && (
+            <div>
+              <p className="text-xs text-muted mb-1 font-mono">stderr</p>
+              <pre className="text-xs bg-surface/10 rounded p-2 overflow-x-auto max-h-[200px] overflow-y-auto text-red-600">
+                {part.stderr}
+              </pre>
+            </div>
+          )}
+          {part.error && (
+            <div>
+              <p className="text-xs text-muted mb-1 font-mono">error</p>
+              <pre className="text-xs bg-surface/10 rounded p-2 overflow-x-auto max-h-[200px] overflow-y-auto text-red-600">
+                {part.error}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessagePart({ part }: { part: UIPart }) {
   if (part.type === "diagram")
     return <DiagramDisplay part={part as DiagramPart} />;
@@ -878,6 +981,8 @@ function MessagePart({ part }: { part: UIPart }) {
     return <ApiSpecDisplay part={part as ApiSpecPart} />;
   if (part.type === "sql") return <SqlDisplay part={part as SqlPart} />;
   if (part.type === "code") return <CodeDisplay part={part as CodePart} />;
+  if (part.type === "sandbox-run")
+    return <SandboxRunDisplay part={part as SandboxRunPart} />;
 
   if (part.type === "image") {
     const p = part as ImagePart;

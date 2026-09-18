@@ -35,6 +35,18 @@ export interface InterruptPayload {
   actionRequests: ActionRequest[];
 }
 
+export interface SandboxRun {
+  id: string;
+  command: string;
+  status: "queued" | "running" | "completed" | "error";
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number;
+  error?: string;
+  duration?: number;
+  startedAt?: number;
+}
+
 export type HitlDecision =
   | { type: "approve" }
   | { type: "reject"; message?: string }
@@ -64,6 +76,7 @@ export type ChatSseEventName =
   | "values"
   | "usage"
   | "feedback"
+  | "sandbox-run"
   | "done"
   | "error";
 

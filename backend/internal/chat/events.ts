@@ -34,6 +34,18 @@ export interface ChatInterruptEvent {
   actionRequests: ChatActionRequest[];
 }
 
+export interface SandboxRunData {
+  id: string;
+  command: string;
+  status: "queued" | "running" | "completed" | "error";
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number;
+  error?: string;
+  duration?: number;
+  startedAt?: number;
+}
+
 export type ChatSseEvent =
   | { event: "thread"; data: { threadId: string } }
   | { event: "messages"; data: { text: string; ns: string[] } }
@@ -49,6 +61,7 @@ export type ChatSseEvent =
     }
   | { event: "usage"; data: Record<string, unknown> }
   | { event: "feedback"; data: { user_score: string; runId: string } }
+  | { event: "sandbox-run"; data: SandboxRunData }
   | { event: "done"; data: { status: "complete" | "waiting" } }
   | { event: "error"; data: { error: string } };
 

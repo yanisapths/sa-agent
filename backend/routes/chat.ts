@@ -56,6 +56,7 @@ import {
   putChatRun,
   type ChatRunContext,
 } from "../internal/chat/run-context";
+import { getChatSandboxManager } from "../internal/sandbox/manager";
 import { seedCheckpointIfEmpty } from "../internal/chats/seed";
 import {
   findAssistantFeedback,
@@ -464,6 +465,9 @@ async function runStreamSegment(opts: {
   } finally {
     watchdog.stop();
     opts.req.off("close", onClose);
+    // ALWAYS clean up sandbox, regardless of exit path
+    // (interrupted, error, or success)
+    await getChatSandboxManager().reap(opts.run.threadId);
   }
 }
 
@@ -731,6 +735,7 @@ async function resumeHandler(
           writeSse(res, { event: "done", data: { status: "waiting" } });
         } else {
           dropChatRun(threadId);
+          await getChatSandboxManager().reap(threadId);
           await finishTurn({
             run,
             values: result.values,
@@ -757,6 +762,7 @@ async function resumeHandler(
         onProgress: watchdog.bump,
       });
       dropChatRun(threadId);
+      await getChatSandboxManager().reap(threadId);
       res.json({
         ok: true,
         threadId,
