@@ -28,7 +28,11 @@ const VERBS: Record<string, VerbSet> = {
     done: "Searched docs",
     allow: "searching docs",
   },
-  get_doc_page: { live: "Reading docs", done: "Read docs", allow: "reading docs" },
+  get_doc_page: {
+    live: "Reading docs",
+    done: "Read docs",
+    allow: "reading docs",
+  },
   search_schema_docs: {
     live: "Searching schema docs",
     done: "Searched schema docs",
@@ -79,6 +83,11 @@ const VERBS: Record<string, VerbSet> = {
     done: "Searched Jira",
     allow: "searching Jira",
   },
+  sandbox_exec: {
+    live: "Running in sandbox",
+    done: "Ran in sandbox",
+    allow: "running in sandbox",
+  },
   build_system_model: {
     live: "Building the system model",
     done: "Built the system model",
@@ -104,7 +113,11 @@ const VERBS: Record<string, VerbSet> = {
     done: "Searched decisions",
     allow: "searching decisions",
   },
-  write_files: { live: "Writing files", done: "Wrote files", allow: "writing files" },
+  write_files: {
+    live: "Writing files",
+    done: "Wrote files",
+    allow: "writing files",
+  },
   workspace_ls: {
     live: "Listing workspace files",
     done: "Listed workspace files",
@@ -153,7 +166,8 @@ function argPhrase(args: Record<string, unknown>): string {
   if (Array.isArray(path) && path.length > 0) {
     return clip(path.map(String).join(", "), 56);
   }
-  if (typeof args.sql === "string" && args.sql.trim()) return clip(args.sql, 72);
+  if (typeof args.sql === "string" && args.sql.trim())
+    return clip(args.sql, 72);
   if (typeof args.description === "string" && args.description.trim()) {
     return clip(args.description, 72);
   }
@@ -210,8 +224,10 @@ function StepGlyph({ name, ns }: { name: string; ns: string[] }) {
   if (isModelTrace(name, ns)) return <Sparkles className={className} />;
   if (/web_search/.test(name)) return <Globe className={className} />;
   if (/search_/.test(name)) return <Search className={className} />;
-  if (/sql|tables|relationships/.test(name)) return <Database className={className} />;
-  if (/workspace|write_files/.test(name)) return <Folder className={className} />;
+  if (/sql|tables|relationships/.test(name))
+    return <Database className={className} />;
+  if (/workspace|write_files/.test(name))
+    return <Folder className={className} />;
   return <Wrench className={className} />;
 }
 
@@ -220,24 +236,24 @@ export function ThoughtPanel({
   open,
   waiting,
   startedAt,
+  endedAt,
 }: {
   steps: ThoughtStep[];
   open: boolean;
   waiting: boolean;
   startedAt?: number;
+  endedAt?: number;
 }) {
   const [expanded, setExpanded] = useState(open);
   const [prevOpen, setPrevOpen] = useState(open);
-  const [doneLabel, setDoneLabel] = useState<string | null>(null);
   if (open !== prevOpen) {
     setPrevOpen(open);
     setExpanded(open);
   }
-  if (open && doneLabel) setDoneLabel(null);
-  if (!open && !doneLabel && startedAt) {
-    const secs = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-    setDoneLabel(`Thought for ${secs}s`);
-  }
+  const doneLabel =
+    !open && startedAt != null && endedAt != null
+      ? `Thought for ${Math.max(1, Math.round((endedAt - startedAt) / 1000))}s`
+      : null;
 
   const visible = steps.filter(
     (step) => !isModelTrace(step.name, step.ns) || Boolean(step.evidence),
@@ -303,7 +319,7 @@ function ThoughtStepRow({ step }: { step: ThoughtStep }) {
       {model ? (
         <p className="leading-relaxed">{label}</p>
       ) : (
-        <div className="flex items-start gap-2 text-foreground">
+        <div className="flex items-center gap-2 text-foreground">
           <StepGlyph name={step.name} ns={step.ns} />
           <span className="min-w-0 leading-relaxed">{label}</span>
         </div>
@@ -444,7 +460,8 @@ export function PlanPanel({
 function actionTitle(action: ActionRequest): string {
   if (action.description?.trim()) return action.description.trim();
   const allow = verbsFor(action.name, action.args).allow;
-  const scope = action.scope && action.scope !== action.name ? action.scope : "";
+  const scope =
+    action.scope && action.scope !== action.name ? action.scope : "";
   return scope ? `Allow ${allow} ${clip(scope, 72)}` : `Allow ${allow}`;
 }
 

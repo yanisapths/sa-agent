@@ -392,6 +392,12 @@ function patchAssistant(
   });
 }
 
+/** Stamp thought end time outside render (event handlers / SSE). */
+function thoughtClosed(current: UIMessage): Partial<UIMessage> {
+  if (!current.startedAt || current.endedAt != null) return {};
+  return { endedAt: Date.now() };
+}
+
 export const useChat = () => {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [status, setStatus] = useState<ChatLiveStatus>("idle");
@@ -446,6 +452,13 @@ export const useChat = () => {
     turnRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
+    const assistantId = assistantIdRef.current;
+    if (assistantId) {
+      patchAssistant(setMessages, assistantId, (current) => ({
+        ...current,
+        ...thoughtClosed(current),
+      }));
+    }
     setStatus("idle");
     setLive({ status: "idle" });
   }, [setLive]);
@@ -475,10 +488,12 @@ export const useChat = () => {
             typeof json?.error === "string" && json.error
               ? json.error
               : `Request failed (${res.status})`;
-          patchAssistant(setMessages, assistantId, {
+          patchAssistant(setMessages, assistantId, (current) => ({
+            ...current,
             parts: [{ type: "text", text: detail }],
             usage: json.usage,
-          });
+            ...thoughtClosed(current),
+          }));
           setStatus("error");
           setLive({
             status: "error",
@@ -495,12 +510,14 @@ export const useChat = () => {
           Record<string, string | undefined>;
         const part = artifactToPart(json.type ?? payload.type ?? "text", payload);
         const feedback = asFeedbackEvent(json.feedback);
-        patchAssistant(setMessages, assistantId, {
+        patchAssistant(setMessages, assistantId, (current) => ({
+          ...current,
           parts: [part],
           usage: json.usage,
           artifacts: json.artifacts,
           ...(feedback ? { feedback } : {}),
-        });
+          ...thoughtClosed(current),
+        }));
         const nextPhase = phaseFromTurn(
           json.usage,
           (json.artifacts ?? []) as { phase?: string | null }[],
@@ -612,9 +629,11 @@ export const useChat = () => {
             typeof (data as { error?: string }).error === "string"
               ? (data as { error: string }).error
               : "Agent failed.";
-          patchAssistant(setMessages, assistantId, {
+          patchAssistant(setMessages, assistantId, (current) => ({
+            ...current,
             parts: [{ type: "text", text: message }],
-          });
+            ...thoughtClosed(current),
+          }));
           setStatus("error");
           setLive({ status: "error", phase: requestedPhase ?? null });
           outcome = "error";
@@ -632,6 +651,10 @@ export const useChat = () => {
             outcome = "waiting";
             return;
           }
+          patchAssistant(setMessages, assistantId, (current) => ({
+            ...current,
+            ...thoughtClosed(current),
+          }));
           setStatus("idle");
           settleTurn({
             ok: true,
@@ -736,7 +759,8 @@ export const useChat = () => {
       if (isAbortError(err)) return;
       console.error(err);
       if (turn === turnRef.current) {
-        patchAssistant(setMessages, assistantId, {
+        patchAssistant(setMessages, assistantId, (current) => ({
+          ...current,
           parts: [
             {
               type: "text",
@@ -746,7 +770,8 @@ export const useChat = () => {
                   : "Could not reach the agent.",
             },
           ],
-        });
+          ...thoughtClosed(current),
+        }));
         setStatus("error");
         setLive({ status: "error", phase: phase ?? null });
       }
@@ -787,7 +812,8 @@ export const useChat = () => {
     } catch (err) {
       if (isAbortError(err)) return;
       console.error(err);
-      patchAssistant(setMessages, assistantId, {
+      patchAssistant(setMessages, assistantId, (current) => ({
+        ...current,
         parts: [
           {
             type: "text",
@@ -797,7 +823,8 @@ export const useChat = () => {
                 : "Could not resume.",
           },
         ],
-      });
+        ...thoughtClosed(current),
+      }));
       setStatus("error");
       setLive({ status: "error", phase: phaseRef.current ?? null });
       onSettledRef.current?.();

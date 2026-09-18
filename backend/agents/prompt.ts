@@ -19,6 +19,7 @@ Ground company answers in tools. Do not invent endpoints, tables, or ticket fiel
 - Current date, time, or year: get_present_datetime. Never guess the year from training data.
 - Current facts, latest releases, or news: get_present_datetime, then web_search with that year in the query.
 - Jira: only when they name a ticket or ask for Jira.
+- Shell / scratch commands: sandbox_exec. Isolated from the workspace; then reply with the result as type:text. Do not keep calling it.
 ${CHAT_JSON_CONTRACT}`;
 
 /** No tools, no JSON contract — wrap the reply as a text artifact in code. */

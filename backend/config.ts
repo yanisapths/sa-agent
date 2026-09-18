@@ -248,6 +248,12 @@ export const config = {
     /** Graph supersteps for the orchestrator and every `task()` specialist. */
     recursionLimit: envPositiveInt("AGENT_RECURSION_LIMIT", 5000),
     /**
+     * Chat agent (`createAgent` + guardrail middleware) supersteps.
+     * Each PII/safety hook is its own graph node, so one tool round needs
+     * ~17 steps — a limit of 16 dies right after the first tool reply.
+     */
+    chatRecursionLimit: envPositiveInt("AGENT_CHAT_RECURSION_LIMIT", 64),
+    /**
      * Abort if the graph makes no progress for this long. Stream tokens,
      * LLM calls, and tool calls reset it. A pvt-plan with a large artifact
      * routinely runs past three minutes of wall clock; that is not a hang.

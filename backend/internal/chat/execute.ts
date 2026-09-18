@@ -119,13 +119,18 @@ function invokeConfig(
         ? { workspaceId: run.workspaceId, workspaceRoot: run.workspaceRoot }
         : {}),
     },
-    recursionLimit:
-      run.kind === "chat" ? 16 : config.agent.recursionLimit,
+    recursionLimit: recursionLimitFor(run.kind),
     signal,
     callbacks: [run.collector.handler, ...progressCallbacks(onProgress)],
     promptCacheKey: run.threadId,
     ...tracingFields(run),
   };
+}
+
+function recursionLimitFor(kind: AgentKind | undefined): number {
+  return kind === "chat"
+    ? config.agent.chatRecursionLimit
+    : config.agent.recursionLimit;
 }
 
 function withMounts<T>(
@@ -199,7 +204,7 @@ export async function streamAgentTurn(opts: {
     if (isGraphRecursion(err)) {
       throw new HttpError(
         504,
-        `Agent stopped after ${config.agent.recursionLimit} steps to prevent a retry loop.`,
+        `Agent stopped after ${recursionLimitFor(opts.run.kind)} steps to prevent a retry loop.`,
       );
     }
     throw err;
@@ -306,7 +311,7 @@ export async function invokeAgentTurn(opts: {
     if (isGraphRecursion(err)) {
       throw new HttpError(
         504,
-        `Agent stopped after ${config.agent.recursionLimit} steps to prevent a retry loop.`,
+        `Agent stopped after ${recursionLimitFor(opts.run.kind)} steps to prevent a retry loop.`,
       );
     }
     throw err;

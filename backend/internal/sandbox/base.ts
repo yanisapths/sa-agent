@@ -5,29 +5,11 @@ import { spawn } from "node:child_process";
 import { SandboxClient, type Sandbox } from "langsmith/sandbox";
 
 /**
- * Shape of the LangSmith SDK's CommandHandle.
- * Used to ensure type-safe execution of remote commands.
+ * Default LangSmith microVM images ship with `/bin/sh` only.
+ * The SDK defaults to `/bin/bash`, which fails with:
+ * `fork/exec /bin/bash: no such file or directory`.
  */
-interface LangSmithCommandHandle {
-  [Symbol.asyncIterator](): AsyncIterator<{
-    stdout?: Uint8Array;
-    stderr?: Uint8Array;
-  }>;
-  result: Promise<{ exit_code: number }>;
-  kill(signal?: string): void;
-  sendInput(data: string): void;
-}
-
-/**
- * Shape of the LangSmith SDK's Sandbox.
- * Defines the .run() method for executing commands.
- */
-interface LangSmithSandbox {
-  run(
-    command: string,
-    options: { timeout: number; cwd: string; wait: boolean }
-  ): Promise<LangSmithCommandHandle>;
-}
+const LANGSMITH_SHELL = "/bin/sh";
 
 export interface ExecResult {
   exitCode: number;
@@ -88,6 +70,7 @@ export async function createRawLangSmithSandbox(
   const client = new SandboxClient();
   const remote = await client.createSandbox({ name: `sa-eval-${name}` });
   const root = `/tmp/sa-eval-${name}`;
+  await ensureLangSmithRoot(remote, root);
 
   const sandbox: IsolatedSandbox = {
     name,
@@ -141,6 +124,7 @@ export async function withLangSmithSandbox<T>(
   const remote = await client.createSandbox({ name: `sa-eval-${options.name}` });
   const root = `/tmp/sa-eval-${options.name}`;
   try {
+    await ensureLangSmithRoot(remote, root);
     for (const [rel, contents] of Object.entries(options.files ?? {})) {
       await remote.write(`${root}/${rel}`, contents);
     }
@@ -160,6 +144,23 @@ export async function withLangSmithSandbox<T>(
   } finally {
     await remote.delete();
   }
+}
+
+/**
+ * Ensure the sandbox working root exists before file I/O or exec.
+ */
+async function ensureLangSmithRoot(
+  remote: Sandbox,
+  root: string,
+): Promise<void> {
+  await remote.run(`mkdir -p ${shellSingleQuote(root)}`, {
+    shell: LANGSMITH_SHELL,
+    wait: true,
+  });
+}
+
+function shellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /**
@@ -260,6 +261,9 @@ export async function execLocal(
 
 /**
  * Execute a command in a LangSmith cloud sandbox.
+ *
+ * LangSmith `RunOptions.timeout` is in seconds (not ms).
+ * Output chunks are `{ stream, data }` (not `{ stdout, stderr }` byte arrays).
  */
 export async function execLangSmith(
   remote: Sandbox,
@@ -268,6 +272,7 @@ export async function execLangSmith(
   options?: ExecOptions,
 ): Promise<ExecResult> {
   const timeoutMs = Math.min(options?.timeout ?? 30000, 120000);
+  const timeoutSec = Math.max(1, Math.ceil(timeoutMs / 1000));
   const cwd = options?.cwd ? `${root}/${options.cwd}` : root;
 
   // Validate cwd to prevent traversal
@@ -280,31 +285,28 @@ export async function execLangSmith(
   let stderr = "";
 
   try {
-    // LangSmith SDK's Sandbox.run method returns a CommandHandle
-    // We wrap it to collect output and return the final result
-    const handle = await (remote as unknown as LangSmithSandbox).run(
-      command,
-      {
-        timeout: timeoutMs,
-        cwd,
-        wait: false,
-      }
-    );
+    const handle = await remote.run(command, {
+      timeout: timeoutSec,
+      cwd,
+      shell: LANGSMITH_SHELL,
+      wait: false,
+      env: options?.env,
+    });
 
-    // Collect output from the handle
+    if (options?.input) {
+      handle.sendInput(options.input);
+    }
+
     for await (const chunk of handle) {
-      if (chunk.stdout) {
-        const str = new TextDecoder().decode(chunk.stdout);
+      if (chunk.stream === "stdout") {
         if (stdout.length < MAX_OUTPUT_SIZE) {
           const remaining = MAX_OUTPUT_SIZE - stdout.length;
-          stdout += str.slice(0, remaining);
+          stdout += chunk.data.slice(0, remaining);
         }
-      }
-      if (chunk.stderr) {
-        const str = new TextDecoder().decode(chunk.stderr);
+      } else if (chunk.stream === "stderr") {
         if (stderr.length < MAX_OUTPUT_SIZE) {
           const remaining = MAX_OUTPUT_SIZE - stderr.length;
-          stderr += str.slice(0, remaining);
+          stderr += chunk.data.slice(0, remaining);
         }
       }
     }
@@ -312,7 +314,6 @@ export async function execLangSmith(
     const result = await handle.result;
     const duration = Date.now() - startTime;
 
-    // Append truncation notice if output was capped
     if (stdout.length === MAX_OUTPUT_SIZE) {
       stdout += "\n... [stdout truncated]";
     }

@@ -149,6 +149,6 @@ export function defineChatAgent(spec: AgentSpec) {
     checkpointer: spec.session === false ? undefined : CHAT_SESSION,
     middleware: guardrailsForModel(model),
   }).withConfig({
-    recursionLimit: 16,
+    recursionLimit: config.agent.chatRecursionLimit,
   });
 }

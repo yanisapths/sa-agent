@@ -39,6 +39,8 @@ export interface UIMessage {
   steps?: ThoughtStep[];
   /** Client timestamp when the first step arrived, for “Thought for Ns”. */
   startedAt?: number;
+  /** Client timestamp when the turn left streaming/waiting, for “Thought for Ns”. */
+  endedAt?: number;
   /** Pending HITL tool batch, if the graph is paused. */
   interrupt?: InterruptPayload;
   /** LangSmith presigned URLs and any submitted score for this turn. */
@@ -1082,6 +1084,7 @@ export function ChatMessage({
             open={isStreaming || waiting}
             waiting={waiting}
             startedAt={message.startedAt}
+            endedAt={message.endedAt}
           />
         )}
         {showBubble && (
