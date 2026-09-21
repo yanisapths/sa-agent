@@ -1,6 +1,8 @@
 "use client";
 
 import { Button } from "@/components/ui/Button";
+import { MarkdownContent } from "@/components/markdown-content";
+import { cn } from "@/lib/utils";
 import {
   Check,
   Copy,
@@ -19,6 +21,8 @@ import {
   type ArtifactFileDetail,
 } from "./types";
 
+type MarkdownView = "preview" | "source";
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -33,10 +37,18 @@ function isImageMime(mimeType: string): boolean {
   return mimeType.startsWith("image/");
 }
 
+function isMarkdownFile(name: string, mimeType?: string): boolean {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".md") || lower.endsWith(".markdown")) return true;
+  if (lower.includes(".")) return false;
+  return mimeType === "text/markdown" || mimeType === "text/x-markdown";
+}
+
 export function Artifacts() {
   const [files, setFiles] = useState<ArtifactFile[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [previewVersion, setPreviewVersion] = useState<number | null>(null);
+  const [markdownView, setMarkdownView] = useState<MarkdownView>("preview");
   const [detail, setDetail] = useState<ArtifactFileDetail | null>(null);
   const [content, setContent] = useState<ArtifactContent | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -114,7 +126,10 @@ export function Artifacts() {
     let cancelled = false;
     setIsEditing(false);
     setPreviewVersion(null);
+    setMarkdownView("preview");
     setError(null);
+    setContent(null);
+    setImageUrl(null);
 
     void Promise.all([
       artifactService.getFile(selectedId),
@@ -293,6 +308,9 @@ export function Artifacts() {
   }
 
   const canEdit = Boolean(content?.isText);
+  const isMarkdown = Boolean(
+    selected && isMarkdownFile(selected.name, selected.mimeType),
+  );
 
   return (
     <section className="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-6">
@@ -353,7 +371,7 @@ export function Artifacts() {
         </ul>
 
         <div className="flex min-h-0 flex-col gap-3 overflow-hidden rounded-2xl border border-border bg-surface p-4">
-          {!selected || !detail ? (
+          {!selected ? (
             <p className="text-sm text-muted">Select a file to preview.</p>
           ) : (
             <>
@@ -429,61 +447,109 @@ export function Artifacts() {
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-background p-3">
-                {isEditing ? (
-                  <div className="flex h-full min-h-48 flex-col gap-2">
-                    <textarea
-                      value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
-                      className="min-h-48 flex-1 resize-y rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-light"
-                      aria-label={`Edit ${selected.name}`}
-                    />
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => void handleSaveEdit()}
-                        disabled={busy}
-                      >
-                        Save as new version
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setIsEditing(false);
-                          setDraft(content?.text ?? "");
-                        }}
-                      >
-                        <X size={14} />
-                        Cancel
-                      </Button>
-                    </div>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background">
+                {isMarkdown && !isEditing && content && (
+                  <div
+                    role="group"
+                    aria-label="Markdown view"
+                    className="flex shrink-0 gap-1 border-b border-border px-2"
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={markdownView === "preview"}
+                      onClick={() => setMarkdownView("preview")}
+                      className={cn(
+                        "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium transition-colors",
+                        markdownView === "preview"
+                          ? "border-light text-foreground"
+                          : "border-transparent text-foreground/60 hover:text-foreground",
+                      )}
+                    >
+                      Preview
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={markdownView === "source"}
+                      onClick={() => setMarkdownView("source")}
+                      className={cn(
+                        "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium transition-colors",
+                        markdownView === "source"
+                          ? "border-light text-foreground"
+                          : "border-transparent text-foreground/60 hover:text-foreground",
+                      )}
+                    >
+                      Markdown
+                    </button>
                   </div>
-                ) : content?.isText ? (
-                  <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">
-                    {content.text}
-                  </pre>
-                ) : imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={imageUrl}
-                    alt={selected.name}
-                    className="max-h-full max-w-full rounded-lg object-contain"
-                  />
-                ) : (
-                  <p className="text-sm text-muted">
-                    Preview is not available for this file type. Download it
-                    instead.
-                  </p>
                 )}
+                <div className="min-h-0 flex-1 overflow-auto p-3">
+                  {isEditing ? (
+                    <div className="flex h-full min-h-48 flex-col gap-2">
+                      <textarea
+                        value={draft}
+                        onChange={(event) => setDraft(event.target.value)}
+                        className="min-h-48 flex-1 resize-y rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-light"
+                        aria-label={`Edit ${selected.name}`}
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => void handleSaveEdit()}
+                          disabled={busy}
+                        >
+                          Save as new version
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setIsEditing(false);
+                            setDraft(content?.text ?? "");
+                          }}
+                        >
+                          <X size={14} />
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : !content ? (
+                    <p className="text-sm text-muted" role="status">
+                      Loading file...
+                    </p>
+                  ) : content.isText ? (
+                    isMarkdown && markdownView === "preview" ? (
+                      <MarkdownContent
+                        text={content.text ?? ""}
+                        className="max-w-3xl"
+                      />
+                    ) : (
+                      <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">
+                        {content.text}
+                      </pre>
+                    )
+                  ) : imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={imageUrl}
+                      alt={selected.name}
+                      className="max-h-full max-w-full rounded-lg object-contain"
+                    />
+                  ) : (
+                    <p className="text-sm text-muted">
+                      Preview is not available for this file type. Download it
+                      instead.
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div>
                 <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
                   Versions
                 </p>
+                {detail && detail.id === selected.id ? (
                 <ul className="flex flex-col gap-1">
                   {detail.versions.map((version) => {
                     const isCurrent =
@@ -525,6 +591,11 @@ export function Artifacts() {
                     );
                   })}
                 </ul>
+                ) : (
+                  <p className="text-xs text-muted" role="status">
+                    Loading versions...
+                  </p>
+                )}
               </div>
             </>
           )}
