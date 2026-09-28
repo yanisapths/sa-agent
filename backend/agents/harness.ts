@@ -171,6 +171,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
       "/resources/skills/backend/",
       "/resources/skills/backend-go/",
       "/resources/skills/backend-code-review/",
+      "/resources/skills/golang-code-review/",
       "/resources/skills/security-review/",
       "/resources/skills/frontend/",
       "/resources/skills/system-model/",

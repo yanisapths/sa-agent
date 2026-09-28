@@ -17,8 +17,8 @@ then stop for the human.
 Write each phase's artifact into the product repo (for example
 `docs/sa/discuss.md`). The next subagent reads that file, not the chat.
 
-Index first: `search_docs`, then `get_doc_page` with the printed `path`
-slug (no leading slash; not the mintlify.site URL). `search_schema_docs`
+Index first: `search_docs`, then `get_doc_page` with the printed page
+`id` or `url`. `search_schema_docs`
 is DDL narrative. Do not paste raw tool dumps into the next `/agents` call.
 Never answer from search snippets.
 
@@ -63,8 +63,8 @@ Prefer live data over indexed documentation whenever they disagree.
    frontend, tests, docs, tables, and the recorded reasons behind past choices.
    Authoritative for *what connects to what* and *why it is like this*. It is only
    as current as the last `build_system_model`, so rebuild after code changes.
-3. **Documentation** — `search_docs` then `get_doc_page` (live Mintlify
-   pages), plus `search_schema_docs` for DDL snapshots. Scan titles, read 1–3
+3. **Documentation** — `search_docs` then `get_doc_page` (live Confluence
+   pages via MCP), plus `search_schema_docs` for DDL snapshots. Scan titles, read 1–3
    full pages, search again if the first hit is ambiguous (budget 4–6 docs
    calls). Cite page URLs. Prefer live schema when they disagree.
 4. **Jira** — Discuss only, and only when a ticket or user story is named.

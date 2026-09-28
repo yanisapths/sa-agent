@@ -224,18 +224,24 @@ export const config = {
   },
 
   /**
-   * Mintlify Discovery (assistant API). Search + page fetch do not consume
-   * assistant credits. `auth` is the deployment key (`mint_dsc_…`), not the
-   * browser access code on a password-gated site.
+   * Confluence API docs. `search_docs` / `get_doc_page` talk to a Confluence
+   * MCP server. Set `mcpUrl` for a remote HTTP server (for example the
+   * Atlassian MCP). Otherwise the local stdio server uses the REST credentials
+   * below. `baseUrl` is the site root the REST API hangs off, usually
+   * `https://<site>.atlassian.net/wiki`.
    */
-  mintlify: {
-    auth: process.env.MINTLIFY_AUTH || "",
-    domain: process.env.MINTLIFY_DOMAIN || "aster-internal",
-    groups: (process.env.MINTLIFY_GROUPS ?? "")
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean),
-    discoveryBaseUrl: "https://api.mintlify.com/discovery",
+  confluence: {
+    baseUrl: process.env.CONFLUENCE_BASE_URL || "",
+    spaceKey: process.env.CONFLUENCE_SPACE_KEY || "",
+    username: process.env.CONFLUENCE_USERNAME || "",
+    accessToken: process.env.CONFLUENCE_ACCESS_TOKEN || "",
+    personalToken: process.env.CONFLUENCE_PAT || "",
+    cloudId: process.env.CONFLUENCE_CLOUD_ID || "",
+    mcpUrl: process.env.CONFLUENCE_MCP_URL || "",
+    mcpToken: process.env.CONFLUENCE_MCP_TOKEN || "",
+    mcpTransport: process.env.CONFLUENCE_MCP_TRANSPORT === "sse" ? "sse" : "http",
+    mcpCommand: process.env.CONFLUENCE_MCP_COMMAND || "",
+    mcpArgs: process.env.CONFLUENCE_MCP_ARGS || "",
   },
 
   /**

@@ -233,9 +233,9 @@ through a factory is invisible. Two rules keep it honest:
 
 ## Context management
 
-The index is live Mintlify (`search_docs` → titles, `get_doc_page` → full
-pages) plus DDL Chroma (`search_schema_docs`). Do not add another vector store
-for API specs.
+The index is live Confluence via MCP (`search_docs` → titles, `get_doc_page` →
+full pages) plus DDL Chroma (`search_schema_docs`). Do not add another vector
+store for API specs.
 
 1. Orchestrator retrieves a short brief → `/artifacts/context.md`
    (Claude Code: a few lines in the task, or `docs/sa/context.md`).
@@ -263,7 +263,7 @@ When a local project folder is attached, `workspace_ls` / `workspace_read` /
 flowchart TB
   Catalog["agents/tools/catalog<br/>Zod schema + invoke"]
   Catalog --> PG["core/postgres"]
-  Catalog --> KN["core/knowledge · mintlify"]
+  Catalog --> KN["core/knowledge · confluence mcp"]
   Catalog --> SM["core/system-model"]
   Catalog --> JR["jira"]
   Catalog --> WEB["web · datetime"]
@@ -295,6 +295,7 @@ work. Specialists load only the packages in their `PHASE` / `PVT_PHASE` row.
 | `solution-architect` | plan |
 | `backend`, `backend-go`, `frontend` | execute, review (frontend when the change is the web app); pvt-plan / pvt-execute use `backend` |
 | `backend-code-review` | plan (design gate), review |
+| `golang-code-review` | review (Go PRs, architecture, test quality) |
 | `security-review` | review (auth, SQL, secrets, uploads, browser) |
 | `test-engineer` | test, pvt-plan |
 | `system-model` | discuss, plan, execute, test, review |
@@ -390,7 +391,7 @@ environment only, which is why it cannot use `${SA_AGENT_HOME}` in `.mcp.json`.
 
 1. Live database.
 2. System model (as current as the last `build_system_model`).
-3. Live Mintlify docs (`search_docs` / `get_doc_page`) and DDL snapshots.
+3. Live Confluence docs (`search_docs` / `get_doc_page`) and DDL snapshots.
 4. Jira only in discuss (and GUI chat), only when named.
 
 Never invent a table, column, or endpoint.

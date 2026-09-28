@@ -1,13 +1,8 @@
 import { ddlStore } from "../../../database/chroma";
 import { orToolError } from "../errors";
-import {
-  formatPage,
-  formatSearchHits,
-  mintlifyPage,
-  mintlifySearch,
-} from "./mintlify";
+import { readConfluenceMcp, searchConfluenceMcp } from "./confluence";
 
-const DOCS = "Mintlify documentation";
+const DOCS = "Confluence documentation";
 const SCHEMA_DOCS = "The indexed schema documentation";
 
 function join(docs: { pageContent: string }[]): string {
@@ -21,7 +16,7 @@ export async function searchDocs(
 ): Promise<string> {
   return orToolError(DOCS, async () => {
     const size = Math.min(10, Math.max(1, pageSize));
-    return formatSearchHits(await mintlifySearch(query, size));
+    return searchConfluenceMcp(query, size);
   });
 }
 
@@ -29,11 +24,9 @@ export async function getDocPage(paths: string[]): Promise<string> {
   return orToolError(DOCS, async () => {
     const unique = [...new Set(paths.map((p) => p.trim()).filter(Boolean))];
     if (unique.length === 0) {
-      return "get_doc_page requires at least one documentation path from search_docs.";
+      return "get_doc_page requires at least one page id or URL from search_docs.";
     }
-    const selected = unique.slice(0, 8);
-    const pages = await Promise.all(selected.map((path) => mintlifyPage(path)));
-    return pages.map(formatPage).join("\n\n---\n\n");
+    return readConfluenceMcp(unique.slice(0, 8));
   });
 }
 

@@ -3,6 +3,7 @@ import {
   type Connection,
 } from "@langchain/mcp-adapters";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
+import { fileURLToPath } from "node:url";
 import { config } from "../../../config";
 
 function envRecord(): Record<string, string> {
@@ -13,13 +14,13 @@ function envRecord(): Record<string, string> {
   return env;
 }
 
-function parseArgs(raw: string): string[] {
+function parseArgs(raw: string, envName: string): string[] {
   const trimmed = raw.trim();
   if (!trimmed) return [];
   if (trimmed.startsWith("[")) {
     const parsed: unknown = JSON.parse(trimmed);
     if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
-      throw new Error("JIRA_MCP_ARGS must be a JSON array of strings");
+      throw new Error(`${envName} must be a JSON array of strings`);
     }
     return parsed as string[];
   }
@@ -48,7 +49,70 @@ function jiraConnection(): Connection | undefined {
     return {
       transport: "stdio",
       command: jira.mcpCommand,
-      args: parseArgs(jira.mcpArgs),
+      args: parseArgs(jira.mcpArgs, "JIRA_MCP_ARGS"),
+      env: envRecord(),
+      restart: { enabled: true, maxAttempts: 3, delayMs: 1000 },
+    };
+  }
+
+  return undefined;
+}
+
+function bearer(raw: string): string {
+  return raw.trim().replace(/^Bearer\s+/i, "");
+}
+
+function hasConfluenceRestAuth(): boolean {
+  const docs = config.confluence;
+  return Boolean(
+    docs.baseUrl && (docs.personalToken || (docs.username && docs.accessToken)),
+  );
+}
+
+function confluenceAuthHeaders(): Record<string, string> | undefined {
+  const docs = config.confluence;
+  if (docs.mcpToken) return { Authorization: `Bearer ${bearer(docs.mcpToken)}` };
+  if (docs.personalToken) {
+    return { Authorization: `Bearer ${bearer(docs.personalToken)}` };
+  }
+  if (docs.username && docs.accessToken) {
+    const basic = Buffer.from(`${docs.username}:${docs.accessToken}`).toString(
+      "base64",
+    );
+    return { Authorization: `Basic ${basic}` };
+  }
+  return undefined;
+}
+
+function confluenceConnection(): Connection | undefined {
+  const docs = config.confluence;
+
+  if (docs.mcpUrl) {
+    const headers = confluenceAuthHeaders();
+    return {
+      transport: docs.mcpTransport,
+      url: docs.mcpUrl,
+      ...(headers ? { headers } : {}),
+    };
+  }
+
+  if (docs.mcpCommand) {
+    return {
+      transport: "stdio",
+      command: docs.mcpCommand,
+      args: parseArgs(docs.mcpArgs, "CONFLUENCE_MCP_ARGS"),
+      env: envRecord(),
+      restart: { enabled: true, maxAttempts: 3, delayMs: 1000 },
+    };
+  }
+
+  if (hasConfluenceRestAuth()) {
+    return {
+      transport: "stdio",
+      command: process.execPath,
+      args: [
+        fileURLToPath(new URL("../../../mcp/confluence.ts", import.meta.url)),
+      ],
       env: envRecord(),
       restart: { enabled: true, maxAttempts: 3, delayMs: 1000 },
     };
@@ -59,7 +123,40 @@ function jiraConnection(): Connection | undefined {
 
 let client: MultiServerMCPClient | undefined;
 let toolsPromise: Promise<DynamicStructuredTool[]> | undefined;
+let confluenceClient: MultiServerMCPClient | undefined;
+let confluenceToolsPromise: Promise<DynamicStructuredTool[]> | undefined;
 let nextDevToolsClient: MultiServerMCPClient | undefined;
+
+export function isConfluenceMcpConfigured(): boolean {
+  return confluenceConnection() !== undefined;
+}
+
+export function getConfluenceMcpClient(): MultiServerMCPClient | undefined {
+  if (confluenceClient) return confluenceClient;
+  const connection = confluenceConnection();
+  if (!connection) return undefined;
+
+  confluenceClient = new MultiServerMCPClient({
+    throwOnLoadError: false,
+    onConnectionError: "ignore",
+    mcpServers: {
+      confluence: connection,
+    },
+  });
+  return confluenceClient;
+}
+
+export async function getConfluenceMcpTools(): Promise<DynamicStructuredTool[]> {
+  if (confluenceToolsPromise) return confluenceToolsPromise;
+  const mcp = getConfluenceMcpClient();
+  if (!mcp) return [];
+  confluenceToolsPromise = mcp.getTools().catch((err: unknown) => {
+    confluenceToolsPromise = undefined;
+    console.error("Confluence MCP failed to load tools:", err);
+    return [];
+  });
+  return confluenceToolsPromise;
+}
 
 export function getJiraMcpClient(): MultiServerMCPClient | undefined {
   if (client) return client;

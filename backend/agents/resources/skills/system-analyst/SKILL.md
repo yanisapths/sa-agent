@@ -15,7 +15,7 @@ engineer can build without asking follow-up questions.
 2. **Map the relationships.** `inspect_relationships` for the tables involved.
    The FK graph decides which joins are valid and where cardinality is one-to-many.
 3. **Check prior art.** `search_docs` for existing endpoints covering the
-   same entities, then `get_doc_page` on the 1–3 matching paths so the new
+   same entities, then `get_doc_page` on the 1–3 matching page ids so the new
    spec stays consistent with what already ships. If the first search is
    ambiguous, search again with a narrower term.
 4. **Find gaps.** What the story asks for that the schema, index, or prior
