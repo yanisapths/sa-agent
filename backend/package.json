@@ -11,6 +11,8 @@
     "eval:harbor": "harbor run --config agents/evaluators/harbor-job.json -p agents/evaluators/tasks --plugin langsmith --yes",
     "eval:harbor:langsmith": "harbor run --config agents/evaluators/harbor-job.json -p agents/evaluators/tasks --env langsmith --plugin langsmith --yes",
     "typecheck": "tsc --noEmit",
+    "doctor": "bun run scripts/doctor.ts",
+    "help": "bun run scripts/help.ts",
     "check:bifrost": "bun run scripts/check-bifrost.ts",
     "claude": "bash scripts/claude",
     "tokens": "bun run scripts/token-probe.ts",

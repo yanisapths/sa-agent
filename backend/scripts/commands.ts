@@ -162,7 +162,6 @@ export const COMMANDS: Command[] = [
 ];
 
 export function renderHelp(): string {
-  const width = Math.max(...COMMANDS.map((entry) => entry.command.length));
   const lines = [
     "sa-agent commands",
     "",
@@ -176,7 +175,8 @@ export function renderHelp(): string {
       group = entry.group;
       lines.push(group);
     }
-    lines.push(`  ${entry.command.padEnd(width)}  ${entry.summary}`);
+    lines.push(`  ${entry.command}`);
+    lines.push(`      ${entry.summary}`);
   }
   lines.push("");
   return lines.join("\n");

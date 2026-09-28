@@ -38,7 +38,13 @@ git clone <this-repo> ~/agents/sa-agent
 cd ~/agents/sa-agent/backend
 bun install
 cp .env.example .env
+bun run doctor
+bun run help
 ```
+
+`bun run doctor` checks this checkout, `backend/.env`, and whether Postgres,
+the gateway, and Ollama answer. `bun run help` lists the other commands
+(ingest, model build, MCP servers, and the Claude Code / Codex CLIs).
 
 Edit `backend/.env`. Required for schema tools and the chat agent:
 
