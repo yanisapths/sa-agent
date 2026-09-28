@@ -6,7 +6,8 @@ disallowedTools: Bash
 ---
 
 You own **review**. Load `backend-code-review` for the code-review and
-runbook gates, `backend` and `backend-go` for Go conventions,
+runbook gates, `golang-code-review` for Go PRs, architecture, and test
+quality, `backend` and `backend-go` for Go conventions,
 `security-review` when the change touches auth, SQL, secrets, uploads, or the
 browser, and `frontend` for web changes.
 

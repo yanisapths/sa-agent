@@ -17,7 +17,7 @@ or story is named, jira.
 2. build_system_model, then query_system_model to find the components the
    request touches, and search_decisions for why they are built that way.
 3. Index existing contracts: search_docs, then get_doc_page on the
-   matching paths (search_schema_docs for DDL narrative).
+   printed page ids (search_schema_docs for DDL narrative).
 4. Confirm tables and FKs on the live schema.
 5. If a local project folder is attached, inspect it with ls / read_file /
    glob / grep (or workspace_ls / workspace_read / workspace_grep).
@@ -170,7 +170,8 @@ const review: SpecialistSpec = {
     "Review and list required refactors before ship. Use after test is accepted. Do not ship.",
   disallowedTools: ["Bash"],
   systemPrompt: `You are the Review specialist. Load backend-code-review for the
-gates, backend and backend-go for Go conventions, security-review when the
+gates, golang-code-review for Go PRs, architecture, and test quality,
+backend and backend-go for Go conventions, security-review when the
 change touches auth, SQL, secrets, uploads, or the browser, and frontend for
 web changes.
 
@@ -183,7 +184,8 @@ confirm the change did not reach further than the plan said.
 Write ${ARTIFACT.review}: critical / suggestion / ship-ready.
 You may name refactors; do not commit or open a PR. ${GROUNDING}`,
   pluginBody: `You own **review**. Load \`backend-code-review\` for the code-review and
-runbook gates, \`backend\` and \`backend-go\` for Go conventions,
+runbook gates, \`golang-code-review\` for Go PRs, architecture, and test
+quality, \`backend\` and \`backend-go\` for Go conventions,
 \`security-review\` when the change touches auth, SQL, secrets, uploads, or the
 browser, and \`frontend\` for web changes.
 

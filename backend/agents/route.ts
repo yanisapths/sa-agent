@@ -59,7 +59,7 @@ export function lastAgentKind(threadId: string): AgentKind | undefined {
 
 /**
  * `plain` is greetings only. Any real question needs tools (docs, schema,
- * web, Jira) — a regex miss used to skip Mintlify and invent an API spec.
+ * web, Jira) — a regex miss used to skip Confluence and invent an API spec.
  */
 function classify(input: RouteInput): AgentKind {
   if (input.phase) return "deep";

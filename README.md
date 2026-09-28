@@ -2,7 +2,7 @@
 
 Capability provider for system analysis and solution architecture. It grounds
 answers in the **live PostgreSQL schema**, a **system model** of the repo it is
-working in, **live Mintlify docs**, indexed DDL narrative, and (when you ask)
+working in, **live Confluence docs**, indexed DDL narrative, and (when you ask)
 Jira tickets.
 
 You can run it in three ways:
@@ -26,7 +26,7 @@ for how they are wired.
 - A read-only PostgreSQL URI for the application database
 - Bifrost virtual key (`BIFROST_API_KEY`) for the company gateway; an
   Anthropic API key only if a model id is `anthropic:…`
-- Optional: Mintlify assistant key, Chroma Cloud, Ollama embeddings, Jira, LangSmith
+- Optional: Confluence (docs MCP), Chroma Cloud, Ollama embeddings, Jira, LangSmith
 
 ## 1. Clone and environment
 
@@ -55,11 +55,9 @@ Also set if you use those features:
 
 | Variable | Purpose |
 | --- | --- |
-| `MINTLIFY_AUTH` | Assistant API key (`mint_dsc_…`) for `search_docs` / `get_doc_page` |
-| `MINTLIFY_DOMAIN` | Deployment slug (default `aster-internal`) |
-| `MINTLIFY_GROUPS` | Optional groups for a password-gated / userAuth site |
+| `CONFLUENCE_BASE_URL`, `CONFLUENCE_USERNAME`, `CONFLUENCE_ACCESS_TOKEN` or `CONFLUENCE_PAT` | Live API docs via Confluence MCP (`search_docs` / `get_doc_page`). `CONFLUENCE_SPACE_KEY` limits search to one space. |
+| `CONFLUENCE_MCP_URL` | Optional remote Confluence MCP (streamable HTTP). Omit to use the local stdio server with the credentials above. |
 | `OLLAMA_URL`, `OLLAMA_EMBED_MODEL` | Embeddings for DDL ingestion |
-| `CONFLUENCE_*` | Optional leftover ingest of API spec pages into Chroma (not used by docs tools) |
 | `JIRA_*` | Ticket / user-story MCP (optional; see backend README) |
 | `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` | Traces |
 | `SUPABASE_*`, `VAULT_DEV_TOKEN` | Vault in the GUI |
@@ -75,7 +73,7 @@ Point your shell at the checkout (required for both plugin runtimes):
 export SA_AGENT_HOME="$HOME/agents/sa-agent"   # add to ~/.zshrc
 ```
 
-Set `MINTLIFY_AUTH` so `search_docs` / `get_doc_page` can read live Aster docs.
+Set the Confluence credentials so `search_docs` / `get_doc_page` can read live API docs.
 DDL narrative still needs a Chroma ingest:
 
 ```bash

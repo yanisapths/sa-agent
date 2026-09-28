@@ -74,7 +74,7 @@ internal/               artifact normalisation, errors, vault, artifactStore, wo
 | ----------- | -------------------------------------------------------------------- | -------------------- |
 | Live schema | `list_tables`, `describe_tables`, `inspect_relationships`, `run_sql` | Real time            |
 | System model | `query_system_model`, `simulate_impact`, `search_decisions`         | Last `build_system_model` |
-| Knowledge   | `search_docs`, `get_doc_page`                                        | Live Mintlify        |
+| Knowledge   | `search_docs`, `get_doc_page`                                        | Live Confluence MCP  |
 | Schema docs | `search_schema_docs`                                                 | Last DDL ingest      |
 | Jira MCP    | `get_jira_ticket`, `read_jira_user_story`                            | Only on explicit ask |
 | Project folder | `ls` / `read_file` / `glob` / `grep` on the attached root; also `workspace_*` | Attached local path |
@@ -317,9 +317,10 @@ traces. Each MCP tool call is still recorded in LangSmith as a tool run (tags
 
 ## Ingestion
 
-API contracts come from Mintlify (`search_docs` / `get_doc_page`). Chroma
-ingest is only for DDL narrative (`search_schema_docs`). `ingest:confluence`
-and `ingest:url` remain available but are not used by the docs tools.
+API contracts come from Confluence MCP (`search_docs` / `get_doc_page`).
+Chroma ingest is only for DDL narrative (`search_schema_docs`).
+`ingest:confluence` and `ingest:url` remain available but are not used by
+the docs tools.
 
 ```bash
 bun run ingest:ddl path/schema.sql  # index a DDL dump

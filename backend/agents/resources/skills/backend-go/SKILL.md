@@ -267,4 +267,5 @@ environment inside the package.
 
 Design questions — what the endpoint should be, what it returns — belong to the
 `backend` skill. Review checklists, runbook, and naming decisions belong to
-`backend-code-review`.
+`backend-code-review`. Go PR, architecture, and test-quality review belong to
+`golang-code-review`.

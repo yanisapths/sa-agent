@@ -122,7 +122,7 @@ export function ChatInterface() {
                 Start with a question
               </h1>
               <p className="mt-2 text-sm text-muted">
-                Answers are grounded in the live schema and Mintlify docs.{" "}
+                Answers are grounded in the live schema and Confluence docs.{" "}
                 <br />
                 Pick a starter, type{" "}
                 <span className="font-medium text-foreground">/</span> for a
