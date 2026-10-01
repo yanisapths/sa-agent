@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  confluenceAuthorization,
   confluenceCql,
   confluencePageUrl,
   htmlToDocText,
@@ -37,5 +38,43 @@ describe("confluence docs query helpers", () => {
 
   test("turns storage HTML into text", () => {
     expect(htmlToDocText("<p>Hello <strong>API</strong></p>")).toBe("Hello API");
+  });
+});
+
+describe("confluence authorization", () => {
+  const cloud = "https://acme.atlassian.net/wiki";
+  const server = "https://confluence.example.com";
+  const email = "dev@example.com";
+  const apiToken = "api-token";
+  const encoded = Buffer.from(`${email}:${apiToken}`).toString("base64");
+
+  test("uses Basic on Cloud even when a PAT is also set", () => {
+    const header = confluenceAuthorization({
+      baseUrl: cloud,
+      username: email,
+      accessToken: apiToken,
+      personalToken: "server-pat",
+    });
+    expect(header).toBe(`Basic ${encoded}`);
+  });
+
+  test("treats a base64 email:token PAT as Basic on Cloud", () => {
+    expect(
+      confluenceAuthorization({
+        baseUrl: cloud,
+        personalToken: encoded,
+      }),
+    ).toBe(`Basic ${encoded}`);
+  });
+
+  test("uses Bearer for a Server personal access token", () => {
+    expect(
+      confluenceAuthorization({
+        baseUrl: server,
+        personalToken: "server-pat",
+        username: email,
+        accessToken: apiToken,
+      }),
+    ).toBe("Bearer server-pat");
   });
 });
