@@ -131,6 +131,7 @@ export function ChatInput({
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>(() =>
     caveman ? [CAVEMAN_COMMAND] : [],
   );
+  const slashCommandsRef = useRef(slashCommands);
   const [pickedMentions, setPickedMentions] = useState<string[]>([]);
   const [folderMenuOpen, setFolderMenuOpen] = useState(false);
   const [addFolderOpen, setAddFolderOpen] = useState(false);
@@ -164,11 +165,10 @@ export function ChatInput({
   const updateSlashCommands = (
     updater: (prev: SlashCommand[]) => SlashCommand[],
   ) => {
-    setSlashCommands((prev) => {
-      const next = updater(prev);
-      onCavemanChange?.(next.some((item) => item.style === "caveman"));
-      return next;
-    });
+    const next = updater(slashCommandsRef.current);
+    slashCommandsRef.current = next;
+    setSlashCommands(next);
+    onCavemanChange?.(next.some((item) => item.style === "caveman"));
   };
 
   const insertMention = (token: string) => {

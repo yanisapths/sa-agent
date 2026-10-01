@@ -12,15 +12,76 @@ function baseUrl(): string {
   return base;
 }
 
-function authHeader(): string {
-  const { personalToken, username, accessToken } = config.confluence;
-  if (personalToken) return `Bearer ${personalToken}`;
-  if (username && accessToken) {
-    return `Basic ${Buffer.from(`${username}:${accessToken}`).toString("base64")}`;
+const MISSING_AUTH =
+  "Missing Confluence credentials. Set CONFLUENCE_USERNAME + CONFLUENCE_ACCESS_TOKEN, or CONFLUENCE_PAT.";
+
+export type ConfluenceAuthInput = {
+  baseUrl?: string;
+  personalToken?: string;
+  username?: string;
+  accessToken?: string;
+};
+
+function isAtlassianCloud(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname.endsWith("atlassian.net");
+  } catch {
+    return false;
   }
-  throw new Error(
-    "Missing Confluence credentials. Set CONFLUENCE_USERNAME + CONFLUENCE_ACCESS_TOKEN, or CONFLUENCE_PAT.",
-  );
+}
+
+/**
+ * A value that is already `base64(email:token)` is a Basic credential.
+ * Sending it as Bearer is what Cloud answers with 403
+ * "Current user not permitted to use Confluence".
+ */
+function basicFromEncodedCredential(token: string): string {
+  if (!token || token.includes(".")) return "";
+  let decoded = "";
+  try {
+    decoded = Buffer.from(token, "base64").toString("utf8");
+  } catch {
+    return "";
+  }
+  const canonical = Buffer.from(decoded, "utf8").toString("base64").replace(/=+$/, "");
+  if (canonical !== token.replace(/=+$/, "")) return "";
+  const colon = decoded.indexOf(":");
+  if (colon <= 0) return "";
+  const user = decoded.slice(0, colon);
+  const secret = decoded.slice(colon + 1);
+  if (!user.includes("@") || !secret) return "";
+  return `Basic ${token}`;
+}
+
+/**
+ * Cloud API tokens authenticate with Basic `email:token`. A Server/DC
+ * personal access token authenticates with Bearer. Cloud rejects the API
+ * token — and a pre-encoded Basic blob stored in `CONFLUENCE_PAT` — when
+ * they are sent as Bearer.
+ */
+export function confluenceAuthorization(input: ConfluenceAuthInput): string {
+  const personalToken = input.personalToken?.trim() ?? "";
+  const username = input.username?.trim() ?? "";
+  const accessToken = input.accessToken?.trim() ?? "";
+  const basicFromUser =
+    username && accessToken
+      ? `Basic ${Buffer.from(`${username}:${accessToken}`).toString("base64")}`
+      : "";
+  const basicFromPat = basicFromEncodedCredential(personalToken);
+  const basic = basicFromUser || basicFromPat;
+  const bearer =
+    personalToken && !basicFromPat ? `Bearer ${personalToken}` : "";
+  const cloud = isAtlassianCloud(input.baseUrl ?? "");
+
+  if (cloud && basic) return basic;
+  if (!cloud && bearer) return bearer;
+  if (basic) return basic;
+  if (bearer) return bearer;
+  throw new Error(MISSING_AUTH);
+}
+
+function authHeader(): string {
+  return confluenceAuthorization(config.confluence);
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
