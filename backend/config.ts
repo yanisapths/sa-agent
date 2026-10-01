@@ -252,7 +252,7 @@ export const config = {
    */
   agent: {
     /** Graph supersteps for the orchestrator and every `task()` specialist. */
-    recursionLimit: envPositiveInt("AGENT_RECURSION_LIMIT", 5000),
+    recursionLimit: envPositiveInt("AGENT_RECURSION_LIMIT", 100_000),
     /**
      * Chat agent (`createAgent` + guardrail middleware) supersteps.
      * Each PII/safety hook is its own graph node, so one tool round needs
@@ -264,7 +264,7 @@ export const config = {
      * LLM calls, and tool calls reset it. A pvt-plan with a large artifact
      * routinely runs past three minutes of wall clock; that is not a hang.
      */
-    invokeTimeoutMs: envPositiveInt("AGENT_INVOKE_TIMEOUT_MS", 180_000),
+    invokeTimeoutMs: envPositiveInt("AGENT_INVOKE_TIMEOUT_MS", 9_800_000),
     /**
      * Hard wall clock for one `/chat` invoke, including nested specialists.
      * The idle timer above will not save a specialist that keeps emitting.
