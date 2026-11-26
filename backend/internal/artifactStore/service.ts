@@ -1,4 +1,6 @@
 import path from "path";
+import { currentProduct } from "../product/runtime";
+import { productColumn, scopeToProduct, withProductScope } from "../product/scope";
 import { z } from "zod";
 import { config } from "../../config";
 import { getSupabase } from "../../database/supabase";
@@ -251,6 +253,7 @@ export async function saveArtifact(
       phase: input.phase ?? null,
       name,
       current_version: version,
+      ...productColumn(currentProduct().id),
       created_at: now,
       updated_at: now,
     };
@@ -329,21 +332,31 @@ export async function saveArtifact(
   return toFileResponse(updated as ArtifactFileRow, versionRowData);
 }
 
+/**
+ * A thread's files belong to that thread's product already. Without a
+ * thread, `productId` scopes the list, and missing means Default.
+ */
 export async function listFiles(
   userId: string,
   threadId = "",
+  productId?: string,
 ): Promise<ArtifactFileResponse[]> {
   const supabase = getSupabase();
-  let query = supabase
-    .from(FILES)
-    .select("*")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false });
-
   const needle = threadId.trim();
-  if (needle) query = query.eq("thread_id", needle);
+  const build = (scoped: boolean) => {
+    let query = supabase
+      .from(FILES)
+      .select("*")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false });
+    if (needle) query = query.eq("thread_id", needle);
+    else if (scoped) query = scopeToProduct(query, productId);
+    return query;
+  };
 
-  const { data: files, error } = await query;
+  const { data: files, error } = needle
+    ? await build(false)
+    : await withProductScope(productId, () => build(true), () => build(false));
   throwIfMissingTable(error);
 
   const fileRows = (files ?? []) as ArtifactFileRow[];

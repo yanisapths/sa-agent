@@ -71,10 +71,11 @@ export function triggerBlobDownload(blob: Blob, name: string): void {
 }
 
 export const artifactService = {
-  listFiles: async (threadId = ""): Promise<ArtifactFile[]> => {
-    const query = threadId.trim()
-      ? `?threadId=${encodeURIComponent(threadId.trim())}`
-      : "";
+  listFiles: async (opts: { threadId?: string; productId?: string } = {}): Promise<ArtifactFile[]> => {
+    const params = new URLSearchParams();
+    if (opts.threadId?.trim()) params.set("threadId", opts.threadId.trim());
+    if (opts.productId) params.set("productId", opts.productId);
+    const query = params.size > 0 ? `?${params.toString()}` : "";
     return artifactRequest<ArtifactFile[]>(`/files${query}`);
   },
 

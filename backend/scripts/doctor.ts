@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ProductProfile } from "../contract/product";
 
 const BACKEND_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const REPO_ROOT = path.join(BACKEND_ROOT, "..");
@@ -28,11 +29,76 @@ export type DoctorSnapshot = {
   env: NodeJS.ProcessEnv;
   models: Record<string, string>;
   gatewayProviders: readonly string[];
+  /** The `.sa/product.json` the MCP servers would load from this directory. */
+  productFile?: { path: string; profile?: ProductProfile; error?: string };
 };
 
 const CHECKOUT = "Checkout";
 const MODELS = "Models";
 const OPTIONAL = "Optional";
+const PRODUCT = "Product";
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", ""]);
+
+/** Mirrors `isLocalDeployment()`: browser connections need an allowlist off localhost. */
+function nonLocalReason(env: NodeJS.ProcessEnv): string | undefined {
+  if (env.NODE_ENV === "production") return "NODE_ENV=production";
+  const host = (env.HOST ?? "").trim().toLowerCase();
+  if (!LOOPBACK_HOSTS.has(host)) return `HOST=${host}`;
+  return undefined;
+}
+
+export function productChecks(snapshot: DoctorSnapshot): Check[] {
+  const checks: Check[] = [];
+  const { env, productFile } = snapshot;
+
+  if (!productFile) {
+    checks.push(check(PRODUCT, "ok", ".sa/product.json", "none — MCP uses the Default product from .env"));
+  } else if (!productFile.profile) {
+    checks.push(check(PRODUCT, "fail", ".sa/product.json", productFile.error ?? "invalid"));
+  } else {
+    const profile = productFile.profile;
+    checks.push(check(PRODUCT, "ok", ".sa/product.json", `${profile.name} (${profile.id})`));
+    if (profile.db) {
+      const target = databaseTarget(env[profile.db.urlEnv]);
+      checks.push(
+        env[profile.db.urlEnv]
+          ? check(PRODUCT, target.ok ? "ok" : "fail", profile.db.urlEnv, target.detail)
+          : check(PRODUCT, "warn", profile.db.urlEnv, "unset — this product's schema tools stay off"),
+      );
+    }
+    if (profile.docs.provider === "confluence") {
+      for (const name of [profile.docs.usernameEnv, profile.docs.tokenEnv]) {
+        if (!name) continue;
+        checks.push(
+          env[name]
+            ? check(PRODUCT, "ok", name, mask(env[name] ?? ""))
+            : check(PRODUCT, "warn", name, "unset — Confluence is read anonymously"),
+        );
+      }
+    }
+  }
+
+  const allowed = (env.SA_CONNECTION_ALLOWED_HOSTS ?? "").trim();
+  const reason = nonLocalReason(env);
+  if (allowed) {
+    checks.push(check(PRODUCT, "ok", "SA_CONNECTION_ALLOWED_HOSTS", allowed));
+  } else if (reason) {
+    checks.push(
+      check(
+        PRODUCT,
+        "fail",
+        "SA_CONNECTION_ALLOWED_HOSTS",
+        `unset with ${reason} — browser connections are refused until hosts are allowlisted`,
+      ),
+    );
+  } else {
+    checks.push(
+      check(PRODUCT, "ok", "SA_CONNECTION_ALLOWED_HOSTS", "unset — local deployment, public hosts allowed"),
+    );
+  }
+  return checks;
+}
 
 function check(section: string, status: CheckStatus, label: string, detail?: string): Check {
   return { section, status, label, detail };
@@ -314,6 +380,7 @@ export function localChecks(snapshot: DoctorSnapshot): Check[] {
       : check(OPTIONAL, "warn", "LangSmith", "unset — traces and the cloud sandbox stay off"),
   );
 
+  checks.push(...productChecks(snapshot));
   return checks;
 }
 
@@ -460,6 +527,16 @@ async function main(): Promise<void> {
   const { config } = await import("../config");
 
   const offline = process.argv.includes("--offline");
+  const { findProductFile, loadProductFile } = await import("../internal/product/profile-file");
+  const productPath = findProductFile();
+  let productFile: DoctorSnapshot["productFile"];
+  if (productPath) {
+    try {
+      productFile = { path: productPath, profile: loadProductFile(productPath) };
+    } catch (error) {
+      productFile = { path: productPath, error: clip(error) };
+    }
+  }
   const recorded = readText(path.join(os.homedir(), ".sa-agent", "home"))?.trim();
   const frontend = frontendEnv();
   const snapshot: DoctorSnapshot = {
@@ -474,6 +551,7 @@ async function main(): Promise<void> {
     env: process.env,
     models: { ...config.model },
     gatewayProviders: config.bifrost.providers,
+    productFile,
   };
 
   const checks = localChecks(snapshot);

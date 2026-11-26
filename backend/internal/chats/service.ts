@@ -17,6 +17,11 @@ import {
   type ChatThreadRow,
 } from "./types";
 import { asFeedback } from "../chat/feedback";
+import {
+  productColumn,
+  scopeToProduct,
+  withProductScope,
+} from "../product/scope";
 
 const THREADS = "chat_threads";
 const MESSAGES = "chat_messages";
@@ -40,6 +45,7 @@ function toThread(row: ChatThreadRow): ChatThreadResponse {
   return {
     id: row.id,
     title: row.title,
+    productId: row.product_id ?? "default",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -101,12 +107,14 @@ export async function createThread(
   userId: string,
   threadId = createThreadId(),
   title = DEFAULT_CHAT_TITLE,
+  productId?: string,
 ): Promise<ChatThreadResponse> {
   const now = new Date().toISOString();
   const row: ChatThreadRow = {
     id: threadId,
     user_id: userId,
     title,
+    ...productColumn(productId),
     created_at: now,
     updated_at: now,
   };
@@ -121,33 +129,42 @@ export async function createThread(
   return toThread(data as ChatThreadRow);
 }
 
+/** `productId` missing means Default: the `product_id IS NULL` threads. */
 export async function listThreads(
   userId: string,
-  opts: { limit?: number; cursor?: string } = {},
+  opts: { limit?: number; cursor?: string; productId?: string } = {},
 ): Promise<ChatThreadListResponse> {
   const limit = Math.min(
     Math.max(opts.limit ?? CHAT_LIST_PAGE_SIZE, 1),
     CHAT_LIST_PAGE_SIZE,
   );
 
-  let query = getSupabase()
-    .from(THREADS)
-    .select("*")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(limit + 1);
+  const build = (scoped: boolean) => {
+    let query = getSupabase()
+      .from(THREADS)
+      .select("*")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(limit + 1);
+    if (scoped) query = scopeToProduct(query, opts.productId);
 
-  if (opts.cursor) {
-    const { updatedAt, id } = parseCursor(opts.cursor);
-    const ts = quoteFilterValue(updatedAt);
-    const rowId = quoteFilterValue(id);
-    query = query.or(
-      `updated_at.lt.${ts},and(updated_at.eq.${ts},id.lt.${rowId})`,
-    );
-  }
+    if (opts.cursor) {
+      const { updatedAt, id } = parseCursor(opts.cursor);
+      const ts = quoteFilterValue(updatedAt);
+      const rowId = quoteFilterValue(id);
+      query = query.or(
+        `updated_at.lt.${ts},and(updated_at.eq.${ts},id.lt.${rowId})`,
+      );
+    }
+    return query;
+  };
 
-  const { data, error } = await query;
+  const { data, error } = await withProductScope(
+    opts.productId,
+    () => build(true),
+    () => build(false),
+  );
   throwIfMissingTable(error);
 
   const rows = (data ?? []) as ChatThreadRow[];
@@ -217,10 +234,31 @@ export async function deleteThread(
   return { id: existing.id };
 }
 
+/**
+ * The product a stored thread belongs to, or undefined when the thread is
+ * new. The checkpointer is keyed by thread id only, so this check is what
+ * keeps one product's conversation out of another's.
+ */
+export async function threadProductId(
+  userId: string,
+  threadId: string,
+): Promise<string | undefined> {
+  const { data, error } = await getSupabase()
+    .from(THREADS)
+    .select("*")
+    .eq("id", threadId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) return undefined;
+  if (!data) return undefined;
+  return (data as ChatThreadRow).product_id ?? "default";
+}
+
 export async function upsertThread(
   userId: string,
   threadId: string,
   title?: string,
+  productId?: string,
 ): Promise<ChatThreadResponse> {
   const existing = await getSupabase()
     .from(THREADS)
@@ -255,7 +293,7 @@ export async function upsertThread(
     return toThread(data as ChatThreadRow);
   }
 
-  return createThread(userId, threadId, title ?? DEFAULT_CHAT_TITLE);
+  return createThread(userId, threadId, title ?? DEFAULT_CHAT_TITLE, productId);
 }
 
 export async function appendMessage(
@@ -317,6 +355,7 @@ export async function recordUserTurn(opts: {
   threadId: string;
   text: string;
   fileNames?: string[];
+  productId?: string;
 }): Promise<ChatThreadResponse | null> {
   if (!opts.userId) return null;
   try {
@@ -334,6 +373,7 @@ export async function recordUserTurn(opts: {
       opts.userId,
       opts.threadId,
       titleFromText(opts.text),
+      opts.productId,
     );
     await appendMessage(opts.userId, opts.threadId, {
       role: "user",

@@ -32,7 +32,24 @@ const MAX_TREE_CHARS = 8 * 1024;
 const createSchema = z.object({
   name: z.string().trim().min(1).max(80),
   path: z.string().trim().min(1).max(1024),
+  productId: z.string().trim().min(1).max(64).optional(),
 });
+
+const DEFAULT_PRODUCT = "default";
+
+function isDefaultProduct(productId: string | undefined): boolean {
+  return !productId || productId === DEFAULT_PRODUCT;
+}
+
+/** `product_id` does not exist until products.sql runs; Default then means "every row". */
+function isMissingColumn(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "42703"
+  );
+}
 
 function newId(): string {
   return `wks_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
@@ -90,6 +107,7 @@ function toResponse(row: WorkspaceRow): WorkspaceResponse {
     name: row.name,
     path: row.path,
     mentionToken: toMentionToken(row.name),
+    productId: row.product_id ?? DEFAULT_PRODUCT,
     createdAt: row.created_at,
   };
 }
@@ -109,15 +127,35 @@ export function parseCreateWorkspaceInput(body: unknown): CreateWorkspaceInput {
   return parsed.data;
 }
 
-export async function listWorkspaces(userId: string): Promise<WorkspaceResponse[]> {
-  const { data, error } = await getSupabase()
-    .from(TABLE)
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: true });
+/**
+ * `productId` omitted lists every folder (today's behaviour). `default` lists
+ * the rows with no product; any other id lists that product's repos.
+ */
+export async function listWorkspaces(
+  userId: string,
+  productId?: string,
+): Promise<WorkspaceResponse[]> {
+  const query = () =>
+    getSupabase()
+      .from(TABLE)
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true });
 
-  throwIfMissingTable(error);
-  return ((data ?? []) as WorkspaceRow[]).map(toResponse);
+  let result =
+    productId === undefined
+      ? await query()
+      : isDefaultProduct(productId)
+        ? await query().is("product_id", null)
+        : await query().eq("product_id", productId);
+
+  if (isMissingColumn(result.error)) {
+    if (!isDefaultProduct(productId)) return [];
+    result = await query();
+  }
+
+  throwIfMissingTable(result.error);
+  return ((result.data ?? []) as WorkspaceRow[]).map(toResponse);
 }
 
 export async function getWorkspace(
@@ -164,6 +202,7 @@ export async function createWorkspace(
     user_id: userId,
     name: input.name,
     path: resolved,
+    ...(isDefaultProduct(input.productId) ? {} : { product_id: input.productId }),
     created_at: new Date().toISOString(),
   };
 
@@ -215,12 +254,13 @@ function parseWorkspaceToken(token: string): {
 export async function resolveMentions(
   userId: string,
   tokens: readonly string[],
+  productId?: string,
 ): Promise<MentionResolution> {
   const files: ResolvedMention[] = [];
   const unresolved: UnresolvedMention[] = [];
   if (tokens.length === 0) return { files, unresolved };
 
-  const workspaces = await listWorkspaces(userId);
+  const workspaces = await listWorkspaces(userId, productId);
   const byName = new Map(workspaces.map((ws) => [ws.name.toLowerCase(), ws]));
 
   let total = 0;
@@ -364,9 +404,10 @@ export async function listMentions(
   userId: string,
   q = "",
   limit = 20,
+  productId?: string,
 ): Promise<WorkspaceMentionResponse[]> {
   const capped = Math.min(20, Math.max(1, Math.floor(limit)));
-  const workspaces = await listWorkspaces(userId);
+  const workspaces = await listWorkspaces(userId, productId);
   const needle = q.trim().replace(/^@/, "");
   const lower = needle.toLowerCase();
 

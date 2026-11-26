@@ -12,26 +12,35 @@ const POSTGRES_URI_EXAMPLE = "postgresql://user:password@host:5432/database";
  * anything that is not a real connection URI up front.
  */
 function postgresUrl(): string {
-  const value = required("DATABASE_URL");
+  return validatePostgresUrl(required("DATABASE_URL"), "DATABASE_URL");
+}
+
+/**
+ * Shared by Default (`DATABASE_URL`) and products (`SA_PRODUCT_*` or a
+ * browser connection). Only Default's own env name echoes the raw value; any
+ * other source may carry a password the caller has not yet scrubbed.
+ */
+export function validatePostgresUrl(value: string, envName: string): string {
+  const echo = envName === "DATABASE_URL" ? ` (got "${value}")` : "";
 
   let parsed: URL;
   try {
     parsed = new URL(value);
   } catch {
     throw new Error(
-      `DATABASE_URL must be a connection URI, e.g. ${POSTGRES_URI_EXAMPLE} (got "${value}")`,
+      `${envName} must be a connection URI, e.g. ${POSTGRES_URI_EXAMPLE}${echo}`,
     );
   }
 
   if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
     throw new Error(
-      `DATABASE_URL must use the postgresql:// scheme, e.g. ${POSTGRES_URI_EXAMPLE}`,
+      `${envName} must use the postgresql:// scheme, e.g. ${POSTGRES_URI_EXAMPLE}`,
     );
   }
 
   if (!parsed.hostname) {
     throw new Error(
-      `DATABASE_URL is missing a host, e.g. ${POSTGRES_URI_EXAMPLE}`,
+      `${envName} is missing a host, e.g. ${POSTGRES_URI_EXAMPLE}`,
     );
   }
 
@@ -122,7 +131,20 @@ const defaultModel = bifrostBaseUrl
 
 export const config = {
   port: process.env.PORT ? Number(process.env.PORT) : 3000,
+  /** Bind address. Unset keeps Node's default; a non-loopback value marks a hosted deployment. */
+  host: process.env.HOST || "",
   corsOrigins: (process.env.CORS_ORIGIN || "http://localhost:3000").split(","),
+
+  /**
+   * Per-product credentials entered in the browser. On a hosted backend they
+   * are refused unless their host is listed here.
+   */
+  connections: {
+    allowedHosts: (process.env.SA_CONNECTION_ALLOWED_HOSTS ?? "")
+      .split(",")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean),
+  },
 
   /**
    * A model id routes itself: `provider/model` goes through Bifrost,
@@ -233,6 +255,8 @@ export const config = {
   confluence: {
     baseUrl: process.env.CONFLUENCE_BASE_URL || "",
     spaceKey: process.env.CONFLUENCE_SPACE_KEY || "",
+    /** Human-facing space link for the sidebar. Formerly `NEXT_PUBLIC_DOCS_URL` in the frontend. */
+    siteUrl: process.env.CONFLUENCE_SITE_URL || "",
     username: process.env.CONFLUENCE_USERNAME || "",
     accessToken: process.env.CONFLUENCE_ACCESS_TOKEN || "",
     personalToken: process.env.CONFLUENCE_PAT || "",

@@ -7,7 +7,17 @@ import {
   searchDecisions,
   simulate,
 } from "../core/system-model";
-import { defineTool } from "./types";
+import { currentProduct, productRepoRoot } from "../../../internal/product/runtime";
+import { defineTool, type ToolContext } from "./types";
+
+/**
+ * The attached folder, else the active product's primary repo. Tools are not
+ * granted when neither exists, so this never falls back to the backend's cwd
+ * from the GUI. The MCP path sets the product's repo to its own root.
+ */
+function rootOf(ctx: ToolContext): string | undefined {
+  return productRepoRoot(currentProduct(), ctx.workspaceRoot);
+}
 
 const KNOWLEDGE = ["langchain", "mcp-knowledge"] as const;
 
@@ -25,7 +35,7 @@ export const systemModelTools = [
       "When a local project folder is attached, scans that folder. Deterministic and free — it calls no model.",
     schema: z.object({}),
     surfaces: KNOWLEDGE,
-    invoke: (_args, ctx) => buildModel(ctx.workspaceRoot),
+    invoke: (_args, ctx) => buildModel(rootOf(ctx)),
   }),
   defineTool({
     name: "query_system_model",
@@ -43,7 +53,7 @@ export const systemModelTools = [
     }),
     surfaces: KNOWLEDGE,
     invoke: ({ query, kind, limit }, ctx) =>
-      queryModel(query, kind, limit, ctx.workspaceRoot),
+      queryModel(query, kind, limit, rootOf(ctx)),
   }),
   defineTool({
     name: "simulate_impact",
@@ -68,7 +78,7 @@ export const systemModelTools = [
     }),
     surfaces: KNOWLEDGE,
     invoke: ({ target, depth }, ctx) =>
-      simulate(target, depth, ctx.workspaceRoot),
+      simulate(target, depth, rootOf(ctx)),
   }),
   defineTool({
     name: "record_decision",
@@ -98,7 +108,7 @@ export const systemModelTools = [
         ),
     }),
     surfaces: KNOWLEDGE,
-    invoke: (input, ctx) => recordDecision({ ...input, root: ctx.workspaceRoot }),
+    invoke: (input, ctx) => recordDecision({ ...input, root: rootOf(ctx) }),
   }),
   defineTool({
     name: "search_decisions",
@@ -114,6 +124,6 @@ export const systemModelTools = [
     }),
     surfaces: KNOWLEDGE,
     invoke: ({ query, limit }, ctx) =>
-      searchDecisions(query, limit, ctx.workspaceRoot),
+      searchDecisions(query, limit, rootOf(ctx)),
   }),
 ] as const;

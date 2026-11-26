@@ -1,5 +1,7 @@
-import http from "node:http";
-import https from "node:https";
+import { config } from "../../../config";
+import type { JiraConnection } from "../../../contract/connection";
+import { pinOutbound } from "../../../internal/product/connections";
+import { requestText } from "../../../internal/product/outbound-http";
 
 export interface JiraUser {
   displayName?: string;
@@ -39,99 +41,91 @@ export interface JiraIssue {
   renderedFields?: Record<string, unknown>;
 }
 
-function requiredUrl(): string {
-  const url = process.env.JIRA_URL?.replace(/\/$/, "");
-  if (url) return url;
+/**
+ * Where a Jira call goes and with which credentials. Built per call from one
+ * product's connection; Default builds it from `.env` exactly as before.
+ */
+export type JiraTarget = {
+  baseUrl: string;
+  username?: string;
+  token: string;
+  sslVerify?: boolean;
+  /** User-entered host: connect to the address `pinOutbound` checked. */
+  pinned?: boolean;
+};
 
-  const confluence = process.env.CONFLUENCE_BASE_URL;
-  if (confluence) {
-    try {
-      return new URL(confluence).origin;
-    } catch {
-      /* fall through */
-    }
+export function defaultJiraTarget(): JiraTarget | undefined {
+  const jira = config.jira;
+  if (!jira.url) return undefined;
+  if (jira.personalToken) {
+    return { baseUrl: jira.url, token: jira.personalToken, sslVerify: jira.sslVerify };
   }
+  if (jira.username && jira.apiToken) {
+    return {
+      baseUrl: jira.url,
+      username: jira.username,
+      token: jira.apiToken,
+      sslVerify: jira.sslVerify,
+    };
+  }
+  return undefined;
+}
 
+export function jiraTarget(conn: JiraConnection, pinned: boolean): JiraTarget {
+  return {
+    baseUrl: conn.baseUrl,
+    ...(conn.username ? { username: conn.username } : {}),
+    token: conn.token,
+    pinned,
+  };
+}
+
+function requiredUrl(target: JiraTarget): string {
+  const url = target.baseUrl.replace(/\/$/, "");
+  if (url) return url;
   throw new Error("JIRA_URL is not set");
 }
 
-function authHeader(): string {
-  const pat = process.env.JIRA_PERSONAL_TOKEN || process.env.JIRA_PAT;
-  if (pat) return `Bearer ${pat}`;
-
-  const username =
-    process.env.JIRA_USERNAME || process.env.CONFLUENCE_USERNAME;
-  const token =
-    process.env.JIRA_API_TOKEN || process.env.CONFLUENCE_ACCESS_TOKEN;
-  if (username && token) {
-    return `Basic ${Buffer.from(`${username}:${token}`).toString("base64")}`;
+/** `username + token` is Cloud Basic; a lone token is a Server/DC PAT. */
+function authHeader(target: JiraTarget): string {
+  if (target.username && target.token) {
+    return `Basic ${Buffer.from(`${target.username}:${target.token}`).toString("base64")}`;
   }
-
+  if (target.token) return `Bearer ${target.token}`;
   throw new Error(
     "Missing Jira credentials. Set JIRA_PERSONAL_TOKEN (Server/DC) or JIRA_USERNAME + JIRA_API_TOKEN (Cloud).",
   );
 }
 
-function sslVerify(): boolean {
-  return process.env.JIRA_SSL_VERIFY !== "false";
-}
-
-function requestJson(
+async function requestJson(
+  target: JiraTarget,
   url: string,
   init?: { method?: "GET" | "POST"; body?: unknown },
 ): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const pathWithQuery = `${parsed.pathname}${parsed.search}`;
-    const method = init?.method ?? "GET";
-    const payload =
-      init?.body === undefined ? undefined : JSON.stringify(init.body);
-    const headers: Record<string, string> = {
-      Authorization: authHeader(),
-      Accept: "application/json",
-    };
-    if (payload) headers["Content-Type"] = "application/json";
+  const payload =
+    init?.body === undefined ? undefined : JSON.stringify(init.body);
+  const headers: Record<string, string> = {
+    Authorization: authHeader(target),
+    Accept: "application/json",
+  };
+  if (payload) headers["Content-Type"] = "application/json";
 
-    const onResponse = (res: http.IncomingMessage) => {
-      const chunks: Buffer[] = [];
-      res.on("data", (chunk: Buffer) => chunks.push(chunk));
-      res.on("end", () => {
-        const body = Buffer.concat(chunks).toString("utf8");
-        if (!res.statusCode || res.statusCode >= 400) {
-          reject(
-            new Error(
-              `Jira ${res.statusCode} ${res.statusMessage ?? ""}: ${body.slice(0, 500)}`,
-            ),
-          );
-          return;
-        }
-        try {
-          resolve(body ? JSON.parse(body) : {});
-        } catch {
-          reject(new Error(`Jira returned non-JSON: ${body.slice(0, 200)}`));
-        }
-      });
-    };
-
-    const options = {
-      hostname: parsed.hostname,
-      port: parsed.port || undefined,
-      path: pathWithQuery,
-      method,
-      headers,
-    };
-
-    const req =
-      parsed.protocol === "https:"
-        ? https.request(
-            { ...options, rejectUnauthorized: sslVerify() },
-            onResponse,
-          )
-        : http.request(options, onResponse);
-    req.on("error", reject);
-    if (payload) req.write(payload);
-    req.end();
+  const pin = target.pinned ? await pinOutbound(url, "jira") : undefined;
+  const res = await requestText(url, {
+    method: init?.method ?? "GET",
+    headers,
+    body: payload,
+    pin,
+    rejectUnauthorized: target.sslVerify ?? true,
   });
+  if (!res.status || res.status >= 400) {
+    throw new Error(`Jira ${res.status} ${res.statusText}: ${res.body.slice(0, 500)}`);
+  }
+  try {
+    return res.body ? JSON.parse(res.body) : {};
+  } catch {
+    throw new Error(`Jira returned non-JSON: ${res.body.slice(0, 200)}`);
+  }
 }
 
 function adfToText(node: unknown): string {
@@ -183,14 +177,14 @@ export function normalizeIssueKey(issueKey: string): string {
   return trimmed;
 }
 
-export async function fetchIssue(issueKey: string): Promise<JiraIssue> {
+export async function fetchIssue(target: JiraTarget, issueKey: string): Promise<JiraIssue> {
   const key = normalizeIssueKey(issueKey);
   if (!key) throw new Error("issue_key is required");
 
   const url =
-    `${requiredUrl()}/rest/api/2/issue/${encodeURIComponent(key)}` +
+    `${requiredUrl(target)}/rest/api/2/issue/${encodeURIComponent(key)}` +
     `?expand=names,renderedFields`;
-  return (await requestJson(url)) as JiraIssue;
+  return (await requestJson(target, url)) as JiraIssue;
 }
 
 function escapeJqlString(value: string): string {
@@ -226,6 +220,7 @@ function jqlFor(query: string): string {
  * ticket instead of running JQL.
  */
 export async function searchIssues(
+  target: JiraTarget,
   query: string,
   limit = 8,
 ): Promise<string> {
@@ -233,7 +228,7 @@ export async function searchIssues(
   if (!trimmed) return "search_jira needs a query, JQL, or issue key.";
 
   if (isBareIssueKey(trimmed)) {
-    return formatTicket(await fetchIssue(trimmed));
+    return formatTicket(await fetchIssue(target, trimmed));
   }
 
   const maxResults = Math.min(Math.max(limit, 1), 20);
@@ -243,15 +238,15 @@ export async function searchIssues(
   let payload: { issues?: JiraIssue[]; total?: number };
   try {
     const url =
-      `${requiredUrl()}/rest/api/2/search` +
+      `${requiredUrl(target)}/rest/api/2/search` +
       `?jql=${encodeURIComponent(jql)}` +
       `&maxResults=${maxResults}` +
       `&fields=${encodeURIComponent(fields)}`;
-    payload = (await requestJson(url)) as { issues?: JiraIssue[]; total?: number };
+    payload = (await requestJson(target, url)) as { issues?: JiraIssue[]; total?: number };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (!/\b410\b|\b404\b/.test(message)) throw err;
-    payload = (await requestJson(`${requiredUrl()}/rest/api/3/search/jql`, {
+    payload = (await requestJson(target, `${requiredUrl(target)}/rest/api/3/search/jql`, {
       method: "POST",
       body: { jql, maxResults, fields: fields.split(",") },
     })) as { issues?: JiraIssue[]; total?: number };
@@ -381,4 +376,10 @@ export function formatUserStory(issue: JiraIssue): string {
     "Recent comments:",
     comments.length > 0 ? comments.join("\n") : "(none)",
   ].join("\n");
+}
+
+/** Connection test: who the token authenticates as. */
+export async function testJira(target: JiraTarget): Promise<string> {
+  const me = (await requestJson(target, `${requiredUrl(target)}/rest/api/2/myself`)) as JiraUser;
+  return `authenticated as ${me.displayName || me.emailAddress || "a Jira user"}`;
 }

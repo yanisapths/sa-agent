@@ -25,16 +25,65 @@ function Bar({ used, limit }: { used: number; limit: number | null }) {
   );
 }
 
+type QuotaStatus = "loading" | "ready" | "error";
+
 /**
  * The virtual key's budget for the period, with the per-model and per-provider
  * breakdown behind it.
  *
  * This is gateway-wide rather than per-conversation, which is why it lives in
  * the tab bar: the number does not belong to the chat you happen to have open.
- * It is hidden entirely when the gateway is unreachable.
+ * Loading and error still render the control so a failed lookup cannot hide it.
  */
-export function QuotaMeter({ quota }: { quota: GatewayQuota | null }) {
-  if (!quota) return null;
+export function QuotaMeter({
+  quota,
+  status = "ready",
+  error = null,
+}: {
+  quota: GatewayQuota | null;
+  status?: QuotaStatus;
+  error?: string | null;
+}) {
+  if (status === "loading" && !quota) {
+    return (
+      <span
+        className="inline-flex w-28 flex-col justify-center gap-1 self-center px-2 py-1 text-[11px] text-muted"
+        role="status"
+      >
+        Loading quota…
+      </span>
+    );
+  }
+
+  if (!quota) {
+    return (
+      <Popover.Root>
+        <Popover.Trigger className="inline-flex cursor-pointer items-center gap-2 self-center rounded-lg px-2 py-1 text-xs text-muted transition-colors hover:bg-muted/10">
+          <span className="flex w-28 flex-col gap-1">
+            <span className="flex items-baseline justify-between gap-2 text-[11px]">
+              <span>Quota</span>
+              <span>unavailable</span>
+            </span>
+            <span className="block h-1.5 w-full overflow-hidden rounded-full bg-muted/15" />
+          </span>
+          <ChevronDown size={13} className="shrink-0" />
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
+            align="end"
+            sideOffset={6}
+            collisionPadding={8}
+            className="z-50 w-72 rounded-xl border border-border bg-surface p-4 text-sm text-foreground shadow-[6px_2px_35px_rgba(0,0,0,0.12)]"
+          >
+            <p className="font-medium">Could not read the virtual key budget</p>
+            <p className="mt-1 text-xs text-muted">
+              {error ?? "The Bifrost quota endpoint did not respond. Model spend still appears under each reply."}
+            </p>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+    );
+  }
 
   const { budget, models, providers, keyName, isActive } = quota;
   const resetsOn = formatResetDate(budget.resetsAt);

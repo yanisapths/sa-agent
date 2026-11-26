@@ -8,6 +8,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { backendEnvLoaded } from "../load-env";
 import {
+  defaultConfluenceTarget,
   readConfluenceDocs,
   searchConfluenceDocs,
 } from "../agents/resources/mcp/confluence-api";
@@ -41,14 +42,14 @@ const tools = [
       "Search Confluence pages for API contracts, endpoints, auth, and conventions. Returns titles, ids, and short snippets.",
     schema: searchSchema,
     invoke: (args: { query: string; limit?: number }) =>
-      searchConfluenceDocs(args.query, args.limit ?? 5),
+      searchConfluenceDocs(defaultConfluenceTarget(), args.query, args.limit ?? 5),
   },
   {
     name: "confluence_get_pages",
     description:
       "Read full Confluence pages by id or URL from confluence_search. Up to 8.",
     schema: pagesSchema,
-    invoke: (args: { page_ids: string[] }) => readConfluenceDocs(args.page_ids),
+    invoke: (args: { page_ids: string[] }) => readConfluenceDocs(defaultConfluenceTarget(), args.page_ids),
   },
 ] as const;
 

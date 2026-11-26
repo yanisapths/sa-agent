@@ -16,6 +16,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { useChatHistory } from "@/features/chats/ChatHistoryProvider";
+import { ProductSwitcher } from "@/features/product/ProductSwitcher";
+import { useProduct } from "@/features/product/ProductProvider";
 import { AddFolderDialog } from "@/features/workspace/AddFolderDialog";
 import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
 import { asterTheme } from "@/lib/theme";
@@ -52,10 +54,12 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
     loadMore,
     remove: removeChat,
   } = useChatHistory();
+  const { active } = useProduct();
   const [addOpen, setAddOpen] = useState(false);
   const wordmark =
     theme === "dark" ? "/assets/aster-dark.svg" : "/assets/aster-light.svg";
-  const docsUrl = process.env.NEXT_PUBLIC_DOCS_URL;
+  const docsUrl = active?.docs.siteUrl ?? null;
+  const docsLabel = active ? `${active.name} docs` : "Docs";
 
   const selectProject = (id: string) => {
     attach(id);
@@ -111,6 +115,10 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
         )}
       </div>
 
+      <div className={cn("px-3 pt-3", !isExpanded && "flex justify-center")}>
+        <ProductSwitcher isExpanded={isExpanded} />
+      </div>
+
       <div className={cn("px-3 py-3", !isExpanded && "flex justify-center")}>
         {isExpanded ? (
           <Button
@@ -147,7 +155,7 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
               className="text-sidebar-foreground hover:bg-sidebar-accent/70 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm"
             >
               <BookOpen className="h-4 w-4 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">Confluence API docs</span>
+              <span className="min-w-0 flex-1 truncate">{docsLabel}</span>
               <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
             </a>
           ) : (
@@ -158,12 +166,12 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sidebar-foreground hover:bg-sidebar-accent/70 flex h-8 w-8 items-center justify-center rounded-lg"
-                  aria-label="Confluence API docs"
+                  aria-label={docsLabel}
                 >
                   <BookOpen className="h-4 w-4" />
                 </a>
               </TooltipTrigger>
-              <TooltipContent side="right">Confluence API docs</TooltipContent>
+              <TooltipContent side="right">{docsLabel}</TooltipContent>
             </Tooltip>
           )}
         </div>
@@ -269,13 +277,14 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
         {isExpanded ? (
           <div className="mb-2 flex items-center justify-between">
             <p className="text-xs font-medium text-sidebar-foreground">
-              Projects
+              Repos
             </p>
             <Button
               variant="icon"
               size="sm"
               className="h-7 w-7"
-              title="Choose in Finder"
+              title="Add a repo folder"
+              aria-label="Add a repo folder"
               onClick={() => setAddOpen(true)}
             >
               <Plus className="h-3.5 w-3.5" />
@@ -301,6 +310,9 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
 
         {isExpanded && workspaceStatus === "error" && workspaceError && (
           <p className="mb-2 px-1 text-[11px] text-rose-600">{workspaceError}</p>
+        )}
+        {isExpanded && workspaceStatus === "ready" && workspaces.length === 0 && (
+          <p className="mb-2 px-1 text-[11px] text-muted">No repos for this product</p>
         )}
         <div className="min-h-0 space-y-1 overflow-y-auto">
           {workspaces.map((ws) => {

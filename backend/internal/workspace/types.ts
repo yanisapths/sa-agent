@@ -3,6 +3,8 @@ export type WorkspaceRow = {
   user_id: string;
   name: string;
   path: string;
+  /** NULL = the virtual Default product. Absent before products.sql runs. */
+  product_id?: string | null;
   created_at: string;
 };
 
@@ -11,6 +13,7 @@ export type WorkspaceResponse = {
   name: string;
   path: string;
   mentionToken: string;
+  productId: string;
   createdAt: string;
 };
 
@@ -25,6 +28,7 @@ export type WorkspaceMentionResponse = {
 export type CreateWorkspaceInput = {
   name: string;
   path: string;
+  productId?: string;
 };
 
 export type ResolvedMention = {

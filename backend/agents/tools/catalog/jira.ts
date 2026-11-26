@@ -1,17 +1,21 @@
 import { z } from "zod";
-import { config } from "../../../config";
 import {
+  defaultJiraTarget,
   fetchIssue,
   formatTicket,
   formatUserStory,
+  jiraTarget,
   normalizeIssueKey,
   searchIssues,
+  type JiraTarget,
 } from "../../resources/mcp/jira-api";
 import { orToolError } from "../errors";
 import {
   getJiraMcpTools,
   isJiraRemoteMcpConfigured,
 } from "../../resources/mcp/mcp-client";
+import { currentConnection } from "../../../internal/product/connections";
+import { currentProduct } from "../../../internal/product/runtime";
 import { defineTool } from "./types";
 
 const JIRA = ["langchain", "mcp-jira"] as const;
@@ -20,14 +24,28 @@ const issueKeySchema = z.object({
   issue_key: z.string().describe("Jira issue key, e.g. PROJ-123"),
 });
 
-function hasJiraRestAuth(): boolean {
-  const jira = config.jira;
-  return Boolean(
-    jira.url && (jira.personalToken || (jira.username && jira.apiToken)),
-  );
+/**
+ * The browser's Jira connection for this product, else Default's `.env`.
+ * Another product never falls back to Default's Jira credentials.
+ */
+function restTarget(): JiraTarget | undefined {
+  const browser = currentConnection("jira");
+  if (browser) return jiraTarget(browser, true);
+  return currentProduct().isDefault ? defaultJiraTarget() : undefined;
+}
+
+function remoteMcpAllowed(): boolean {
+  return currentProduct().isDefault && isJiraRemoteMcpConfigured();
 }
 
 function notConfigured(): string {
+  const product = currentProduct();
+  if (!product.isDefault) {
+    return (
+      `Jira is not connected for product "${product.name}". ` +
+      "Add a Jira connection for this product in Connections."
+    );
+  }
   return (
     "Jira is not configured. Set JIRA_URL with JIRA_PERSONAL_TOKEN / " +
     "JIRA_USERNAME+JIRA_API_TOKEN, or Confluence Cloud credentials " +
@@ -62,12 +80,13 @@ async function loadIssue(
   format: (issue: Awaited<ReturnType<typeof fetchIssue>>) => string,
   remoteNames: readonly string[],
 ): Promise<string> {
-  if (hasJiraRestAuth()) {
+  const target = restTarget();
+  if (target) {
     return orToolError("Jira", async () =>
-      format(await fetchIssue(issueKey)),
+      format(await fetchIssue(target, issueKey)),
     );
   }
-  if (isJiraRemoteMcpConfigured()) {
+  if (remoteMcpAllowed()) {
     return orToolError("Jira MCP", () =>
       viaRemoteMcp(remoteNames, { issue_key: normalizeIssueKey(issueKey) }),
     );
@@ -76,10 +95,11 @@ async function loadIssue(
 }
 
 async function loadSearch(query: string, limit: number): Promise<string> {
-  if (hasJiraRestAuth()) {
-    return orToolError("Jira", () => searchIssues(query, limit));
+  const target = restTarget();
+  if (target) {
+    return orToolError("Jira", () => searchIssues(target, query, limit));
   }
-  if (isJiraRemoteMcpConfigured()) {
+  if (remoteMcpAllowed()) {
     return orToolError("Jira MCP", () =>
       viaRemoteMcp(
         [

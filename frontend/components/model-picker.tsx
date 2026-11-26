@@ -41,8 +41,8 @@ function formatPrice(model: GatewayModel): string {
  * Picks the model for the next turn. The choice applies to the router *and*
  * every phase specialist, so it changes which model does the real work.
  *
- * Hidden when the gateway is unreachable: an empty dropdown offering nothing is
- * worse than the backend default it would be replacing.
+ * Always shown. An empty list still offers "Default model", which is what
+ * `/chat` uses when the gateway catalog cannot be loaded.
  */
 export function ModelPicker({
   models,
@@ -50,8 +50,6 @@ export function ModelPicker({
   onModelChange,
   disabled,
 }: ModelPickerProps) {
-  if (models.length === 0) return null;
-
   const active = models.find((item) => item.id === model);
 
   return (
@@ -95,7 +93,12 @@ export function ModelPicker({
 
           <DropdownMenu.Separator className="my-1 h-px shrink-0 bg-border" />
 
-          {models.map((item) => (
+          {models.length === 0 ? (
+            <div className="px-2 py-2 text-xs text-muted">
+              Gateway catalog unavailable. The server default will be used.
+            </div>
+          ) : (
+            models.map((item) => (
             <DropdownMenu.Item
               key={item.id}
               onSelect={() => onModelChange(item.id)}
@@ -113,7 +116,8 @@ export function ModelPicker({
                 </span>
               </span>
             </DropdownMenu.Item>
-          ))}
+            ))
+          )}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

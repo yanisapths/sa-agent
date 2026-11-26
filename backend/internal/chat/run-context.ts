@@ -3,6 +3,8 @@ import type { VaultMount } from "../vault/mount";
 import type { UsageCollector } from "../gateway/usage";
 import type { AgentKind } from "../../agents/route";
 import { type ChatStyle } from "../../agents/skill";
+import type { ResolvedProduct } from "../product/types";
+import type { ConnectionKind } from "../../contract/connection";
 
 /** How long a paused HITL turn keeps its vault/workspace mounts. */
 const CONTEXT_TTL_MS = 30 * 60 * 1000;
@@ -17,6 +19,13 @@ export interface ChatRunContext {
   workspaceRoot: string | undefined;
   workspaceId: string | undefined;
   vaultMount: VaultMount | undefined;
+  /**
+   * The product this turn runs inside: public metadata and env-var names.
+   * Browser connections are deliberately absent; resume must resend them.
+   */
+  product: ResolvedProduct;
+  /** Which connector kinds the browser sent. Kinds only, never values. */
+  connectionKinds: ConnectionKind[];
   /** Wall clock when the human first sent the message — artifact persist cutoff. */
   startedAt: number;
   /** Time spent actually running the graph, excluding HITL wait. */

@@ -1,8 +1,7 @@
 import { config } from "../../../config";
-import { readOnlyQuery, writeQuery } from "../../../database/postgres";
+import { currentSchema, readOnlyQuery, writeQuery } from "../../../database/postgres";
 import { orToolError } from "../errors";
 
-const SCHEMA = config.postgres.schema;
 const DATABASE = "The live application database";
 
 function asBlock(title: string, lines: string[]): string {
@@ -12,6 +11,7 @@ function asBlock(title: string, lines: string[]): string {
 
 export async function listTables(): Promise<string> {
   return orToolError(DATABASE, async () => {
+    const SCHEMA = currentSchema();
     const rows = await readOnlyQuery<{
       table_name: string;
       comment: string | null;
@@ -45,6 +45,7 @@ export async function listTables(): Promise<string> {
 
 export async function describeTables(tables: string[]): Promise<string> {
   return orToolError(DATABASE, async () => {
+    const SCHEMA = currentSchema();
     const rows = await readOnlyQuery<{
       table_name: string;
       column_name: string;
@@ -106,6 +107,7 @@ export async function inspectRelationships(
   tables?: string[],
 ): Promise<string> {
   return orToolError(DATABASE, async () => {
+    const SCHEMA = currentSchema();
     const rows = await readOnlyQuery<{
       constraint_name: string;
       source_table: string;

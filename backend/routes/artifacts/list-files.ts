@@ -8,7 +8,11 @@ export const listFilesHandler = async (
   next: NextFunction,
 ) => {
   try {
-    const data = await listFiles(req.userId, queryString(req.query.threadId));
+    const data = await listFiles(
+      req.userId,
+      queryString(req.query.threadId),
+      queryString(req.query.productId) || undefined,
+    );
     return res.json({ ok: true, data });
   } catch (err) {
     next(err);

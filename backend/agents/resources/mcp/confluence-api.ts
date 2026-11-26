@@ -1,11 +1,57 @@
 import { convert } from "html-to-text";
 import { config } from "../../../config";
+import type { ConfluenceConnection } from "../../../contract/connection";
+import { pinOutbound } from "../../../internal/product/connections";
+import { requestText } from "../../../internal/product/outbound-http";
 
 const SNIPPET_CHARS = 280;
 const MAX_PAGE_CHARS = 80_000;
 
-function baseUrl(): string {
-  const base = config.confluence.baseUrl.replace(/\/+$/, "");
+/**
+ * Where a docs call goes and with which credentials. Built per call from one
+ * product's connection, so a token is only ever sent to the `baseUrl` it
+ * arrived with.
+ */
+export type ConfluenceTarget = {
+  baseUrl: string;
+  spaceKey?: string;
+  username?: string;
+  accessToken?: string;
+  personalToken?: string;
+  /** User-entered host: connect to the address `pinOutbound` checked. */
+  pinned?: boolean;
+};
+
+export function defaultConfluenceTarget(): ConfluenceTarget {
+  const docs = config.confluence;
+  return {
+    baseUrl: docs.baseUrl,
+    spaceKey: docs.spaceKey,
+    username: docs.username,
+    accessToken: docs.accessToken,
+    personalToken: docs.personalToken,
+  };
+}
+
+/** `username + token` is Basic; a lone token is a PAT (Bearer, or Basic when pre-encoded). */
+export function confluenceTarget(
+  conn: Pick<ConfluenceConnection, "baseUrl" | "spaceKey" | "username" | "token">,
+  pinned: boolean,
+): ConfluenceTarget {
+  return {
+    baseUrl: conn.baseUrl,
+    spaceKey: conn.spaceKey,
+    ...(conn.username && conn.token
+      ? { username: conn.username, accessToken: conn.token }
+      : conn.token
+        ? { personalToken: conn.token }
+        : {}),
+    pinned,
+  };
+}
+
+function baseUrl(target: ConfluenceTarget): string {
+  const base = target.baseUrl.replace(/\/+$/, "");
   if (!base) {
     throw new Error("CONFLUENCE_BASE_URL is not set");
   }
@@ -80,8 +126,10 @@ export function confluenceAuthorization(input: ConfluenceAuthInput): string {
   throw new Error(MISSING_AUTH);
 }
 
-function authHeader(): string {
-  return confluenceAuthorization(config.confluence);
+/** No credentials is anonymous access, which some spaces allow. */
+function authHeader(target: ConfluenceTarget): string | undefined {
+  const any = target.personalToken || (target.username && target.accessToken);
+  return any ? confluenceAuthorization(target) : undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -159,15 +207,27 @@ function snippet(html: string): string {
   return `${text.slice(0, SNIPPET_CHARS).trimEnd()}…`;
 }
 
-async function confluenceFetch(path: string): Promise<unknown> {
-  const url = `${baseUrl()}${path}`;
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      Authorization: authHeader(),
-    },
-  });
-  const text = await response.text();
+async function confluenceFetch(target: ConfluenceTarget, path: string): Promise<unknown> {
+  const url = `${baseUrl(target)}${path}`;
+  const authorization = authHeader(target);
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    ...(authorization ? { Authorization: authorization } : {}),
+  };
+
+  let status: number;
+  let text: string;
+  if (target.pinned) {
+    const pin = await pinOutbound(url, "confluence");
+    const response = await requestText(url, { headers, pin });
+    status = response.status;
+    text = response.body;
+  } else {
+    const response = await fetch(url, { headers, redirect: "manual" });
+    status = response.status;
+    text = await response.text();
+  }
+
   let parsed: unknown = text;
   if (text) {
     try {
@@ -176,12 +236,12 @@ async function confluenceFetch(path: string): Promise<unknown> {
       parsed = text;
     }
   }
-  if (!response.ok) {
+  if (status < 200 || status >= 300) {
     const detail =
       typeof parsed === "string"
         ? parsed.slice(0, 300)
         : JSON.stringify(parsed).slice(0, 300);
-    throw new Error(`Confluence request failed (${response.status}): ${detail}`);
+    throw new Error(`Confluence request failed (${status}): ${detail}`);
   }
   return parsed;
 }
@@ -194,7 +254,10 @@ type PageContent = {
   body: string;
 };
 
-function pageFromContent(content: Record<string, unknown>): PageContent {
+function pageFromContent(
+  target: ConfluenceTarget,
+  content: Record<string, unknown>,
+): PageContent {
   const links = asRecord(content._links);
   const space = asRecord(content.space);
   const body = asRecord(content.body);
@@ -207,7 +270,7 @@ function pageFromContent(content: Record<string, unknown>): PageContent {
     id,
     title: asString(content.title) || id || "(untitled)",
     space: asString(space.key),
-    url: webui ? confluencePageUrl(baseUrl(), webui) : "",
+    url: webui ? confluencePageUrl(baseUrl(target), webui) : "",
     body: htmlToDocText(html) || "(page has no body)",
   };
 }
@@ -220,12 +283,14 @@ function formatPage(page: PageContent): string {
 }
 
 export async function searchConfluenceDocs(
+  target: ConfluenceTarget,
   query: string,
   limit: number,
 ): Promise<string> {
   const size = Math.min(10, Math.max(1, limit));
-  const cql = confluenceCql(query, config.confluence.spaceKey);
+  const cql = confluenceCql(query, target.spaceKey ?? "");
   const payload = await confluenceFetch(
+    target,
     `/rest/api/search?cql=${encodeURIComponent(cql)}&limit=${size}`,
   );
   const rows = Array.isArray(asRecord(payload).results)
@@ -245,7 +310,7 @@ export async function searchConfluenceDocs(
     const key = id || webui || title;
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    const url = webui ? confluencePageUrl(baseUrl(), webui) : "";
+    const url = webui ? confluencePageUrl(baseUrl(target), webui) : "";
     const space = asString(asRecord(content.space).key);
     const blurb = snippet(asString(item.excerpt)) || "(no snippet — read the page)";
     hits.push(
@@ -272,18 +337,23 @@ export async function searchConfluenceDocs(
   );
 }
 
-async function loadPage(ref: string): Promise<PageContent> {
+async function loadPage(target: ConfluenceTarget, ref: string): Promise<PageContent> {
   const parsed = parsePageRef(ref);
   if (parsed.id) {
     const payload = await confluenceFetch(
+      target,
       `/rest/api/content/${encodeURIComponent(parsed.id)}?expand=body.export_view,body.storage,space,version`,
     );
-    return pageFromContent(asRecord(payload));
+    return pageFromContent(target, asRecord(payload));
   }
 
   const title = parsed.title ?? ref;
-  const cql = `type = page AND title = "${escapeCql(title)}"`;
+  const space = target.spaceKey?.trim();
+  const cql =
+    `type = page AND ${space ? `space = "${escapeCql(space)}" AND ` : ""}` +
+    `title = "${escapeCql(title)}"`;
   const payload = await confluenceFetch(
+    target,
     `/rest/api/content/search?cql=${encodeURIComponent(cql)}&limit=1&expand=body.export_view,body.storage,space,version`,
   );
   const rows = Array.isArray(asRecord(payload).results)
@@ -293,14 +363,34 @@ async function loadPage(ref: string): Promise<PageContent> {
   if (!asString(first.id)) {
     throw new Error(`No Confluence page titled "${title}"`);
   }
-  return pageFromContent(first);
+  return pageFromContent(target, first);
 }
 
-export async function readConfluenceDocs(refs: string[]): Promise<string> {
+export async function readConfluenceDocs(
+  target: ConfluenceTarget,
+  refs: string[],
+): Promise<string> {
   const unique = [...new Set(refs.map((ref) => ref.trim()).filter(Boolean))];
   if (unique.length === 0) {
     throw new Error("get_doc_page needs at least one page id or URL from search_docs");
   }
-  const pages = await Promise.all(unique.slice(0, 8).map(loadPage));
+  const pages = await Promise.all(unique.slice(0, 8).map((ref) => loadPage(target, ref)));
   return pages.map(formatPage).join("\n\n---\n\n");
+}
+
+/**
+ * Connection test: one search with `limit: 1`. Reports anonymous access
+ * rather than failing when no token was entered.
+ */
+export async function testConfluence(target: ConfluenceTarget): Promise<string> {
+  const anonymous = !authHeader(target);
+  const space = target.spaceKey?.trim();
+  const cql = space ? `type = page AND space = "${escapeCql(space)}"` : "type = page";
+  const payload = await confluenceFetch(
+    target,
+    `/rest/api/search?cql=${encodeURIComponent(cql)}&limit=1`,
+  );
+  const size = asRecord(payload).totalSize;
+  const pages = typeof size === "number" ? `${size} page(s) in the space` : "space reachable";
+  return anonymous ? `${pages}, anonymous access` : pages;
 }

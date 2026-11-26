@@ -10,6 +10,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { useProduct } from "@/features/product/ProductProvider";
+
 import { workspaceService } from "./service";
 import { type CreateWorkspaceInput, type Workspace } from "./types";
 
@@ -28,31 +30,59 @@ interface WorkspaceContextValue {
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const { activeId, refresh: refreshProducts } = useProduct();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
   const [error, setError] = useState<string | null>(null);
   const [attachedId, setAttachedId] = useState<string | null>(null);
+  const [scopedTo, setScopedTo] = useState(activeId);
+
+  // A folder from another product must never stay attached across a switch.
+  if (scopedTo !== activeId) {
+    setScopedTo(activeId);
+    setAttachedId(null);
+    setWorkspaces([]);
+    setStatus("loading");
+  }
+
+  const applyList = useCallback((data: Workspace[]) => {
+    setWorkspaces(data);
+    setAttachedId((current) =>
+      current && data.some((item) => item.id === current) ? current : null,
+    );
+    setStatus("ready");
+    setError(null);
+  }, []);
+
+  const applyError = useCallback((err: unknown) => {
+    setError(err instanceof Error ? err.message : "Failed to load projects");
+    setStatus("error");
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
-      const data = await workspaceService.list();
-      setWorkspaces(data);
-      setAttachedId((current) =>
-        current && data.some((item) => item.id === current) ? current : null,
-      );
-      setStatus("ready");
-      setError(null);
+      applyList(await workspaceService.list(activeId));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load projects");
-      setStatus("error");
+      applyError(err);
     }
-  }, []);
+  }, [activeId, applyList, applyError]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let cancelled = false;
+    workspaceService
+      .list(activeId)
+      .then((data) => {
+        if (!cancelled) applyList(data);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) applyError(err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId, applyList, applyError]);
 
   const attach = useCallback((id: string) => {
     setAttachedId(id);
@@ -62,20 +92,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setAttachedId(null);
   }, []);
 
-  const create = useCallback(async (input: CreateWorkspaceInput) => {
-    const created = await workspaceService.create(input);
-    setWorkspaces((prev) => [...prev, created]);
-    setAttachedId(created.id);
-    setStatus("ready");
-    setError(null);
-    return created;
-  }, []);
+  const create = useCallback(
+    async (input: CreateWorkspaceInput) => {
+      const created = await workspaceService.create({ ...input, productId: input.productId ?? activeId });
+      setWorkspaces((prev) => [...prev, created]);
+      setAttachedId(created.id);
+      setStatus("ready");
+      setError(null);
+      void refreshProducts();
+      return created;
+    },
+    [activeId, refreshProducts],
+  );
 
-  const remove = useCallback(async (id: string) => {
-    await workspaceService.delete(id);
-    setWorkspaces((prev) => prev.filter((item) => item.id !== id));
-    setAttachedId((current) => (current === id ? null : current));
-  }, []);
+  const remove = useCallback(
+    async (id: string) => {
+      await workspaceService.delete(id);
+      setWorkspaces((prev) => prev.filter((item) => item.id !== id));
+      setAttachedId((current) => (current === id ? null : current));
+      void refreshProducts();
+    },
+    [refreshProducts],
+  );
 
   const attached = useMemo(
     () => workspaces.find((item) => item.id === attachedId) ?? null,

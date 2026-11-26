@@ -14,6 +14,7 @@ function ctxOf(config: RunnableConfig): ToolContext {
       typeof cfg.workspaceRoot === "string" ? cfg.workspaceRoot : undefined,
     userId: typeof cfg.userId === "string" ? cfg.userId : undefined,
     threadId: typeof cfg.thread_id === "string" ? cfg.thread_id : undefined,
+    productId: typeof cfg.productId === "string" ? cfg.productId : undefined,
   };
 }
 

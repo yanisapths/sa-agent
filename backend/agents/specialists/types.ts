@@ -10,7 +10,10 @@ see that repo from / (e.g. /internal/handler/voting). /artifacts is
 phase scratch; /resources is skills; mentioned vault files are at
 /vault/folder/file (edit_file / write_file save back to the vault).
 Do not pass a host path like /Users/…. workspace_ls / workspace_read /
-workspace_grep also work with paths relative to the folder root.`;
+workspace_grep also work with paths relative to the folder root.
+A tool named in your instructions but missing from your tool list means
+this product lacks that capability: say so in the artifact and continue
+with the sources you do have. Never guess what the missing tool would return.`;
 
 export type SpecialistSpec = {
   owner: string;

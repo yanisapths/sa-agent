@@ -33,6 +33,8 @@ export type ChatThreadRow = {
   id: string;
   user_id: string;
   title: string;
+  /** NULL = the virtual Default product. Absent before products.sql runs. */
+  product_id?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -49,6 +51,7 @@ export type ChatMessageRow = {
 export type ChatThreadResponse = {
   id: string;
   title: string;
+  productId: string;
   createdAt: string;
   updatedAt: string;
 };

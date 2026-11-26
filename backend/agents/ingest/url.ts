@@ -1,7 +1,7 @@
 /** Indexes an arbitrary web page or text document into the knowledge base. */
 import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
 import { Document } from "@langchain/core/documents";
-import { apiSpecStore } from "../../database/chroma";
+import { ingestProduct, positionalArgs, requiredCollection } from "./product";
 import { split, store } from "./store";
 
 const TEXT_TYPES = /^text\/|application\/(json|xml|x-sql)/;
@@ -31,10 +31,15 @@ async function load(url: string): Promise<Document[]> {
   throw new Error(`Unsupported content-type for indexing: ${contentType}`);
 }
 
-const url = process.argv[2];
+const url = positionalArgs()[0];
 if (!url) {
-  throw new Error("Usage: bun run agents/ingest/url.ts <url>");
+  throw new Error(
+    "Usage: bun run agents/ingest/url.ts [--product <slug> | --profile <.sa/product.json>] <url>",
+  );
 }
+const product = await ingestProduct();
+const apiSpecStore = requiredCollection(product, "apiSpecCollection");
+console.log(`product ${product.slug} → ${apiSpecStore.collectionName}`);
 
 const chunks = await split(await load(url));
 const stored = await store(apiSpecStore, chunks);

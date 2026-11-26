@@ -37,15 +37,18 @@ async function chatRequest<T>(
 }
 
 export const chatService = {
-  list: async (cursor?: string): Promise<ChatThreadList> => {
-    const params = new URLSearchParams({ limit: "20" });
+  list: async (productId: string, cursor?: string): Promise<ChatThreadList> => {
+    const params = new URLSearchParams({ limit: "20", productId });
     if (cursor) params.set("cursor", cursor);
     const json = await chatRequest<ChatThread[]>(`/?${params.toString()}`);
     return { threads: json.data, nextCursor: json.nextCursor ?? null };
   },
 
-  create: async (): Promise<ChatThread> => {
-    const json = await chatRequest<ChatThread>("/", { method: "POST" });
+  create: async (productId: string): Promise<ChatThread> => {
+    const json = await chatRequest<ChatThread>("/", {
+      method: "POST",
+      body: JSON.stringify({ productId }),
+    });
     return json.data;
   },
 

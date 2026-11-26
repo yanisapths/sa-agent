@@ -7,6 +7,8 @@ export type ArtifactFileRow = {
   phase: string | null;
   name: string;
   current_version: number;
+  /** NULL = the virtual Default product. Absent before products.sql runs. */
+  product_id?: string | null;
   created_at: string;
   updated_at: string;
 };

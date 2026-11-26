@@ -58,6 +58,9 @@ export function KanbanCard({
           <h3 className="min-w-0 flex-1 text-sm font-semibold leading-snug text-foreground">
             {card.title}
           </h3>
+          <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted">
+            {card.track === "pvt" ? "PVT" : "SA"}
+          </span>
         </div>
         <p className="font-mono text-[11px] text-muted">
           {phaseLabel(card.phase)}

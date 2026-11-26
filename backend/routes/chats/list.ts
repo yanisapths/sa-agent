@@ -12,6 +12,7 @@ export const listThreadsHandler = async (
     const result = await listThreads(req.userId, {
       limit: queryNumber(req.query.limit, CHAT_LIST_PAGE_SIZE),
       cursor: queryString(req.query.cursor) || undefined,
+      productId: queryString(req.query.productId) || undefined,
     });
     return res.json({
       ok: true,

@@ -2,10 +2,12 @@
 
 import { useRef, useEffect, useState } from "react";
 import { Attachment, ChatInput } from "@/components/chat-input";
+import { useGateway } from "@/features/gateway/GatewayProvider";
 import { useChat } from "@/hooks/use-chat";
-import { useGatewayModels } from "@/hooks/use-gateway-models";
-import { useQuota } from "@/hooks/use-quota";
 import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
+import { GetStarted } from "@/features/onboarding/GetStarted";
+import { type EffectiveCapabilities } from "@/features/product/capabilities";
+import { useProduct } from "@/features/product/ProductProvider";
 import { Button } from "./ui/Button";
 import { Code, FileText, Search } from "lucide-react";
 import { motion } from "framer-motion";
@@ -32,21 +34,43 @@ const onboardingTags = [
   },
 ];
 
+function groundingLine(name: string | undefined, caps: EffectiveCapabilities): string {
+  const sources = [
+    caps.db === "on" ? "the live schema" : null,
+    caps.docs === "on" ? "Confluence docs" : null,
+    caps.repos === "on" ? "your repos" : null,
+  ].filter((item): item is string => item !== null);
+  const product = name ?? "this product";
+  if (sources.length === 0) {
+    return `Nothing is connected for ${product} yet, so answers are general.`;
+  }
+  const list =
+    sources.length === 1 ? sources[0] : `${sources.slice(0, -1).join(", ")} and ${sources.at(-1)}`;
+  return `Answers for ${product} are grounded in ${list}.`;
+}
+
+function ConnectionNotice({ text }: { text: string | null }) {
+  if (!text) return null;
+  return (
+    <p className="mx-auto mb-2 max-w-3xl text-center text-xs text-amber-700 dark:text-amber-400" role="status">
+      {text}
+    </p>
+  );
+}
+
 export function ChatInterface() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { messages, sendMessage, status, stop, approvePlan, submitFeedback } =
+  const { messages, sendMessage, status, stop, approvePlan, submitFeedback, connectionNotice } =
     useChat();
+  const { active, capabilities } = useProduct();
   const isLoading = isBusyStatus(status);
   const hasMessages = messages.length > 0;
   const lastMessage = messages.at(-1);
   const waitingForApproval =
     status === "waiting" && lastMessage?.role === "assistant";
-  const models = useGatewayModels();
-  const { refresh: refreshQuota } = useQuota();
+  const { models, model, setModel, refreshQuota } = useGateway();
   const { attached } = useWorkspace();
   const [input, setInput] = useState("");
-  /** `null` means the server's configured default. */
-  const [model, setModel] = useState<string | null>(null);
   /** Caveman is on until the human dismisses the chip. */
   const [caveman, setCaveman] = useState(true);
 
@@ -122,7 +146,7 @@ export function ChatInterface() {
                 Start with a question
               </h1>
               <p className="mt-2 text-sm text-muted">
-                Answers are grounded in the live schema and Confluence docs.{" "}
+                {groundingLine(active?.name, capabilities)}{" "}
                 <br />
                 Pick a starter, type{" "}
                 <span className="font-medium text-foreground">/</span> for a
@@ -130,6 +154,7 @@ export function ChatInterface() {
               </p>
             </div>
             <div className="w-full max-w-3xl mb-8">
+              <ConnectionNotice text={connectionNotice} />
               <ChatInput
                 onSend={handleSend}
                 isLoading={isLoading}
@@ -144,6 +169,8 @@ export function ChatInterface() {
                 onCavemanChange={setCaveman}
               />
             </div>
+
+            <GetStarted />
 
             <div className="flex flex-wrap justify-center gap-2">
               {onboardingTags.map((tag, i) => (
@@ -178,6 +205,7 @@ export function ChatInterface() {
               />
             </div>
           )}
+          <ConnectionNotice text={connectionNotice} />
           <ChatInput
             onSend={handleSend}
             isLoading={isLoading}

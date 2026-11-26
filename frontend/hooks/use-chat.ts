@@ -4,10 +4,14 @@ import { Attachment } from "@/components/chat-input";
 import { useChatSession } from "@/features/chat-session/ChatSessionProvider";
 import { useChatHistory } from "@/features/chats/ChatHistoryProvider";
 import { titleFromText } from "@/features/chats/types";
+import { canSendConnections, encodeConnectionsHeader } from "@/features/connections/store";
+import { markFirstMessage } from "@/features/onboarding/progress";
+import { useProduct } from "@/features/product/ProductProvider";
 import { type ChatUsage } from "@/features/gateway/types";
 import { type ChatArtifact as StoredArtifact } from "@/features/artifacts/types";
 import { AGENT_API, VAULT_TOKEN } from "@/lib/api";
 import { type ChatArtifact } from "@/lib/chat-response";
+import { CONNECTIONS_HEADER, type Connection } from "@/lib/connection";
 import {
   asFeedbackEvent,
   asUsage,
@@ -374,6 +378,20 @@ function authHeaders(): Headers {
   return headers;
 }
 
+const THREAD_PRODUCT_CONFLICT = /belongs to another product/i;
+const RECONNECT_TO_RESUME = /reconnect to resume/i;
+
+/** Status 409 bodies are small JSON; read a copy so the stream reader still gets the original. */
+async function conflictMessage(res: Response): Promise<string | null> {
+  if (res.status !== 409) return null;
+  try {
+    const json = (await res.clone().json()) as { error?: unknown };
+    return typeof json.error === "string" ? json.error : null;
+  } catch {
+    return null;
+  }
+}
+
 function patchAssistant(
   setMessages: Dispatch<SetStateAction<UIMessage[]>>,
   assistantId: string,
@@ -405,6 +423,9 @@ export const useChat = () => {
   const [pinnedPhase, setPinnedPhase] = useState<string | undefined>();
   const { setLive, settleTurn } = useChatSession();
   const { sessionLoad, touchThread } = useChatHistory();
+  const { activeId, connections, openDialog } = useProduct();
+  /** One-line warning about browser connections, shown above the input. */
+  const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const turnRef = useRef(0);
@@ -446,6 +467,37 @@ export const useChat = () => {
       });
     },
     [touchThread],
+  );
+
+  /**
+   * Adds the active product's browser connections. Plain HTTP to another
+   * machine would expose them, so they are left off with a warning instead.
+   */
+  const withConnections = useCallback(
+    (headers: Headers): Headers => {
+      const { state } = connections;
+      if (state.status === "locked") {
+        setConnectionNotice("Connections are locked. Unlock them to use this product's database and docs.");
+        return headers;
+      }
+      const list: Connection[] = state.status === "ready" ? state.connections : [];
+      if (list.length === 0) {
+        setConnectionNotice(null);
+        return headers;
+      }
+      if (!canSendConnections(AGENT_API)) {
+        setConnectionNotice("Connections not sent: the backend is not on localhost or HTTPS.");
+        return headers;
+      }
+      try {
+        headers.set(CONNECTIONS_HEADER, encodeConnectionsHeader(list));
+        setConnectionNotice(null);
+      } catch (err: unknown) {
+        setConnectionNotice(err instanceof Error ? err.message : "Connections not sent.");
+      }
+      return headers;
+    },
+    [connections],
   );
 
   const stop = useCallback(() => {
@@ -745,15 +797,23 @@ export const useChat = () => {
       if (phase) formData.append("phase", phase);
       formData.append("style", style ?? "caveman");
       if (workspaceId) formData.append("workspaceId", workspaceId);
+      formData.append("productId", activeId);
 
       const res = await fetch(`${AGENT_API}/chat`, {
         method: "POST",
-        headers: authHeaders(),
+        headers: withConnections(authHeaders()),
         body: formData,
         signal: abort.signal,
       });
 
+      const conflict = await conflictMessage(res);
       const outcome = await consumeStream(res, assistantId, turn, phase);
+      if (conflict && THREAD_PRODUCT_CONFLICT.test(conflict)) {
+        // The next message starts a new thread under the active product.
+        threadRef.current = null;
+        setThreadId(null);
+      }
+      if (outcome === "done") markFirstMessage();
       if (outcome !== "waiting") onSettled?.();
     } catch (err) {
       if (isAbortError(err)) return;
@@ -785,6 +845,7 @@ export const useChat = () => {
     const assistantId = assistantIdRef.current;
     const currentThread = threadRef.current ?? threadId;
     if (!assistantId || !currentThread) return;
+    const pending = messages.find((item) => item.id === assistantId)?.interrupt;
 
     turnRef.current += 1;
     const turn = turnRef.current;
@@ -803,10 +864,20 @@ export const useChat = () => {
       headers.set("Content-Type", "application/json");
       const res = await fetch(`${AGENT_API}/chat/resume`, {
         method: "POST",
-        headers,
+        headers: withConnections(headers),
         body: JSON.stringify({ threadId: currentThread, decisions }),
         signal: abort.signal,
       });
+      const conflict = await conflictMessage(res);
+      if (conflict && RECONNECT_TO_RESUME.test(conflict)) {
+        // The turn is still paused on the server: put the plan back and ask for the connections.
+        patchAssistant(setMessages, assistantId, { interrupt: pending });
+        setStatus("waiting");
+        setLive({ status: "waiting", threadId: currentThread, phase: phaseRef.current ?? null });
+        setConnectionNotice("This turn needs the product's connections. Unlock or reconnect, then approve again.");
+        openDialog("connections");
+        return;
+      }
       const outcome = await consumeStream(res, assistantId, turn, phaseRef.current);
       if (outcome !== "waiting") onSettledRef.current?.();
     } catch (err) {
@@ -882,6 +953,7 @@ export const useChat = () => {
     busy: isBusyStatus(status),
     threadId,
     reset,
+    connectionNotice,
   };
 };
 
