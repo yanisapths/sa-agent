@@ -37,8 +37,16 @@ export async function assertEmbeddingDimension(): Promise<void> {
   return dimensionCheck;
 }
 
-function collection(name: string): Chroma {
-  return new Chroma(embeddings, {
+/**
+ * Memoized by collection name. The Chroma tenant, key and embeddings are
+ * shared; only the collection differs per product.
+ */
+const collections = new Map<string, Chroma>();
+
+export function collection(name: string): Chroma {
+  const cached = collections.get(name);
+  if (cached) return cached;
+  const store = new Chroma(embeddings, {
     collectionName: name,
     chromaCloudAPIKey: config.chroma.apiKey,
     clientParams: {
@@ -49,10 +57,43 @@ function collection(name: string): Chroma {
       database: config.chroma.database,
     },
   });
+  collections.set(name, store);
+  return store;
 }
 
-/** Confluence API specifications and internal knowledge. */
-export const apiSpecStore = collection(config.chroma.apiSpecCollection);
+export type ProductStores = {
+  /** Confluence API specifications and internal knowledge. */
+  apiSpec?: Chroma;
+  /** Indexed DDL / schema documentation. */
+  ddl?: Chroma;
+};
 
-/** Indexed DDL / schema documentation. */
-export const ddlStore = collection(config.chroma.ddlCollection);
+export function storesFor(index: {
+  apiSpecCollection?: string;
+  ddlCollection?: string;
+}): ProductStores {
+  return {
+    ...(index.apiSpecCollection ? { apiSpec: collection(index.apiSpecCollection) } : {}),
+    ...(index.ddlCollection ? { ddl: collection(index.ddlCollection) } : {}),
+  };
+}
+
+/** Document count per configured collection, for the connection test. */
+export async function collectionCounts(index: {
+  apiSpecCollection?: string;
+  ddlCollection?: string;
+}): Promise<{ name: string; count: number | null; error?: string }[]> {
+  const names = [index.apiSpecCollection, index.ddlCollection].filter(
+    (name): name is string => Boolean(name),
+  );
+  return Promise.all(
+    names.map(async (name) => {
+      try {
+        const handle = await collection(name).ensureCollection();
+        return { name, count: await handle.count() };
+      } catch (err) {
+        return { name, count: null, error: err instanceof Error ? err.message : String(err) };
+      }
+    }),
+  );
+}

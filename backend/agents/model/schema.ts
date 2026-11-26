@@ -7,8 +7,7 @@
  * promoted into a node — that is the "never invent a table" rule, enforced
  * rather than asked for.
  */
-import { config } from "../../config";
-import { readOnlyQuery } from "../../database/postgres";
+import { currentSchema, readOnlyQuery } from "../../database/postgres";
 import type { ModelEdge, ModelNode } from "./types";
 
 export function tableId(name: string): string {
@@ -51,7 +50,7 @@ interface FkRow extends Record<string, unknown> {
  * partial model beats no model when someone is offline.
  */
 export async function scanSchema(): Promise<SchemaResult> {
-  const schema = config.postgres.schema;
+  const schema = currentSchema();
 
   let columns: ColumnRow[];
   let fks: FkRow[];

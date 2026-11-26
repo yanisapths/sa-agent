@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { useProduct } from "@/features/product/ProductProvider";
+
 import { workspaceService } from "./service";
 import { type WorkspaceMention } from "./types";
 
@@ -10,6 +12,7 @@ import { type WorkspaceMention } from "./types";
  * A full repo is never preloaded.
  */
 export function useWorkspaceMentions(query: string | null): WorkspaceMention[] {
+  const { activeId } = useProduct();
   const [mentions, setMentions] = useState<WorkspaceMention[]>([]);
 
   useEffect(() => {
@@ -17,7 +20,7 @@ export function useWorkspaceMentions(query: string | null): WorkspaceMention[] {
     const q = query ?? "";
     const handle = window.setTimeout(() => {
       void workspaceService
-        .listMentions(q)
+        .listMentions(q, activeId)
         .then((data) => {
           if (!cancelled) setMentions(data);
         })
@@ -30,7 +33,7 @@ export function useWorkspaceMentions(query: string | null): WorkspaceMention[] {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [query]);
+  }, [query, activeId]);
 
   return mentions;
 }

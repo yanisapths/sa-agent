@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { useChatSession } from "@/features/chat-session/ChatSessionProvider";
 import { artifactService } from "@/features/artifacts/service";
 import { type ArtifactFile } from "@/features/artifacts/types";
-import { cn } from "@/lib/utils";
+import { useProduct } from "@/features/product/ProductProvider";
 import { Volume2, VolumeX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -48,7 +48,8 @@ function fallbackTitle(threadId: string, phase: string | null): string {
 export function Workflow() {
   const router = useRouter();
   const { session, soundsMuted, setSoundsMuted } = useChatSession();
-  const [track, setTrack] = useState<WorkflowTrack>("sa");
+  const { activeId } = useProduct();
+  const [trackFilter, setTrackFilter] = useState<WorkflowTrack | "all">("all");
   const [files, setFiles] = useState<ArtifactFile[]>([]);
   const [titles, setTitles] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
@@ -59,7 +60,7 @@ export function Workflow() {
   useEffect(() => {
     let cancelled = false;
     void artifactService
-      .listFiles()
+      .listFiles({ productId: activeId })
       .then((data) => {
         if (cancelled) return;
         setFiles(data);
@@ -74,7 +75,7 @@ export function Workflow() {
     return () => {
       cancelled = true;
     };
-  }, [session.settledAt]);
+  }, [session.settledAt, activeId]);
 
   useEffect(() => {
     const latest = latestByThread(files);
@@ -151,11 +152,11 @@ export function Workflow() {
     }
 
     return [...byThread.values()]
-      .filter((card) => card.track === track)
+      .filter((card) => trackFilter === "all" || card.track === trackFilter)
       .sort(
         (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
       );
-  }, [files, titles, session, track]);
+  }, [files, titles, session, trackFilter]);
 
   const openChat = () => {
     router.push("/");
@@ -188,27 +189,18 @@ export function Workflow() {
             yourself — the agent does not commit.
           </p>
         </div>
-        <div
-          className="flex rounded-xl border border-border p-0.5"
-          role="group"
-          aria-label="Workflow track"
-        >
-          {(["sa", "pvt"] as const).map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setTrack(item)}
-              className={cn(
-                "cursor-pointer rounded-lg px-3 py-1.5 text-xs font-medium",
-                track === item
-                  ? "bg-muted/15 text-foreground"
-                  : "text-muted hover:text-foreground",
-              )}
-            >
-              {item === "sa" ? "SA" : "PVT"}
-            </button>
-          ))}
-        </div>
+        <label className="flex items-center gap-2 text-xs text-muted">
+          Track
+          <select
+            value={trackFilter}
+            onChange={(event) => setTrackFilter(event.target.value as WorkflowTrack | "all")}
+            className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground"
+          >
+            <option value="all">All</option>
+            <option value="sa">SA</option>
+            <option value="pvt">PVT</option>
+          </select>
+        </label>
         <Button
           type="button"
           variant="icon"

@@ -1,10 +1,24 @@
 import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
 import { errorMessageOf, HttpError } from "../internal/httpError";
+import {
+  CONNECTIONS_HEADER,
+  parseConnections,
+  scrubSecrets,
+} from "../internal/product/connections";
+
+/** A driver error can echo the user's connection string; scrub with the request's own connections. */
+function scrubbed(req: Request, message: string): string {
+  try {
+    return scrubSecrets(message, parseConnections(req.headers[CONNECTIONS_HEADER]));
+  } catch {
+    return scrubSecrets(message, []);
+  }
+}
 
 export function errorHandler(
   err: unknown,
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction,
 ): void {
@@ -19,9 +33,9 @@ export function errorHandler(
   }
 
   if (err instanceof HttpError) {
-    res.status(err.status).json({ ok: false, error: err.message });
+    res.status(err.status).json({ ok: false, error: scrubbed(req, err.message) });
     return;
   }
 
-  res.status(500).json({ ok: false, error: errorMessageOf(err) });
+  res.status(500).json({ ok: false, error: scrubbed(req, errorMessageOf(err)) });
 }

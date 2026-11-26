@@ -1,10 +1,9 @@
 /** Indexes Confluence API specification pages into the knowledge base. */
 import { ConfluencePagesLoader } from "@langchain/community/document_loaders/web/confluence";
 import type { Document } from "@langchain/core/documents";
-import {
-  apiSpecStore,
-  assertEmbeddingDimension,
-} from "../../database/chroma";
+import { assertEmbeddingDimension } from "../../database/chroma";
+import type { ResolvedProduct } from "../../internal/product/types";
+import { ingestConfluenceSource, ingestProduct, requiredCollection } from "./product";
 import {
   isApiSpecTitle,
   parseConfluenceToDocuments,
@@ -14,33 +13,32 @@ import { split, store } from "./store";
 /** Confluence Cloud caps this at 200; larger values are silently truncated. */
 const PAGE_LIMIT = 200;
 
-function createLoader(): ConfluencePagesLoader {
-  const baseUrl = process.env.CONFLUENCE_BASE_URL;
-  const spaceKey = process.env.CONFLUENCE_SPACE_KEY;
-  if (!baseUrl || !spaceKey) {
-    throw new Error("Missing CONFLUENCE_BASE_URL or CONFLUENCE_SPACE_KEY");
-  }
+function createLoader(product: ResolvedProduct): ConfluencePagesLoader {
+  const source = ingestConfluenceSource(product);
+  const { baseUrl, spaceKey } = source;
 
-  const username = process.env.CONFLUENCE_USERNAME;
-  const accessToken = process.env.CONFLUENCE_ACCESS_TOKEN;
-  if (username && accessToken) {
+  if (source.username && source.accessToken) {
     return new ConfluencePagesLoader({
       baseUrl,
       spaceKey,
-      username,
-      accessToken,
+      username: source.username,
+      accessToken: source.accessToken,
       limit: PAGE_LIMIT,
     });
   }
 
-  const personalAccessToken = process.env.CONFLUENCE_PAT;
-  if (personalAccessToken) {
+  if (source.personalAccessToken) {
     return new ConfluencePagesLoader({
       baseUrl,
       spaceKey,
-      personalAccessToken,
+      personalAccessToken: source.personalAccessToken,
       limit: PAGE_LIMIT,
     });
+  }
+
+  if (!product.isDefault) {
+    console.log("no token for this product's space — ingesting anonymously");
+    return new ConfluencePagesLoader({ baseUrl, spaceKey, limit: PAGE_LIMIT });
   }
 
   throw new Error(
@@ -49,9 +47,12 @@ function createLoader(): ConfluencePagesLoader {
 }
 
 async function main(): Promise<void> {
+  const product = await ingestProduct();
+  const apiSpecStore = requiredCollection(product, "apiSpecCollection");
+  console.log(`product ${product.slug} → ${apiSpecStore.collectionName}`);
   await assertEmbeddingDimension();
 
-  const pages = await createLoader().load();
+  const pages = await createLoader(product).load();
   console.log(`loaded ${pages.length} pages`);
 
   const specPages = pages.filter((page) =>

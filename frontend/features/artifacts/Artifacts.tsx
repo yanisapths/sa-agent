@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useProduct } from "@/features/product/ProductProvider";
 
 import { artifactService, triggerBlobDownload } from "./service";
 import {
@@ -45,6 +46,7 @@ function isMarkdownFile(name: string, mimeType?: string): boolean {
 }
 
 export function Artifacts() {
+  const { activeId } = useProduct();
   const [files, setFiles] = useState<ArtifactFile[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [previewVersion, setPreviewVersion] = useState<number | null>(null);
@@ -74,7 +76,7 @@ export function Artifacts() {
   const selected = files.find((file) => file.id === selectedId);
 
   const loadFiles = async (preferId?: string) => {
-    const data = await artifactService.listFiles();
+    const data = await artifactService.listFiles({ productId: activeId });
     setFiles(data);
     setSelectedId((current) => {
       const next = preferId || current;
@@ -91,7 +93,7 @@ export function Artifacts() {
         ? new URLSearchParams(window.location.search).get("file")
         : null;
     void artifactService
-      .listFiles()
+      .listFiles({ productId: activeId })
       .then((data) => {
         if (cancelled) return;
         setFiles(data);
@@ -112,7 +114,7 @@ export function Artifacts() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeId]);
 
   useEffect(() => {
     if (!selectedId) {

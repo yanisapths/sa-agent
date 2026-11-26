@@ -1,5 +1,12 @@
 import type { FilesystemPermission, SubAgent } from "deepagents";
 import { config } from "../config";
+import type { ModelPhase } from "../contract/product";
+import {
+  ALL_CAPABILITIES,
+  capabilityNote,
+  grantedTools,
+} from "../internal/product/capabilities";
+import type { ProductCapabilities } from "../internal/product/types";
 import { guardrailsForModel } from "./guardrail/guardrail";
 import { AGENT_INTERRUPT_ON } from "./interrupt-on";
 import { normalizeVirtualFsPaths } from "./middleware/normalize-virtual-fs-paths";
@@ -84,7 +91,10 @@ const WORKSPACE_WRITE = ["workspace_write"] as const satisfies readonly ToolName
 export interface PhaseContract {
   /** `task` tool name. `ship` has no specialist — a human closes git. */
   owner: string | null;
+  /** Env default. Read through `modelFor` so a product's model defaults win. */
   model: string | null;
+  /** Key into `config.model` and `product.models`. */
+  modelKey: ModelPhase | null;
   /** Human must approve before the next `task` call. */
   gate: "human";
   receives: string;
@@ -101,6 +111,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
   discuss: {
     owner: "discuss",
     model: config.model.discuss,
+    modelKey: "discuss",
     gate: "human",
     receives:
       "user request, optional ticket key, index hits, live schema orientation",
@@ -115,6 +126,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
   plan: {
     owner: "plan",
     model: config.model.plan,
+    modelKey: "plan",
     gate: "human",
     receives: `${ARTIFACT.discuss} (approved) + index conventions`,
     produces: `${ARTIFACT.plan} — spec, Mermaid flow, step list for execute`,
@@ -128,6 +140,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
   execute: {
     owner: "execute",
     model: config.model.execute,
+    modelKey: "execute",
     gate: "human",
     receives: `${ARTIFACT.plan} (approved)`,
     produces: `${ARTIFACT.execute} — what changed, files, residual risks`,
@@ -151,6 +164,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
   test: {
     owner: "test",
     model: config.model.test,
+    modelKey: "test",
     gate: "human",
     receives: `${ARTIFACT.discuss} + ${ARTIFACT.plan} + ${ARTIFACT.execute}`,
     produces: `${ARTIFACT.test} — cases, fixtures, quiz of the spec, gaps`,
@@ -163,6 +177,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
   review: {
     owner: "review",
     model: config.model.review,
+    modelKey: "review",
     gate: "human",
     receives: `${ARTIFACT.plan} + ${ARTIFACT.execute} + ${ARTIFACT.test}`,
     produces: `${ARTIFACT.review} — findings, required refactors, ship-ready or not`,
@@ -180,6 +195,7 @@ export const PHASE: Record<Phase, PhaseContract> = {
   ship: {
     owner: null,
     model: null,
+    modelKey: null,
     gate: "human",
     receives: `${ARTIFACT.review} accepted`,
     produces: "commit / PR — the agent does not ship",
@@ -198,6 +214,7 @@ export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
   "pvt-discuss": {
     owner: "pvt-discuss",
     model: config.model.pvtDiscuss,
+    modelKey: "pvtDiscuss",
     gate: "human",
     receives: `PVT requirements, the case list at ${ARTIFACT.pvtCasesJson} (from the CSV at ${ARTIFACT.pvtCases}, or a named story), live schema`,
     produces: `${ARTIFACT.pvtDiscuss} — case inventory, tables touched, unrunnable cases, questions`,
@@ -211,6 +228,7 @@ export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
   "pvt-plan": {
     owner: "pvt-plan",
     model: config.model.pvtPlan,
+    modelKey: "pvtPlan",
     gate: "human",
     receives: `${ARTIFACT.pvtDiscuss} (approved)`,
     produces: `${ARTIFACT.pvtPlan} — scenario groups, script set, pre-window vs in-window split, impact`,
@@ -224,6 +242,7 @@ export const PVT_PHASE: Record<PvtPhase, PhaseContract> = {
   "pvt-execute": {
     owner: "pvt-execute",
     model: config.model.pvtExecute,
+    modelKey: "pvtExecute",
     gate: "human",
     receives: `${ARTIFACT.pvtPlan} (approved)`,
     produces: `${ARTIFACT.pvtExecute} — the numbered script set, run order, owners`,
@@ -272,6 +291,31 @@ export const ORCHESTRATOR_TOOLS = [
   "workspace_grep",
 ] as const satisfies readonly ToolName[];
 
+/** The ceiling above, minus what this product cannot back. */
+export function orchestratorTools(caps: ProductCapabilities = ALL_CAPABILITIES): ToolName[] {
+  return grantedTools(ORCHESTRATOR_TOOLS, caps);
+}
+
+/**
+ * What the harness needs from the active product. Secret-free, so it is safe
+ * in an agent cache key; tools read credentials from AsyncLocalStorage.
+ */
+export interface HarnessProfile {
+  caps: ProductCapabilities;
+  models: Partial<Record<ModelPhase, string>>;
+}
+
+export const DEFAULT_HARNESS: HarnessProfile = { caps: ALL_CAPABILITIES, models: {} };
+
+/** GUI picker override > product default > `AGENT_<PHASE>_MODEL` > built-in default. */
+export function modelFor(
+  key: ModelPhase,
+  profile: HarnessProfile = DEFAULT_HARNESS,
+  override?: string,
+): string {
+  return override ?? profile.models[key] ?? config.model[key];
+}
+
 /**
  * `modelOverride` is the model the human picked in the GUI for this request. It
  * wins over the phase's env-configured default, because the router only
@@ -309,16 +353,20 @@ function specialist(
   row: PhaseContract,
   description: string,
   systemPrompt: string,
-  modelOverride?: string,
+  modelOverride: string | undefined,
+  profile: HarnessProfile,
 ): SubAgent {
   const canWriteProduct = row.tools.includes("workspace_write");
-  const model = resolveModel(modelOverride ?? (row.model as string));
+  const model = resolveModel(
+    row.modelKey ? modelFor(row.modelKey, profile, modelOverride) : (modelOverride ?? (row.model as string)),
+  );
+  const note = capabilityNote(profile.caps);
   return {
     name: row.owner as string,
     description,
-    systemPrompt,
+    systemPrompt: note ? `${systemPrompt}\n\n${note}` : systemPrompt,
     model,
-    tools: resolveTools(row.tools) as NonNullable<SubAgent["tools"]>,
+    tools: resolveTools(grantedTools(row.tools, profile.caps)) as NonNullable<SubAgent["tools"]>,
     skills: skillSources(row.skills),
     permissions: canWriteProduct ? PRODUCT_WRITES : ARTIFACT_WRITES,
     interruptOn: AGENT_INTERRUPT_ON,
@@ -334,8 +382,17 @@ function contractForOwner(owner: string): PhaseContract {
   return row;
 }
 
-export function harnessSubagents(modelOverride?: string): SubAgent[] {
+export function harnessSubagents(
+  modelOverride?: string,
+  profile: HarnessProfile = DEFAULT_HARNESS,
+): SubAgent[] {
   return Object.values(SPECIALISTS).map((spec) =>
-    specialist(contractForOwner(spec.owner), spec.description, spec.systemPrompt, modelOverride),
+    specialist(
+      contractForOwner(spec.owner),
+      spec.description,
+      spec.systemPrompt,
+      modelOverride,
+      profile,
+    ),
   );
 }

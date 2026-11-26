@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,39}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "db": {
+      "type": "object",
+      "properties": {
+        "urlEnv": {
+          "type": "string",
+          "pattern": "^SA_PRODUCT_[A-Z0-9_]+$"
+        },
+        "schema": {
+          "default": "public",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "urlEnv"
+      ]
+    },
+    "docs": {
+      "default": {
+        "provider": "none"
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "const": "confluence"
+            },
+            "spaceKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "baseUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "siteUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "usernameEnv": {
+              "type": "string",
+              "pattern": "^SA_PRODUCT_[A-Z0-9_]+$"
+            },
+            "tokenEnv": {
+              "type": "string",
+              "pattern": "^SA_PRODUCT_[A-Z0-9_]+$"
+            }
+          },
+          "required": [
+            "provider",
+            "spaceKey"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "const": "none"
+            }
+          },
+          "required": [
+            "provider"
+          ]
+        }
+      ]
+    },
+    "index": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "apiSpecCollection": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ddlCollection": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "models": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "enum": [
+          "orchestrator",
+          "discuss",
+          "plan",
+          "execute",
+          "test",
+          "review",
+          "pvtDiscuss",
+          "pvtPlan",
+          "pvtExecute"
+        ]
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "id",
+    "name"
+  ],
+  "title": "SA Agent product profile"
+}

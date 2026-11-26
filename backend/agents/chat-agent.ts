@@ -1,8 +1,10 @@
-import { config } from "../config";
 import { defineChatAgent } from "./builder";
-import { CHAT_AGENT_PROMPT } from "./prompt";
+import { DEFAULT_HARNESS, modelFor, type HarnessProfile } from "./harness";
+import { chatAgentPrompt } from "./prompt";
+import { harnessKey } from "./sa-agent";
 import { loadSkillBody } from "./skill";
 import type { ToolName } from "./tools";
+import { grantedTools } from "../internal/product/capabilities";
 
 /** Lookups: product docs, live schema, web, Jira. Execution: sandbox. No filesystem, no specialists. */
 export const CHAT_TOOLS = [
@@ -21,12 +23,12 @@ export const CHAT_TOOLS = [
   "sandbox_exec",
 ] as const satisfies readonly ToolName[];
 
-function build(modelId: string | undefined) {
+function build(modelId: string | undefined, profile: HarnessProfile) {
   return defineChatAgent({
     name: "sa-chat",
-    model: modelId ?? config.model.orchestrator,
-    systemPrompt: `${CHAT_AGENT_PROMPT}\n\n${loadSkillBody("chat")}`,
-    tools: CHAT_TOOLS,
+    model: modelFor("orchestrator", profile, modelId),
+    systemPrompt: `${chatAgentPrompt(profile.caps)}\n\n${loadSkillBody("chat")}`,
+    tools: grantedTools(CHAT_TOOLS, profile.caps),
     skills: [],
     memory: false,
   });
@@ -34,12 +36,15 @@ function build(modelId: string | undefined) {
 
 const agents = new Map<string, ReturnType<typeof build>>();
 
-export function chatAgentFor(modelId?: string): ReturnType<typeof build> {
-  const key = modelId ?? "";
+export function chatAgentFor(
+  modelId?: string,
+  profile: HarnessProfile = DEFAULT_HARNESS,
+): ReturnType<typeof build> {
+  const key = harnessKey(modelId, profile);
   const cached = agents.get(key);
   if (cached) return cached;
 
-  const agent = build(modelId);
+  const agent = build(modelId, profile);
   agents.set(key, agent);
   return agent;
 }

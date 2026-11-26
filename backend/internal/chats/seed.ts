@@ -2,6 +2,7 @@ import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { agentFor } from "../../agents";
 import { chatAgentFor } from "../../agents/chat-agent";
 import type { AgentKind } from "../../agents/route";
+import type { HarnessProfile } from "../../agents/harness";
 import { listMessages, seedTextFor } from "./service";
 
 function checkpointHasMessages(values: unknown): boolean {
@@ -9,8 +10,8 @@ function checkpointHasMessages(values: unknown): boolean {
   return Array.isArray(messages) && messages.length > 0;
 }
 
-function checkpointApi(kind: AgentKind | undefined, model?: string) {
-  const agent = kind === "chat" ? chatAgentFor(model) : agentFor(model);
+function checkpointApi(kind: AgentKind | undefined, model?: string, profile?: HarnessProfile) {
+  const agent = kind === "chat" ? chatAgentFor(model, profile) : agentFor(model, profile);
   const graph = "graph" in agent && agent.graph ? agent.graph : agent;
   return graph as {
     getState: (config: { configurable: { thread_id: string } }) => Promise<{ values?: unknown }>;
@@ -30,11 +31,12 @@ export async function seedCheckpointIfEmpty(opts: {
   threadId: string;
   model?: string;
   kind?: AgentKind;
+  profile?: HarnessProfile;
 }): Promise<void> {
   if (opts.kind === "plain") return;
   if (!opts.userId) return;
   try {
-    const agent = checkpointApi(opts.kind, opts.model);
+    const agent = checkpointApi(opts.kind, opts.model, opts.profile);
     const snapshot = await agent.getState({
       configurable: { thread_id: opts.threadId },
     });

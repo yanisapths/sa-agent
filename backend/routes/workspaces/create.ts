@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { assertProductOwner } from "../../internal/product/service";
 import {
   createWorkspace,
   parseCreateWorkspaceInput,
@@ -11,6 +12,7 @@ export const createWorkspaceHandler = async (
 ) => {
   try {
     const input = parseCreateWorkspaceInput(req.body);
+    await assertProductOwner(req.userId, input.productId);
     const data = await createWorkspace(req.userId, input);
     return res.status(201).json({ ok: true, data });
   } catch (err) {

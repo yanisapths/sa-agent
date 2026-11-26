@@ -1,8 +1,9 @@
-import { ddlStore } from "../../../database/chroma";
+import { storesFor } from "../../../database/chroma";
+import { currentProduct } from "../../../internal/product/runtime";
+import { docsProviderFor } from "../../docs";
 import { orToolError } from "../errors";
-import { readConfluenceMcp, searchConfluenceMcp } from "./confluence";
 
-const DOCS = "Confluence documentation";
+const DOCS = "This product's documentation";
 const SCHEMA_DOCS = "The indexed schema documentation";
 
 function join(docs: { pageContent: string }[]): string {
@@ -16,7 +17,7 @@ export async function searchDocs(
 ): Promise<string> {
   return orToolError(DOCS, async () => {
     const size = Math.min(10, Math.max(1, pageSize));
-    return searchConfluenceMcp(query, size);
+    return docsProviderFor(currentProduct()).search(query, size);
   });
 }
 
@@ -26,7 +27,7 @@ export async function getDocPage(paths: string[]): Promise<string> {
     if (unique.length === 0) {
       return "get_doc_page requires at least one page id or URL from search_docs.";
     }
-    return readConfluenceMcp(unique.slice(0, 8));
+    return docsProviderFor(currentProduct()).fetch(unique.slice(0, 8));
   });
 }
 
@@ -34,7 +35,10 @@ export async function searchSchemaDocs(
   query: string,
   limit = 5,
 ): Promise<string> {
-  return orToolError(SCHEMA_DOCS, async () =>
-    join(await ddlStore.similaritySearch(query, limit)),
-  );
+  return orToolError(SCHEMA_DOCS, async () => {
+    const product = currentProduct();
+    const { ddl } = storesFor(product.index);
+    if (!ddl) return `Product "${product.name}" has no schema index configured.`;
+    return join(await ddl.similaritySearch(query, limit));
+  });
 }

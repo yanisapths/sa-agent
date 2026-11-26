@@ -30,6 +30,12 @@ import { executionMaxMs, executionTimeoutMs } from "./run-context";
 import { invokePlainTurn, streamPlainTurn } from "./plain";
 import type { ChatActionRequest } from "./events";
 import { withToolEventEmitter, type ToolEventEmitter } from "./tool-context";
+import type { Connection } from "../../contract/connection";
+import type { HarnessProfile } from "../../agents/harness";
+import { capabilitiesOf } from "../product/capabilities";
+import { withConnections } from "../product/connections";
+import { withProduct } from "../product/runtime";
+import type { ResolvedProduct } from "../product/types";
 
 export interface AgentRunConfig {
   threadId: string;
@@ -43,6 +49,8 @@ export interface AgentRunConfig {
   workspaceId?: string;
   workspaceRoot?: string;
   vaultMount?: VaultMount;
+  /** The active product. Public metadata and env-var names only. */
+  product: ResolvedProduct;
   collector: UsageCollector;
   startedAt: number;
   /** LangSmith root span for this user-visible turn. */
@@ -50,8 +58,25 @@ export interface AgentRunConfig {
   claimRoot?: boolean;
 }
 
-function agentForRun(run: AgentRunConfig) {
-  return run.kind === "chat" ? chatAgentFor(run.model) : agentFor(run.model);
+/**
+ * Connections are passed per segment, never stored on the run: a paused HITL
+ * run is held for 30 minutes and must not hold the user's credentials.
+ */
+export function harnessProfileFor(
+  run: Pick<AgentRunConfig, "product" | "workspaceRoot">,
+  connections: readonly Connection[],
+): HarnessProfile {
+  return {
+    caps: capabilitiesOf(run.product, { attachedRoot: run.workspaceRoot, connections }),
+    models: run.product.models,
+  };
+}
+
+function agentForRun(run: AgentRunConfig, connections: readonly Connection[]) {
+  const profile = harnessProfileFor(run, connections);
+  return run.kind === "chat"
+    ? chatAgentFor(run.model, profile)
+    : agentFor(run.model, profile);
 }
 
 /**
@@ -102,6 +127,7 @@ function tracingFields(run: AgentRunConfig): Record<string, unknown> {
     metadata: {
       thread_id: run.threadId,
       agent_kind: run.kind ?? "deep",
+      product: run.product.slug,
     },
   };
 }
@@ -115,6 +141,7 @@ function invokeConfig(
     configurable: {
       thread_id: run.threadId,
       userId: run.userId,
+      productId: run.product.id,
       ...(run.workspaceId
         ? { workspaceId: run.workspaceId, workspaceRoot: run.workspaceRoot }
         : {}),
@@ -135,11 +162,16 @@ function recursionLimitFor(kind: AgentKind | undefined): number {
 
 function withMounts<T>(
   run: AgentRunConfig,
+  connections: readonly Connection[],
   fn: () => Promise<T>,
 ): Promise<T> {
   return withLlmSession(run.threadId, () =>
-    withWorkspaceRoot(run.workspaceRoot, () =>
-      withVaultMount(run.vaultMount, fn),
+    withProduct(run.product, () =>
+      withConnections(connections, () =>
+        withWorkspaceRoot(run.workspaceRoot, () =>
+          withVaultMount(run.vaultMount, fn),
+        ),
+      ),
     ),
   );
 }
@@ -162,6 +194,7 @@ function toActionRequests(
 export async function streamAgentTurn(opts: {
   input: unknown;
   run: AgentRunConfig;
+  connections?: readonly Connection[];
   signal: AbortSignal;
   emit: (event: ChatSseEvent) => void;
   onProgress?: () => void;
@@ -169,7 +202,8 @@ export async function streamAgentTurn(opts: {
   if (opts.run.kind === "plain") {
     return streamPlainTurn(opts);
   }
-  const agent = agentForRun(opts.run);
+  const connections = opts.connections ?? [];
+  const agent = agentForRun(opts.run, connections);
   const mapper = createStreamMapper();
   const cfg = invokeConfig(opts.run, opts.signal, opts.onProgress);
   opts.run.claimRoot = false;
@@ -185,7 +219,7 @@ export async function streamAgentTurn(opts: {
   };
 
   try {
-    await withMounts(opts.run, async () => {
+    await withMounts(opts.run, connections, async () => {
       await withToolEventEmitter(toolEmitter, async () => {
         const stream = await agent.stream(inputWithStyle(opts.input, opts.run) as never, {
           ...cfg,
@@ -236,14 +270,16 @@ export async function finishTurn(opts: {
   artifacts: unknown[];
   feedback: ChatFeedback | null;
 }> {
-  const artifacts = await persistTurnArtifacts({
-    userId: opts.run.userId,
-    threadId: opts.run.threadId,
-    phase: opts.run.phase,
-    result: opts.values,
-    startedAt: opts.run.startedAt,
-    vaultMount: opts.run.vaultMount,
-  });
+  const artifacts = await withProduct(opts.run.product, () =>
+    persistTurnArtifacts({
+      userId: opts.run.userId,
+      threadId: opts.run.threadId,
+      phase: opts.run.phase,
+      result: opts.values,
+      startedAt: opts.run.startedAt,
+      vaultMount: opts.run.vaultMount,
+    }),
+  );
   if (opts.emit) opts.emit(valuesEvent(opts.values, artifacts));
   const { type, data } = artifactFromState(opts.values);
   const feedback = await mintFeedbackUrls(opts.run.runId, opts.run.threadId);
@@ -267,6 +303,7 @@ export async function finishTurn(opts: {
 export async function invokeAgentTurn(opts: {
   input: unknown;
   run: AgentRunConfig;
+  connections?: readonly Connection[];
   signal: AbortSignal;
   onProgress?: () => void;
 }): Promise<{
@@ -281,7 +318,8 @@ export async function invokeAgentTurn(opts: {
     const finished = await finishTurn({ run: opts.run, values: result.values });
     return { ...finished, values: result.values };
   }
-  const agent = agentForRun(opts.run);
+  const connections = opts.connections ?? [];
+  const agent = agentForRun(opts.run, connections);
   const cfg = invokeConfig(opts.run, opts.signal, opts.onProgress);
   opts.run.claimRoot = false;
   let next: unknown = inputWithStyle(opts.input, opts.run);
@@ -290,7 +328,7 @@ export async function invokeAgentTurn(opts: {
   try {
     for (let hop = 0; hop < 16; hop++) {
       opts.onProgress?.();
-      result = await withMounts(opts.run, () =>
+      result = await withMounts(opts.run, connections, () =>
         agent.invoke(next as never, cfg),
       );
       delete cfg.runId;

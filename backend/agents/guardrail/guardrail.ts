@@ -1,4 +1,5 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { currentConnections, secretValues } from "../../internal/product/connections";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import {
   createMiddleware,
@@ -72,9 +73,44 @@ function isUnsafeVerdict(content: unknown): boolean {
   return first.toUpperCase() === "UNSAFE";
 }
 
+/**
+ * Guardrails are built once per model, so the request's credentials are read
+ * from AsyncLocalStorage when the hook runs, never captured at build time.
+ */
+export function connectionSecretMatches(
+  content: string,
+  secrets: readonly string[] = secretValues(currentConnections()),
+): { text: string; start: number; end: number }[] {
+  const matches: { text: string; start: number; end: number }[] = [];
+  for (const secret of secrets) {
+    let from = 0;
+    for (;;) {
+      const start = content.indexOf(secret, from);
+      if (start === -1) break;
+      matches.push({ text: secret, start, end: start + secret.length });
+      from = start + secret.length;
+    }
+  }
+  matches.sort((a, b) => a.start - b.start || b.end - a.end);
+  // A database URL and its password are both secrets; keep the outer span.
+  const spans: typeof matches = [];
+  for (const match of matches) {
+    const last = spans[spans.length - 1];
+    if (last && match.start < last.end) {
+      if (match.end > last.end) {
+        last.end = match.end;
+        last.text = content.slice(last.start, last.end);
+      }
+      continue;
+    }
+    spans.push({ ...match });
+  }
+  return spans;
+}
+
 function namedPii(
   piiType: string,
-  options?: { detector?: string },
+  options?: { detector?: string | ((content: string) => { text: string; start: number; end: number }[]) },
 ): AnyAgentMiddleware {
   const middleware = piiMiddleware(piiType, {
     strategy: "redact",
@@ -184,6 +220,7 @@ export function guardrailMiddleware(
     namedPii("email"),
     namedPii("credit_card"),
     namedPii("api_key", { detector: API_KEY_DETECTOR }),
+    namedPii("connection_secret", { detector: (content) => connectionSecretMatches(content) }),
   ];
 
   if (options.interruptOn) {

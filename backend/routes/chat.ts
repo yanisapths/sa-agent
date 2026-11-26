@@ -62,7 +62,17 @@ import {
   findAssistantFeedback,
   patchMessageFeedback,
   recordUserTurn,
+  threadProductId,
 } from "../internal/chats/service";
+import type { Connection } from "../contract/connection";
+import { harnessProfileFor } from "../internal/chat/execute";
+import {
+  assertConnectionsAllowed,
+  CONNECTIONS_HEADER,
+  parseConnections,
+} from "../internal/product/connections";
+import { resolveProduct } from "../internal/product/service";
+import type { ResolvedProduct } from "../internal/product/types";
 import {
   asFeedback,
   asUserScore,
@@ -189,6 +199,7 @@ async function chatMentions(
   explicit: readonly string[],
   userId: string | undefined,
   threadId: string,
+  productId: string,
 ): Promise<{
   files: ChatFile[];
   notes: string[];
@@ -218,7 +229,7 @@ async function chatMentions(
   const { workspace, other } = workspaceMentionTokens(notArtifact);
   const vault = await resolveVaultMentions(userId, other);
   const stored = await resolveArtifactMentions(userId, artifact, threadId);
-  const projects = await resolveWorkspaceMentions(userId, workspace);
+  const projects = await resolveWorkspaceMentions(userId, workspace, productId);
 
   return {
     files: [
@@ -333,6 +344,39 @@ function requestedWorkspaceId(body: Record<string, unknown>): string | undefined
   return raw.trim();
 }
 
+function requestedProductId(body: Record<string, unknown>): string | undefined {
+  const raw = body.productId;
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  return raw.trim();
+}
+
+/**
+ * Credentials the browser sent for the active product. Parsed and checked
+ * against the outbound rules up front so a blocked host is a 400 before any
+ * agent work. The value is never logged and never stored on the run.
+ */
+async function requestConnections(req: Request): Promise<Connection[]> {
+  const conns = parseConnections(req.headers[CONNECTIONS_HEADER]);
+  await assertConnectionsAllowed(conns);
+  return conns;
+}
+
+/**
+ * The checkpointer is keyed by thread id only, so continuing a thread under
+ * another product would carry its context across. A new thread has no row.
+ */
+async function assertThreadProduct(
+  userId: string | undefined,
+  threadId: string | undefined,
+  product: ResolvedProduct,
+): Promise<void> {
+  if (!userId || !threadId) return;
+  const stored = await threadProductId(userId, threadId);
+  if (stored !== undefined && stored !== product.id) {
+    throw new HttpError(409, "Thread belongs to another product. Start a new chat.");
+  }
+}
+
 function workspaceDirective(name: string, root: string): string {
   return (
     `[Workspace: ${name} at ${root}] The product repo is mounted as the agent's filesystem. ` +
@@ -351,6 +395,7 @@ function workspaceDirective(name: string, root: string): string {
 async function attachedWorkspace(
   userId: string | undefined,
   workspaceId: string | undefined,
+  product: ResolvedProduct,
 ): Promise<{ id: string; name: string; path: string } | undefined> {
   if (!workspaceId) return undefined;
   if (!userId) {
@@ -361,6 +406,9 @@ async function attachedWorkspace(
   }
   try {
     const ws = await getWorkspace(userId, workspaceId);
+    if (ws.productId !== product.id) {
+      throw new HttpError(400, "That folder belongs to another product.");
+    }
     return { id: ws.id, name: ws.name, path: liveWorkspaceRoot(ws.path) };
   } catch (err) {
     if (err instanceof HttpError && err.status === 404) {
@@ -377,11 +425,13 @@ async function usagePayload(
   phase: string | undefined,
   durationMs: number,
   kind?: string,
+  product?: string,
 ): Promise<Record<string, unknown>> {
   return {
     model: model ?? config.model.orchestrator,
     phase: phase ?? null,
     agent: kind ?? "deep",
+    product: product ?? "default",
     durationMs,
     ...(await collector.totals()),
   };
@@ -406,6 +456,7 @@ async function runStreamSegment(opts: {
   res: Response;
   input: unknown;
   run: ChatRunContext;
+  connections: readonly Connection[];
   streaming: boolean;
 }): Promise<void> {
   const abort = new AbortController();
@@ -427,6 +478,7 @@ async function runStreamSegment(opts: {
     const result = await streamAgentTurn({
       input: opts.input,
       run: opts.run,
+      connections: opts.connections,
       signal: abort.signal,
       emit,
       onProgress: watchdog.bump,
@@ -440,6 +492,7 @@ async function runStreamSegment(opts: {
         opts.run.phase,
         opts.run.executionMs,
         opts.run.kind,
+        opts.run.product.slug,
       );
       emit({ event: "usage", data: usage });
       emit({ event: "done", data: { status: "waiting" } });
@@ -486,6 +539,7 @@ async function chatHandler(
   let phase: string | undefined;
   let style: ChatStyle = DEFAULT_CHAT_STYLE;
   let kind: AgentKind | undefined;
+  let product: ResolvedProduct | undefined;
   let executionMs = 0;
   const streaming = wantsEventStream(req.headers.accept);
 
@@ -503,11 +557,15 @@ async function chatHandler(
     model = await requestedModel(body);
     phase = requestedPhase(body);
     style = requestedStyle(body);
+    const connections = await requestConnections(req);
+    product = await resolveProduct(req.userId, requestedProductId(body));
     const workspace = await attachedWorkspace(
       req.userId,
       requestedWorkspaceId(body),
+      product,
     );
 
+    await assertThreadProduct(req.userId, req.body.threadId, product);
     // A stable threadId keeps the agent's short-term session memory across turns.
     const threadId: string = req.body.threadId || randomUUID();
 
@@ -516,6 +574,7 @@ async function chatHandler(
       requestedMentions(body),
       req.userId,
       threadId,
+      product.id,
     );
     const vaultParked = req.userId
       ? parkVaultMentions(req.userId, mentioned.vaultFiles)
@@ -555,12 +614,17 @@ async function chatHandler(
       threadId,
       model,
       kind,
+      profile: harnessProfileFor(
+        { product, workspaceRoot: workspace?.path },
+        connections,
+      ),
     });
     await recordUserTurn({
       userId: req.userId,
       threadId,
       text: message,
       fileNames: uploads.map((file) => file.name),
+      productId: product.id,
     });
 
     collector = createUsageCollector(model ?? config.model.orchestrator);
@@ -580,6 +644,8 @@ async function chatHandler(
       workspaceRoot: workspace?.path,
       workspaceId: workspace?.id,
       vaultMount: vaultParked.mount,
+      product,
+      connectionKinds: connections.map((conn) => conn.kind),
       startedAt,
       executionMs: 0,
       collector,
@@ -602,6 +668,7 @@ async function chatHandler(
         const result = await invokeAgentTurn({
           input,
           run,
+          connections,
           signal: abort.signal,
           onProgress: watchdog.bump,
         });
@@ -612,7 +679,7 @@ async function chatHandler(
           type: result.type,
           data: result.data,
           artifacts: result.artifacts,
-          usage: await usagePayload(collector, model, phase, executionMs, kind),
+          usage: await usagePayload(collector, model, phase, executionMs, kind, product.slug),
           ...(result.feedback
             ? {
                 feedback: {
@@ -636,7 +703,7 @@ async function chatHandler(
 
     openSse(res);
     writeSse(res, { event: "thread", data: { threadId } });
-    await runStreamSegment({ req, res, input, run, streaming: true });
+    await runStreamSegment({ req, res, input, run, connections, streaming: true });
     if (!res.writableEnded) res.end();
   } catch (err) {
     /**
@@ -651,6 +718,7 @@ async function chatHandler(
         phase,
         executionMs || Date.now() - startedAt,
         kind,
+        product?.slug,
       );
       if (streaming && res.headersSent && !res.writableEnded) {
         writeSse(res, { event: "error", data: { error: err.message } });
@@ -698,6 +766,11 @@ async function resumeHandler(
       );
     }
     const decisions = parseDecisions(body.decisions);
+    const connections = await requestConnections(req);
+    const resent = new Set(connections.map((conn) => conn.kind));
+    if (run.connectionKinds.some((kind) => !resent.has(kind))) {
+      throw new HttpError(409, "Reconnect to resume: this turn needs the product's connections again.");
+    }
     if (streaming) {
       openSse(res);
       writeSse(res, { event: "thread", data: { threadId } });
@@ -717,6 +790,7 @@ async function resumeHandler(
         const result = await streamAgentTurn({
           input: resumeCommand(decisions),
           run,
+          connections,
           signal: abort.signal,
           emit: (event) => writeSse(res, event),
           onProgress: watchdog.bump,
@@ -730,6 +804,7 @@ async function resumeHandler(
             run.phase,
             run.executionMs,
             run.kind,
+            run.product.slug,
           );
           writeSse(res, { event: "usage", data: usage });
           writeSse(res, { event: "done", data: { status: "waiting" } });
@@ -747,6 +822,7 @@ async function resumeHandler(
             run.phase,
             run.executionMs,
             run.kind,
+            run.product.slug,
           );
           writeSse(res, { event: "usage", data: usage });
           writeSse(res, { event: "done", data: { status: "complete" } });
@@ -758,6 +834,7 @@ async function resumeHandler(
       const finished = await invokeAgentTurn({
         input: resumeCommand(decisions),
         run,
+        connections,
         signal: abort.signal,
         onProgress: watchdog.bump,
       });
@@ -775,6 +852,7 @@ async function resumeHandler(
           run.phase,
           run.executionMs + (Date.now() - segmentStarted),
           run.kind,
+          run.product.slug,
         ),
         ...(finished.feedback
           ? {
@@ -808,6 +886,7 @@ async function resumeHandler(
             run.phase,
             run.executionMs,
             run.kind,
+            run.product.slug,
           ),
         });
       }
@@ -824,6 +903,7 @@ async function resumeHandler(
           run.phase,
           run.executionMs,
           run.kind,
+          run.product.slug,
         ),
       });
       return;

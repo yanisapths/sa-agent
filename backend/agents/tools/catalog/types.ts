@@ -6,6 +6,8 @@ export type ToolContext = {
   workspaceRoot?: string;
   userId?: string;
   threadId?: string;
+  /** Active product id. Credentials are never here; they live in AsyncLocalStorage. */
+  productId?: string;
 };
 
 export type AnyCatalogTool = {

@@ -12,6 +12,7 @@ export const listMentionsHandler = async (
       req.userId,
       queryString(req.query.q),
       queryNumber(req.query.limit, 20),
+      queryString(req.query.productId) || undefined,
     );
     return res.json({ ok: true, data });
   } catch (err) {

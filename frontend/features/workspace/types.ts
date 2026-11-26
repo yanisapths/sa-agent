@@ -3,6 +3,8 @@ export interface Workspace {
   name: string;
   path: string;
   mentionToken: string;
+  /** Null for folders that belong to the Default product. */
+  productId?: string | null;
   createdAt: string;
 }
 
@@ -17,6 +19,7 @@ export interface WorkspaceMention {
 export interface CreateWorkspaceInput {
   name: string;
   path: string;
+  productId?: string;
 }
 
 export interface PickFolderResult {

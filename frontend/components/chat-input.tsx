@@ -501,7 +501,7 @@ export function ChatInput({
             />
           </div>
 
-          <div className="absolute left-3 bottom-3 flex items-center gap-1">
+          <div className="absolute bottom-3 left-3 right-14 flex flex-wrap items-center gap-1">
             <Button
               type="button"
               variant="icon"

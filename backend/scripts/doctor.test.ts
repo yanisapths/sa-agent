@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { COMMANDS, renderHelp } from "./commands";
-import { databaseTarget, localChecks, renderChecks, type DoctorSnapshot } from "./doctor";
+import {
+  databaseTarget,
+  localChecks,
+  productChecks,
+  renderChecks,
+  type DoctorSnapshot,
+} from "./doctor";
 
 function snapshot(overrides: Partial<DoctorSnapshot> = {}): DoctorSnapshot {
   return {
@@ -119,5 +125,57 @@ describe("doctor", () => {
       detail: "db.internal:5432/app",
     });
     expect(databaseTarget("not a url").ok).toBe(false);
+  });
+});
+
+describe("doctor product checks", () => {
+  const profile = {
+    id: "club-co",
+    name: "Club&co",
+    db: { urlEnv: "SA_PRODUCT_CLUBCO_DATABASE_URL", schema: "public" },
+    docs: { provider: "confluence" as const, spaceKey: "CLUB", tokenEnv: "SA_PRODUCT_CLUBCO_CONFLUENCE_TOKEN" },
+    index: {},
+  };
+
+  test("reports the referenced env vars without leaking their values", () => {
+    const text = renderChecks(
+      productChecks(
+        snapshot({
+          productFile: { path: "/repo/.sa/product.json", profile },
+          env: {
+            SA_PRODUCT_CLUBCO_DATABASE_URL: "postgresql://club:hunter22@club.db:5432/club",
+            SA_PRODUCT_CLUBCO_CONFLUENCE_TOKEN: "atl-1234567890abcd",
+          },
+        }),
+      ),
+    );
+    expect(text).toContain("[  ok  ] .sa/product.json — Club&co (club-co)");
+    expect(text).toContain("SA_PRODUCT_CLUBCO_DATABASE_URL — club.db:5432/club");
+    expect(text).not.toContain("hunter22");
+    expect(text).not.toContain("atl-1234567890abcd");
+  });
+
+  test("warns on an unset reference and fails an invalid profile", () => {
+    const unset = renderChecks(
+      productChecks(snapshot({ productFile: { path: "/p", profile }, env: {} })),
+    );
+    expect(unset).toContain("[ warn ] SA_PRODUCT_CLUBCO_DATABASE_URL");
+    const broken = renderChecks(
+      productChecks(snapshot({ productFile: { path: "/p", error: "bad id" }, env: {} })),
+    );
+    expect(broken).toContain("[ fail ] .sa/product.json — bad id");
+  });
+
+  test("requires an allowlist off localhost", () => {
+    const local = renderChecks(productChecks(snapshot({ env: {} })));
+    expect(local).toContain("[  ok  ] SA_CONNECTION_ALLOWED_HOSTS");
+    const remote = renderChecks(productChecks(snapshot({ env: { NODE_ENV: "production" } })));
+    expect(remote).toContain("[ fail ] SA_CONNECTION_ALLOWED_HOSTS");
+    const allowed = renderChecks(
+      productChecks(
+        snapshot({ env: { HOST: "0.0.0.0", SA_CONNECTION_ALLOWED_HOSTS: "db.acme.com" } }),
+      ),
+    );
+    expect(allowed).toContain("[  ok  ] SA_CONNECTION_ALLOWED_HOSTS — db.acme.com");
   });
 });

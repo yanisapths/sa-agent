@@ -38,8 +38,9 @@ async function workspaceRequest<T>(
 }
 
 export const workspaceService = {
-  list: async (): Promise<Workspace[]> => {
-    return workspaceRequest<Workspace[]>("/");
+  list: async (productId: string): Promise<Workspace[]> => {
+    const params = new URLSearchParams({ productId });
+    return workspaceRequest<Workspace[]>(`/?${params.toString()}`);
   },
 
   create: async (input: CreateWorkspaceInput): Promise<Workspace> => {
@@ -48,6 +49,7 @@ export const workspaceService = {
       body: JSON.stringify({
         name: input.name.trim(),
         path: input.path.trim(),
+        ...(input.productId ? { productId: input.productId } : {}),
       }),
     });
   },
@@ -58,8 +60,9 @@ export const workspaceService = {
     });
   },
 
-  listMentions: async (query = ""): Promise<WorkspaceMention[]> => {
+  listMentions: async (query = "", productId?: string): Promise<WorkspaceMention[]> => {
     const params = new URLSearchParams({ limit: "20" });
+    if (productId) params.set("productId", productId);
     if (query.trim()) params.set("q", query.trim());
     return workspaceRequest<WorkspaceMention[]>(`/mentions?${params.toString()}`);
   },

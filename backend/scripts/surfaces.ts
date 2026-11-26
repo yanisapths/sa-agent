@@ -1,7 +1,10 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
+import { frontendConnectionModule } from "../contract/connection-module";
 import { frontendChatResponseModule } from "../contract/frontend-module";
+import { productProfileSchema } from "../contract/product";
 import { SPECIALISTS, type SpecialistSpec } from "../agents/specialists";
 
 const BACKEND_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -9,6 +12,22 @@ const REPO_ROOT = path.join(BACKEND_ROOT, "..");
 const CLAUDE_AGENTS = path.join(BACKEND_ROOT, "agents/claude/agents");
 const CLAUDE_PLUGIN = path.join(BACKEND_ROOT, "agents/claude");
 const FRONTEND_CONTRACT = path.join(REPO_ROOT, "frontend/lib/chat-response.ts");
+const FRONTEND_CONNECTION = path.join(REPO_ROOT, "frontend/lib/connection.ts");
+
+/** Editors validate `.sa/product.json` against this via its `$schema` key. */
+function productJsonSchema(): string {
+  const schema = z.toJSONSchema(productProfileSchema, { io: "input" }) as Record<string, unknown>;
+  const properties = (schema.properties ?? {}) as Record<string, unknown>;
+  return `${JSON.stringify(
+    {
+      ...schema,
+      title: "SA Agent product profile",
+      properties: { $schema: { type: "string" }, ...properties },
+    },
+    null,
+    2,
+  )}\n`;
+}
 
 const MCP_LAUNCH =
   'h="${SA_AGENT_HOME:-}"; [ -n "$h" ] || h=$(sed -n 1p "$HOME/.sa-agent/home" 2>/dev/null); [ -n "$h" ] || { echo \'sa-agent: set SA_AGENT_HOME, or write the checkout path to ~/.sa-agent/home\' >&2; exit 78; }; exec "$h/backend/mcp/sa-mcp"';
@@ -63,6 +82,14 @@ export function surfaceFiles(): SurfaceFile[] {
     {
       path: FRONTEND_CONTRACT,
       contents: frontendChatResponseModule(),
+    },
+    {
+      path: path.join(CLAUDE_PLUGIN, "product.schema.json"),
+      contents: productJsonSchema(),
+    },
+    {
+      path: FRONTEND_CONNECTION,
+      contents: frontendConnectionModule(),
     },
   ];
 }

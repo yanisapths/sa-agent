@@ -9,9 +9,11 @@ import {
   type Interrupt,
 } from "langchain";
 import { z } from "zod";
+import { withConnections } from "../../internal/product/connections";
 import {
   BLOCKED_INPUT,
   BLOCKED_OUTPUT,
+  connectionSecretMatches,
   guardrailMiddleware,
 } from "./guardrail";
 
@@ -84,6 +86,7 @@ describe("combined guardrails", () => {
       "PIIMiddleware[email]",
       "PIIMiddleware[credit_card]",
       "PIIMiddleware[api_key]",
+      "PIIMiddleware[connection_secret]",
       "SafetyGuardrailMiddleware",
     ]);
   });
@@ -98,6 +101,7 @@ describe("combined guardrails", () => {
       "PIIMiddleware[email]",
       "PIIMiddleware[credit_card]",
       "PIIMiddleware[api_key]",
+      "PIIMiddleware[connection_secret]",
       "HumanInTheLoopMiddleware",
       "SafetyGuardrailMiddleware",
     ]);
@@ -215,6 +219,43 @@ describe("combined guardrails", () => {
 
     expect(humanTexts(model.calls)).toContain("[REDACTED_CREDIT_CARD]");
     expect(humanTexts(model.calls)).not.toContain("5105-1051-0510-5100");
+  });
+
+  test("PII: redacts the request's connection secrets in the model output", async () => {
+    const token = "atl-browser-token-0123456789";
+    const model = fakeModel().respond(new AIMessage(`The token is ${token}.`));
+    const agent = createGuardrailAgent({ model });
+
+    const result = await withConnections(
+      [
+        {
+          kind: "confluence",
+          baseUrl: "https://example.atlassian.net/wiki",
+          spaceKey: "ENG",
+          token,
+        },
+      ],
+      () =>
+        agent.invoke(
+          { messages: [{ role: "user", content: "What is my token?" }] },
+          { configurable: { thread_id: "pii-connection-output" } },
+        ),
+    );
+
+    const last = result.messages[result.messages.length - 1];
+    expect(String(last?.content)).not.toContain(token);
+  });
+
+  test("PII: connection secret matcher finds every occurrence", () => {
+    expect(connectionSecretMatches("a S b S", ["S"])).toEqual([
+      { text: "S", start: 2, end: 3 },
+      { text: "S", start: 6, end: 7 },
+    ]);
+    expect(connectionSecretMatches("nothing here", [])).toEqual([]);
+    const url = "postgres://u:pw@db/x";
+    expect(connectionSecretMatches(`see ${url}`, [url, "pw"])).toEqual([
+      { text: url, start: 4, end: 4 + url.length },
+    ]);
   });
 
   test("PII: redacts credit cards in the model output", async () => {

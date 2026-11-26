@@ -12,6 +12,8 @@ import {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
+import { useProduct } from "@/features/product/ProductProvider";
+
 import { chatService } from "./service";
 import {
   type ChatThread,
@@ -43,6 +45,7 @@ const ChatHistoryContext = createContext<ChatHistoryContextValue | null>(null);
 export function ChatHistoryProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { activeId } = useProduct();
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
@@ -52,7 +55,18 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [sessionLoad, setSessionLoad] = useState<SessionLoad | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [scopedTo, setScopedTo] = useState(activeId);
   const seqRef = useRef(0);
+
+  // Switching product starts a fresh chat: a thread never continues under another product.
+  if (scopedTo !== activeId) {
+    setScopedTo(activeId);
+    setThreads([]);
+    setNextCursor(null);
+    setStatus("loading");
+    setSelectedThreadId(null);
+    setSessionLoad((prev) => ({ seq: (prev?.seq ?? 0) + 1, threadId: null, messages: [] }));
+  }
 
   const applySession = useCallback(
     (threadId: string | null, messages: SessionLoad["messages"]) => {
@@ -71,28 +85,32 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
     if (pathname !== "/") router.push("/");
   }, [pathname, router]);
 
-  const refresh = useCallback(async () => {
-    try {
-      const page = await chatService.list();
-      setThreads(page.threads);
-      setNextCursor(page.nextCursor);
-      setStatus("ready");
-      setError(null);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load chats");
-      setStatus("error");
-    }
-  }, []);
-
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let cancelled = false;
+    chatService
+      .list(activeId)
+      .then((page) => {
+        if (cancelled) return;
+        setThreads(page.threads);
+        setNextCursor(page.nextCursor);
+        setStatus("ready");
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Failed to load chats");
+        setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const page = await chatService.list(nextCursor);
+      const page = await chatService.list(activeId, nextCursor);
       setThreads((prev) => {
         const seen = new Set(prev.map((thread) => thread.id));
         return [
@@ -107,12 +125,12 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, nextCursor]);
+  }, [activeId, loadingMore, nextCursor]);
 
   const startNewChat = useCallback(async () => {
     goToChat();
     try {
-      const created = await chatService.create();
+      const created = await chatService.create(activeId);
       setThreads((prev) => [
         created,
         ...prev.filter((thread) => thread.id !== created.id),
@@ -124,7 +142,7 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
       applySession(null, []);
       setError(err instanceof Error ? err.message : "Failed to start chat");
     }
-  }, [applySession, goToChat]);
+  }, [activeId, applySession, goToChat]);
 
   const openThread = useCallback(
     async (threadId: string) => {
