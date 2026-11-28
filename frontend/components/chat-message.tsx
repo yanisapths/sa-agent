@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from "react";
-import { Bot, User, FileText, GitBranch, Download } from "lucide-react";
+import { useEffect, useState } from "react";
+import { User, FileText, GitBranch, Download } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { type ChatUsage } from "@/features/gateway/types";
@@ -722,6 +722,70 @@ function MessagePart({ part }: { part: UIPart }) {
 }
 
 
+const FACE_LOOP = ["NORMAL", "LOOK_UP", "SIDE_EYES"] as const;
+
+type BotReactionName = (typeof FACE_LOOP)[number] | "SHY_AWAY" | "NAP";
+
+const BOT_REACTION_SRC: Record<BotReactionName, string> = {
+  NORMAL: "/assets/bot_reactions/NORMAL.png",
+  LOOK_UP: "/assets/bot_reactions/LOOK_UP.png",
+  SIDE_EYES: "/assets/bot_reactions/SIDE_EYES.png",
+  SHY_AWAY: "/assets/bot_reactions/SHY_AWAY.png",
+  NAP: "/assets/bot_reactions/NAP.png",
+};
+
+const FACE_MS = 1800;
+const AWAKE_MS = 30 * 1000;
+const NAP_MS = 3 * 1000;
+const PERIOD_MS = AWAKE_MS + NAP_MS;
+
+function BotReaction() {
+  const [hovered, setHovered] = useState(false);
+  const [frame, setFrame] = useState(0);
+  const [napping, setNapping] = useState(false);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setFrame((n) => n + 1), FACE_MS);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    let timer = 0;
+    const arm = () => {
+      const phase = Date.now() % PERIOD_MS;
+      const asleep = phase >= AWAKE_MS;
+      setNapping(asleep);
+      timer = window.setTimeout(arm, (asleep ? PERIOD_MS - phase : AWAKE_MS - phase) + 20);
+    };
+    arm();
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const reaction: BotReactionName = hovered
+    ? "SHY_AWAY"
+    : napping
+      ? "NAP"
+      : FACE_LOOP[frame % FACE_LOOP.length];
+
+  return (
+    <div
+      className="mt-0.5 flex h-16 w-16 shrink-0 items-center justify-center"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <span className="block h-10 w-10 overflow-hidden rounded-full">
+        <Image
+          src={BOT_REACTION_SRC[reaction]}
+          alt=""
+          width={96}
+          height={96}
+          className="h-full w-full origin-center object-cover"
+        />
+      </span>
+    </div>
+  );
+}
+
 export function ChatMessage({
   message,
   isStreaming = false,
@@ -745,20 +809,13 @@ export function ChatMessage({
         isUser ? "flex-row-reverse" : "flex-row",
       )}
     >
-      <div
-        className={cn(
-          "flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5 border",
-          isUser
-            ? "bg-muted/15 border-border"
-            : "bg-light/10 dark:bg-light/15 border-light/40",
-        )}
-      >
-        {isUser ? (
-          <User className="w-3.5 h-3.5 text-foreground" />
-        ) : (
-          <Bot className="w-3.5 h-3.5 text-primary dark:text-light" />
-        )}
-      </div>
+      {isUser ? (
+        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted/15">
+          <User className="h-3.5 w-3.5 text-foreground" />
+        </div>
+      ) : (
+        <BotReaction />
+      )}
       <div
         className={cn(
           "flex flex-col gap-2 max-w-[85%]",
