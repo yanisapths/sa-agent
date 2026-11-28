@@ -7,12 +7,12 @@ import {
   useEffect,
   useState,
 } from "react";
-import { asterTheme } from "@/lib/theme";
+import { grdwTheme } from "@/lib/theme";
 
 export type Theme = "light" | "dark";
 
 export const THEME_STORAGE_KEY = "sa-theme";
-export const DEFAULT_THEME: Theme = asterTheme.appearance.default;
+export const DEFAULT_THEME: Theme = grdwTheme.appearance.default;
 
 type ThemeContextValue = {
   theme: Theme;

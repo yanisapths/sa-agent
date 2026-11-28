@@ -1,12 +1,12 @@
 import { headers } from "next/headers";
 import "./globals.css";
 import { geistMono, geistSans, defaultMetadata } from "@/components/metadata";
-import { asterTheme } from "@/lib/theme";
+import { grdwTheme } from "@/lib/theme";
 import { Providers } from "./providers";
 
 export const metadata = defaultMetadata();
 
-const themeScript = `(function(){try{var s=localStorage.getItem("sa-theme");var t=s==="dark"||s==="light"?s:"${asterTheme.appearance.default}";document.documentElement.classList.toggle("dark",t==="dark");}catch(e){}})();`;
+const themeScript = `(function(){try{var s=localStorage.getItem("sa-theme");var t=s==="dark"||s==="light"?s:"${grdwTheme.appearance.default}";document.documentElement.classList.toggle("dark",t==="dark");}catch(e){}})();`;
 
 export default async function RootLayout({
   children,
@@ -18,7 +18,7 @@ export default async function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased${asterTheme.background.decoration === "gradient" ? " theme-gradient" : ""}`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased${grdwTheme.background.decoration === "gradient" ? " theme-gradient" : ""}`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         {/* Browsers hide nonce from the DOM; without this, React reports a hydration mismatch. */}

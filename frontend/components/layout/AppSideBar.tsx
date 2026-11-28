@@ -20,7 +20,7 @@ import { ProductSwitcher } from "@/features/product/ProductSwitcher";
 import { useProduct } from "@/features/product/ProductProvider";
 import { AddFolderDialog } from "@/features/workspace/AddFolderDialog";
 import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
-import { asterTheme } from "@/lib/theme";
+import { grdwTheme } from "@/lib/theme";
 import { Button } from "../ui/Button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/Tooltip";
 
@@ -57,7 +57,7 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
   const { active } = useProduct();
   const [addOpen, setAddOpen] = useState(false);
   const wordmark =
-    theme === "dark" ? "/assets/aster-dark.svg" : "/assets/aster-light.svg";
+    theme === "dark" ? "/assets/logo-dark.svg" : "/assets/logo-light.svg";
   const docsUrl = active?.docs.siteUrl ?? null;
   const docsLabel = active ? `${active.name} docs` : "Docs";
 
@@ -86,7 +86,7 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={wordmark}
-                  alt={asterTheme.name}
+                  alt={grdwTheme.name}
                   className="h-6 w-auto"
                 />
               </Link>
@@ -103,8 +103,8 @@ export function AppSidebar({ isExpanded, onToggle }: AppSidebarProps) {
             <Link href="/" className="flex items-center justify-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="/assets/logo.svg"
-                alt={asterTheme.name}
+                src={theme === "dark" ? "/assets/abbr-dark.svg" : "/assets/abbr-light.svg"}
+                alt={grdwTheme.name}
                 className="h-5 w-5"
               />
             </Link>

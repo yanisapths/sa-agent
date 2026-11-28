@@ -2,7 +2,7 @@ import { Workflow } from "@/features/workflow/Workflow";
 import { type Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Workflow",
+  title: "Workflow - GRDW",
   description: "Kanban board for the orchestrator phase loop.",
 };
 
