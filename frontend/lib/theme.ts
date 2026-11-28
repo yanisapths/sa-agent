@@ -1,10 +1,13 @@
-export const asterTheme = {
-  theme: "mint",
-  name: "Aster Assistant",
+export const grdwTheme = {
+  theme: "grdw",
+  name: "New chat - GRDW",
   colors: {
-    primary: "#177B77",
-    light: "#1AE5BC",
-    dark: "#165B9D",
+    primary: "#2E2E2E",
+    secondary: "#EFEFEF",
+    background: "#FFFFFF",
+    hover: "#000000",
+    accentFrom: "#81E6FF",
+    accentTo: "#F081FF",
   },
   appearance: {
     default: "dark" as const,
@@ -13,10 +16,10 @@ export const asterTheme = {
     decoration: "gradient" as const,
   },
   favicon: {
-    light: "/logo/aster-logo.svg",
-    dark: "/logo/aster-logo.svg",
+    light: "/assets/favicon-light.svg",
+    dark: "/assets/favicon-dark.svg",
   },
 } as const;
 
-export type AsterTheme = typeof asterTheme;
-export type Appearance = AsterTheme["appearance"]["default"];
+export type GrdwTheme = typeof grdwTheme;
+export type Appearance = GrdwTheme["appearance"]["default"];

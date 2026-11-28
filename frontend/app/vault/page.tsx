@@ -2,7 +2,7 @@ import { Vault } from "@/features/vault/Vault";
 import { type Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Vault",
+  title: "Vault - GRDW",
   description: "Knowledge library for project files, requirements, and code.",
 };
 

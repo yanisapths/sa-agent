@@ -33,15 +33,15 @@ const base = [
 
 const variants: Record<ButtonVariant, string> = {
   primary: [
-    "bg-primary text-white",
-    "hover:bg-primary/90",
+    "bg-primary text-primary-foreground",
+    "hover:bg-hover hover:text-white",
     "focus-visible:ring-light",
     "shadow-sm hover:shadow-md",
   ].join(" "),
 
   secondary: [
     "bg-transparent border-2 border-primary text-primary",
-    "hover:bg-light/10",
+    "hover:bg-black/5 dark:hover:bg-white/10",
     "focus-visible:ring-light",
   ].join(" "),
 
@@ -52,8 +52,8 @@ const variants: Record<ButtonVariant, string> = {
   ].join(" "),
 
   ghost: [
-    "bg-transparent text-primary dark:text-light",
-    "hover:bg-light/10",
+    "bg-transparent text-foreground",
+    "hover:bg-black/5 dark:hover:bg-white/10",
     "focus-visible:ring-light",
   ].join(" "),
 

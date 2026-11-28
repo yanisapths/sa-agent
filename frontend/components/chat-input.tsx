@@ -575,7 +575,7 @@ export function ChatInput({
                     variant="icon"
                     size="sm"
                     aria-label="Send message"
-                    className="bg-light text-[#0a1333] hover:bg-light/90 rounded-lg"
+                    className="bg-light text-black hover:bg-hover hover:text-white rounded-lg"
                   >
                     <ArrowUp size={18} />
                   </Button>
